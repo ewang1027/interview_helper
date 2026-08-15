@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python (lint · types · tests · corpus)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync workspace
+        run: uv sync --all-packages
+
+      - name: Lint
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Typecheck
+        run: uv run mypy apps/api/src apps/executor/src packages/corpus/src
+
+      - name: Test
+        run: uv run pytest -q
+
+      # The corpus gate is separate so a content-only failure is obvious in the
+      # job list without reading logs.
+      - name: Validate corpus
+        run: uv run python -m corpus.validate

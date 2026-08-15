@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://interview-helper.local/schema/concept.schema.json",
+  "title": "Concept",
+  "description": "A node in the concept DAG. Concepts are the unit of mastery: every graded artifact writes evidence against one or more concepts, and the session planner selects work by concept weakness.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "domain", "name", "description", "prereqs"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "Stable kebab-case identifier. Never reused, never renamed — mastery history is keyed on it."
+    },
+    "domain": {
+      "enum": ["coding", "quant", "system_design", "behavioral"]
+    },
+    "name": { "type": "string", "minLength": 3, "maxLength": 80 },
+    "description": {
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 400,
+      "description": "What competence this concept represents, phrased as something you can demonstrate."
+    },
+    "prereqs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true,
+      "description": "Concept ids that should be solid before this one is drilled. Must form a DAG — the validator rejects cycles."
+    },
+    "band": {
+      "enum": ["foundational", "core", "advanced"],
+      "default": "core",
+      "description": "Rough tier. Advisory for session planning; it does not gate anything."
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "deprecated_at": {
+      "type": ["string", "null"],
+      "format": "date",
+      "default": null,
+      "description": "Set instead of deleting. Deleting a concept would orphan its evidence rows."
+    }
+  }
+}

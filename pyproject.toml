@@ -1,0 +1,64 @@
+[project]
+name = "interview-helper"
+version = "0.1.0"
+description = "Adaptive mock-interview trainer for SWE and quant-trading loops"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "api",
+    "executor",
+    "corpus",
+]
+
+[tool.uv.workspace]
+members = ["apps/api", "apps/executor", "packages/corpus"]
+
+[tool.uv.sources]
+api = { workspace = true }
+executor = { workspace = true }
+corpus = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9",
+    "mypy>=1.14",
+    "types-jsonschema>=4.23",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "httpx>=0.28",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["apps/web", "infra"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF", "ASYNC", "S"]
+ignore = ["S101"]  # assert is fine in tests
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S", "B"]
+
+[tool.ruff.lint.isort]
+# Workspace packages, or ruff guesses inconsistently across apps/ and packages/.
+known-first-party = ["api", "executor", "corpus"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["apps/api/tests", "apps/executor/tests", "packages/corpus/tests"]
+asyncio_mode = "auto"
+markers = [
+    "sandbox: executor isolation tests that must fail closed",
+    "e2e: end-to-end tests requiring a live stack",
+    "llm: tests that make real model calls (cost money, skipped by default)",
+]
+addopts = "-m 'not e2e and not llm'"
