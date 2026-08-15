@@ -43,6 +43,16 @@ MODALITY_GRADING: dict[str, str] = {
     "behavioral": "rubric",
 }
 
+# Domain and modality are 1:1. They are separate fields because one names the body of
+# knowledge and the other names the runtime that serves it, but a mismatch is always a
+# data bug — it would route an item to a grader that cannot grade it.
+DOMAIN_MODALITY: dict[str, str] = {
+    "coding": "coding",
+    "quant": "quant",
+    "system_design": "design",
+    "behavioral": "behavioral",
+}
+
 
 @dataclass(frozen=True)
 class Finding:
@@ -151,6 +161,7 @@ def check_items(items: list[dict[str, Any]], concepts: list[dict[str, Any]]) -> 
     findings: list[Finding] = []
     concept_ids = {c["id"] for c in concepts}
     active_concepts = {c["id"] for c in concepts if not c.get("deprecated_at")}
+    concept_domain = {c["id"]: c.get("domain") for c in concepts}
     item_ids: set[str] = set()
     archetype_ids = {i["id"] for i in items if i.get("kind") == "archetype"}
 
@@ -161,12 +172,37 @@ def check_items(items: list[dict[str, Any]], concepts: list[dict[str, Any]]) -> 
             findings.append(Finding("error", where, "duplicate item id"))
         item_ids.add(iid)
 
+        # --- domain/modality consistency ----------------------------------------
+        domain = item.get("domain", "")
+        modality = item.get("modality", "")
+        expected_modality = DOMAIN_MODALITY.get(domain)
+        if expected_modality and modality != expected_modality:
+            findings.append(
+                Finding(
+                    "error",
+                    where,
+                    f"domain '{domain}' requires modality '{expected_modality}', got '{modality}'",
+                )
+            )
+
         # --- concept references -------------------------------------------------
         for cid in item.get("concepts", []):
             if cid not in concept_ids:
                 findings.append(Finding("error", where, f"unknown concept '{cid}'"))
-            elif cid not in active_concepts:
+                continue
+            if cid not in active_concepts:
                 findings.append(Finding("warn", where, f"concept '{cid}' is deprecated"))
+            # Legitimate occasionally — a quant-dev coding problem may touch probability —
+            # but usually a mis-tag, and a mis-tag writes evidence to the wrong concept.
+            if domain and concept_domain.get(cid) != domain:
+                findings.append(
+                    Finding(
+                        "warn",
+                        where,
+                        f"concept '{cid}' is in domain '{concept_domain.get(cid)}', "
+                        f"item is '{domain}'",
+                    )
+                )
         primary = item.get("primary_concept")
         if primary and primary not in item.get("concepts", []):
             findings.append(
@@ -317,8 +353,11 @@ def summarize(concepts: int, items: list[dict[str, Any]]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    root = Path(argv[0]).resolve() if argv else None
-    paths = CorpusPaths(root=root) if root else CorpusPaths.default()
+    # Optional positional: an alternate corpus root. Anything that is not an existing
+    # directory (a stray flag, a typo) falls back rather than failing obscurely later.
+    paths = CorpusPaths.default()
+    if argv and Path(argv[0]).is_dir():
+        paths = CorpusPaths(root=Path(argv[0]).resolve())
 
     findings = run(paths)
     errors = [f for f in findings if f.level == "error"]

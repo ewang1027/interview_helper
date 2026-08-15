@@ -176,6 +176,32 @@ def test_detects_copied_statement() -> None:
     assert any("original prose" in m or "overlaps" in m for m in errs)
 
 
+def test_detects_domain_modality_mismatch() -> None:
+    """A mismatch would route an item to a grader that cannot grade it."""
+    item = _item(domain="quant")  # modality stays "coding"
+    errs = _errors(check_items([item, _ARCHETYPE], _CONCEPTS))
+    assert any("requires modality" in m for m in errs)
+
+
+def test_warns_on_cross_domain_concept_tag() -> None:
+    """Legitimate occasionally, but a mis-tag writes evidence to the wrong concept."""
+    concepts = [
+        *_CONCEPTS,
+        {
+            "id": "kelly-criterion",
+            "domain": "quant",
+            "name": "Kelly",
+            "description": "d" * 30,
+            "prereqs": [],
+        },
+    ]
+    item = _item(concepts=["hash-set-dedup", "kelly-criterion"])
+    findings = [f for f in check_items([item, _ARCHETYPE], concepts) if item["id"] in f.where]
+    # A cross-domain tag is a warning, never an error — the item itself is still valid.
+    assert [f.message for f in findings if f.level == "error"] == []
+    assert any(f.level == "warn" and "is in domain 'quant'" in f.message for f in findings)
+
+
 def test_detects_missing_reference_solution() -> None:
     grading = {
         "type": "tests",

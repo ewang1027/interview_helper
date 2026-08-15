@@ -79,6 +79,38 @@ Bands: 22 foundational · 81 core · 56 advanced.
 - `starlette.testclient` warns that `httpx` support is deprecated in favour of
   `httpx2`. Not blocking; revisit when the test surface grows.
 
+### Self-review findings
+
+Reviewed the validator after committing, since a validator with a hole is worse than
+none — it grants false confidence. Two real gaps, both fixed (`make check` green,
+23 tests):
+
+1. **Domain and modality were never checked against each other.** An item with
+   `domain: "coding"` and `modality: "quant"` passed validation and would have been
+   routed to a grader that cannot grade it. They are 1:1; now enforced as an error.
+2. **Concept tags were never checked against the item's domain.** A coding item could
+   tag `kelly-criterion` and silently write evidence to a quant concept — corrupting
+   mastery in a way that is very hard to trace back. Now a *warning*, not an error,
+   because it is occasionally legitimate (a quant-dev coding problem really can touch
+   probability).
+
+Also hardened `main()`: a stray argument that is not an existing directory now falls
+back to the default corpus root instead of failing obscurely further down.
+
+Verified the cycle detector by hand against the diamond and repeated-push cases, since
+an iterative DFS with a stale-entry stack is exactly where a subtle false positive
+would hide. A stale `(node, False)` entry popped while the node is GREY is a genuine
+back edge, and popped while BLACK it is correctly skipped.
+
+**Known and accepted for now:**
+- `GET /corpus/status` reloads the whole corpus from disk per request. Fine at 159
+  concepts and 0 items; needs a cached loader once the corpus is real. Phase 3.
+- `starlette.testclient` warns that `httpx` support is deprecated in favour of
+  `httpx2`. Not blocking; revisit when the test surface grows.
+- The originality thresholds (12-gram, 15% containment) are untested against real
+  research output — they are calibrated on intuition. Phase 1 will produce the first
+  evidence about whether they are too strict or too loose.
+
 ### Deferred deliberately
 
 - `infra/compose/docker-compose.yml` — Phase 6 opens with it, and writing it before
