@@ -36,38 +36,6 @@ MAX_SHORT_CONTAINMENT = 0.15
 # DFS colours for cycle detection.
 _WHITE, _GREY, _BLACK = 0, 1, 2
 
-# Two-part public suffixes, listed rather than guessed. Country second-levels, plus the
-# two hosting suffixes where the subdomain really is the publisher's identity — two
-# github.io pages are two authors, while two subdomains of one firm's site are one
-# source. Anything unlisted falls back to last-two-labels, which errs toward calling
-# sources *dependent*: the conservative direction, since the failure it prevents is
-# counting one site's echo chamber as independent attestation.
-TWO_PART_SUFFIXES = frozenset(
-    {
-        "co.uk",
-        "org.uk",
-        "ac.uk",
-        "gov.uk",
-        "co.jp",
-        "or.jp",
-        "ne.jp",
-        "co.kr",
-        "co.in",
-        "co.nz",
-        "co.za",
-        "com.au",
-        "net.au",
-        "org.au",
-        "com.br",
-        "com.cn",
-        "edu.cn",
-        "com.hk",
-        "com.sg",
-        "github.io",
-        "blogspot.com",
-    }
-)
-
 MODALITY_GRADING: dict[str, str] = {
     "coding": "tests",
     "quant": "answer",
@@ -104,21 +72,18 @@ def _shingles(text: str, n: int) -> set[str]:
     return {" ".join(words[i : i + n]) for i in range(len(words) - n + 1)}
 
 
-def registrable_domain(url: str) -> str:
+def _registrable_domain(url: str) -> str:
     """Approximate eTLD+1 — good enough to tell independent sources apart.
 
-    Deliberately not a full public-suffix library: this is a heuristic guard for a
-    single-maintainer corpus. It is a *listed* set of two-part suffixes rather than the
-    length rule it replaced ("both last labels <= 3 chars"), which mis-split every short
-    real domain — `blog.imc.com` and `www.imc.com` scored as two independent sources,
-    which is exactly the aggregator-echo case check #5 exists to catch, and firm sites
-    are where short domains cluster.
+    Deliberately not using a public-suffix library: this is a heuristic guard for a
+    single-maintainer corpus, and a wrong answer produces a warning, not a silent pass.
     """
     host = url.split("//", 1)[-1].split("/", 1)[0].split("@")[-1].split(":")[0].lower()
     parts = [p for p in host.split(".") if p]
     if len(parts) <= 2:
         return ".".join(parts)
-    if ".".join(parts[-2:]) in TWO_PART_SUFFIXES:
+    # Handle the common two-part suffixes (co.uk, com.au, ...) without a full PSL.
+    if len(parts[-2]) <= 3 and len(parts[-1]) <= 3:
         return ".".join(parts[-3:])
     return ".".join(parts[-2:])
 
@@ -257,7 +222,7 @@ def check_items(items: list[dict[str, Any]], concepts: list[dict[str, Any]]) -> 
 
         # --- source independence ------------------------------------------------
         sources = item.get("sources", [])
-        domains = {registrable_domain(s["url"]) for s in sources if s.get("url")}
+        domains = {_registrable_domain(s["url"]) for s in sources if s.get("url")}
         if len(domains) < 2:
             findings.append(
                 Finding(

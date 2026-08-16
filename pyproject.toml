@@ -7,17 +7,15 @@ dependencies = [
     "api",
     "executor",
     "corpus",
-    "research",
 ]
 
 [tool.uv.workspace]
-members = ["apps/api", "apps/executor", "packages/corpus", "research"]
+members = ["apps/api", "apps/executor", "packages/corpus"]
 
 [tool.uv.sources]
 api = { workspace = true }
 executor = { workspace = true }
 corpus = { workspace = true }
-research = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -43,7 +41,7 @@ ignore = ["S101"]  # assert is fine in tests
 
 [tool.ruff.lint.isort]
 # Workspace packages, or ruff guesses inconsistently across apps/ and packages/.
-known-first-party = ["api", "executor", "corpus", "research"]
+known-first-party = ["api", "executor", "corpus"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -56,12 +54,7 @@ module = ["tests.*"]
 disallow_untyped_defs = false
 
 [tool.pytest.ini_options]
-testpaths = [
-    "apps/api/tests",
-    "apps/executor/tests",
-    "packages/corpus/tests",
-    "research/tests",
-]
+testpaths = ["apps/api/tests", "apps/executor/tests", "packages/corpus/tests"]
 asyncio_mode = "auto"
 markers = [
     "sandbox: executor isolation tests that must fail closed",
