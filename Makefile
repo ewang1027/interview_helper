@@ -3,7 +3,7 @@ SHELL := /bin/bash
 COMPOSE := docker compose -f infra/compose/docker-compose.yml
 
 .PHONY: help setup dev down check lint typecheck test fmt \
-        corpus-validate seed test-sandbox test-e2e cost-report clean
+        corpus-validate seed test-sandbox test-e2e cost-report secret-scan clean
 
 help: ## Show this help
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | sort | \
@@ -12,6 +12,7 @@ help: ## Show this help
 setup: ## Install Python (uv) and Node (pnpm) dependencies
 	uv sync --all-packages
 	cd apps/web && pnpm install
+	git config core.hooksPath hooks
 
 dev: ## Bring up the full stack locally (Postgres, API, web, executor)
 	$(COMPOSE) up --build
@@ -19,7 +20,7 @@ dev: ## Bring up the full stack locally (Postgres, API, web, executor)
 down: ## Tear down the local stack
 	$(COMPOSE) down
 
-check: lint typecheck test corpus-validate ## Everything CI runs
+check: lint typecheck test corpus-validate secret-scan ## Everything CI runs
 
 lint: ## Ruff + ESLint
 	uv run ruff check .
@@ -37,6 +38,9 @@ test: ## pytest
 
 corpus-validate: ## Validate the corpus against its schema, provenance and originality rules
 	uv run python -m corpus.validate
+
+secret-scan: ## Grep tracked files for common secret shapes (repo is public)
+	@bash scripts/secret_scan.sh
 
 seed: ## Load the corpus into the database
 	uv run python -m api.seed

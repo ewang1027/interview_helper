@@ -39,3 +39,8 @@ jobs:
       # job list without reading logs.
       - name: Validate corpus
         run: uv run python -m corpus.validate
+
+      # Backstop for GitHub's own secret scanning (push protection only sees a
+      # push after it lands). This repo is public: see docs/SECURITY.md.
+      - name: Secret scan
+        run: bash scripts/secret_scan.sh
