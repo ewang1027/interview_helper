@@ -151,8 +151,9 @@ def test_detects_non_independent_sources() -> None:
         {"url": "https://one.example.com/a", "retrieved_at": "2026-08-01", "evidence": "e" * 30},
         {"url": "https://one.example.com/b", "retrieved_at": "2026-08-01", "evidence": "f" * 30},
     ]
-    errs = _errors(check_items([_item(sources=same_site), _ARCHETYPE], _CONCEPTS))
-    assert any("independent sources" in m for m in errs)
+    item = _item(sources=same_site)
+    findings = [f for f in check_items([item, _ARCHETYPE], _CONCEPTS) if item["id"] in f.where]
+    assert any(f.level == "error" and "independent sources" in f.message for f in findings)
 
 
 def test_detects_copied_statement() -> None:
@@ -253,6 +254,43 @@ def test_registrable_domain() -> None:
     assert _registrable_domain("https://a.example.com/x") == _registrable_domain(
         "https://b.example.com/y"
     )
+
+
+def test_short_domains_are_not_mistaken_for_public_suffixes() -> None:
+    """Firm sites are exactly where three-letter domains live.
+
+    Inferring a two-part suffix from label length treats `imc.com` as the suffix and
+    keeps the subdomain, so one firm's site splits into several registrable domains.
+    """
+    assert _registrable_domain("https://blog.imc.com/x") == "imc.com"
+    assert _registrable_domain("https://www.imc.com/y") == "imc.com"
+    assert _registrable_domain("https://careers.drw.com/x") == _registrable_domain(
+        "https://www.drw.com/y"
+    )
+
+
+def test_hosting_suffixes_keep_the_publisher_apart() -> None:
+    """Two github.io pages are two authors, not one site echoing itself."""
+    assert _registrable_domain("https://alice.github.io/post") == "alice.github.io"
+    assert _registrable_domain("https://alice.github.io/p") != _registrable_domain(
+        "https://bob.github.io/p"
+    )
+
+
+def test_two_subdomains_of_a_short_domain_fail_the_independence_check() -> None:
+    """The consequence the split caused, asserted where it actually bites.
+
+    Findings are filtered to this item: the bare archetype fixture carries no sources
+    of its own, so an unfiltered search for the message would pass whatever the item
+    does.
+    """
+    one_firm = [
+        {"url": "https://blog.imc.com/a", "retrieved_at": "2026-08-01", "evidence": "e" * 30},
+        {"url": "https://www.imc.com/b", "retrieved_at": "2026-08-01", "evidence": "f" * 30},
+    ]
+    item = _item(sources=one_firm)
+    findings = [f for f in check_items([item, _ARCHETYPE], _CONCEPTS) if item["id"] in f.where]
+    assert any(f.level == "error" and "independent sources" in f.message for f in findings)
 
 
 def test_items_dir_absent_is_not_an_error(tmp_path: Path) -> None:

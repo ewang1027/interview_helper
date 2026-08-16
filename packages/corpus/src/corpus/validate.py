@@ -36,6 +36,36 @@ MAX_SHORT_CONTAINMENT = 0.15
 # DFS colours for cycle detection.
 _WHITE, _GREY, _BLACK = 0, 1, 2
 
+# Two-part public suffixes, listed rather than inferred. Country second-levels, plus
+# the two hosting suffixes where the subdomain is the publisher's identity: two
+# github.io pages are two authors, while two subdomains of one firm's site are one
+# source. Extend this list when a sweep meets a suffix it does not cover.
+TWO_PART_SUFFIXES = frozenset(
+    {
+        "co.uk",
+        "org.uk",
+        "ac.uk",
+        "gov.uk",
+        "co.jp",
+        "or.jp",
+        "ne.jp",
+        "co.kr",
+        "co.in",
+        "co.nz",
+        "co.za",
+        "com.au",
+        "net.au",
+        "org.au",
+        "com.br",
+        "com.cn",
+        "edu.cn",
+        "com.hk",
+        "com.sg",
+        "github.io",
+        "blogspot.com",
+    }
+)
+
 MODALITY_GRADING: dict[str, str] = {
     "coding": "tests",
     "quant": "answer",
@@ -75,15 +105,23 @@ def _shingles(text: str, n: int) -> set[str]:
 def _registrable_domain(url: str) -> str:
     """Approximate eTLD+1 — good enough to tell independent sources apart.
 
-    Deliberately not using a public-suffix library: this is a heuristic guard for a
-    single-maintainer corpus, and a wrong answer produces a warning, not a silent pass.
+    Deliberately not a public-suffix library: this is a heuristic guard for a
+    single-maintainer corpus. But the two-part suffixes are *listed* rather than
+    guessed from label length. The previous rule — both trailing labels <= 3 chars
+    means a two-part suffix — mis-split every short real domain, so `blog.imc.com`
+    and `www.imc.com` resolved to two different registrable domains and check #5
+    counted two pages on one firm's site as independent attestation. Trading firms
+    are exactly where three-letter domains cluster.
+
+    Anything unlisted falls back to the last two labels, which errs toward calling
+    sources *dependent* — the safe direction, since the failure being prevented is
+    an aggregator's echo passing for independent sources.
     """
     host = url.split("//", 1)[-1].split("/", 1)[0].split("@")[-1].split(":")[0].lower()
     parts = [p for p in host.split(".") if p]
     if len(parts) <= 2:
         return ".".join(parts)
-    # Handle the common two-part suffixes (co.uk, com.au, ...) without a full PSL.
-    if len(parts[-2]) <= 3 and len(parts[-1]) <= 3:
+    if ".".join(parts[-2:]) in TWO_PART_SUFFIXES:
         return ".".join(parts[-3:])
     return ".".join(parts[-2:])
 
