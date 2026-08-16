@@ -1,5 +1,9 @@
 # Infrastructure
 
+> **Status:** Specification and learning ramp — no AWS resource exists yet. Lands in
+> **Phase 6**. Nothing before Phase 6 depends on AWS; the app runs under Docker Compose.
+> Related: [SECURITY](SECURITY.md) (what these controls enforce) · [OPERATIONS](OPERATIONS.md) (running it once deployed) · [COST](COST.md) · [GLOSSARY](GLOSSARY.md#infrastructure)
+
 This file is written to **teach**, not just to specify. Phase 6 is as much a cloud-infra
 learning exercise as a deployment, so each concept is explained before it is used, and
 each Terraform module carries its own README saying what the resource is and why it

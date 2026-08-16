@@ -1,5 +1,8 @@
 # The concept taxonomy
 
+> **Status:** Built and verified (**Phase 0**). 159 concepts, DAG-validated in CI.
+> Related: [CORPUS](CORPUS.md) (items tag against these) · [ADAPTIVE](ADAPTIVE.md) (mastery is tracked per concept) · [GLOSSARY](GLOSSARY.md)
+
 `packages/corpus/data/concepts.json` is the machine-readable source; this file explains
 the rules it follows. **159 concepts** across four domains.
 

@@ -62,7 +62,32 @@ rate, overdue review, and prerequisite blocking.
 | `research/` | Claude Code-driven corpus ingestion pipeline (build time) |
 | `infra/compose/` | Portable deployment — runs the stack on any machine |
 | `infra/terraform/` | AWS: VPC, ALB, ECS Fargate, RDS, observability |
-| `docs/` | [ARCHITECTURE](docs/ARCHITECTURE.md) · [CONCEPTS](docs/CONCEPTS.md) · [CORPUS](docs/CORPUS.md) · [GRADING](docs/GRADING.md) · [ADAPTIVE](docs/ADAPTIVE.md) · [COST](docs/COST.md) · [INFRA](docs/INFRA.md) · [BUILDLOG](docs/BUILDLOG.md) |
+| `docs/` | Design and specification — see the map below |
+
+## Documentation
+
+New here? Read [GLOSSARY](docs/GLOSSARY.md) → [ARCHITECTURE](docs/ARCHITECTURE.md) →
+[BUILDLOG](docs/BUILDLOG.md). The glossary defines the vocabulary the others assume, and
+the buildlog is the only document that always describes reality — **if any doc and the
+buildlog disagree about what exists, the buildlog is right.**
+
+| Doc | Covers | Phase | Status |
+|---|---|---|---|
+| [BUILDLOG](docs/BUILDLOG.md) | What is actually built, and what each wave cost to learn | all | Current |
+| [GLOSSARY](docs/GLOSSARY.md) | Project vocabulary in one place | all | Current |
+| [ARCHITECTURE](docs/ARCHITECTURE.md) | Services, trust boundaries, data model, model routing | all | Design |
+| [CONCEPTS](docs/CONCEPTS.md) | The 159-concept taxonomy and its rules | 0 | ✅ Built |
+| [CORPUS](docs/CORPUS.md) | What a corpus item is; the validator's seven checks | 0 → 1 | ✅ Contract built |
+| [RESEARCH](docs/RESEARCH.md) | How items get researched and authored | 1 | Spec |
+| [SECURITY](docs/SECURITY.md) | Threat model, sandbox isolation, the five escape tests | 2 | Spec |
+| [GRADING](docs/GRADING.md) | The four graders and what they produce | 2 → 3 | Spec |
+| [API](docs/API.md) | Endpoints, session state machine, SSE events, agent tools | 3 | Spec |
+| [COST](docs/COST.md) | Model routing, hard budgets, the ledger | 3 → 6 | Policy set |
+| [ADAPTIVE](docs/ADAPTIVE.md) | Elo + FSRS, evidence, weakness priority, planning | 4 | Spec |
+| [WEB](docs/WEB.md) | Routes, the four mode workspaces, dashboard | 5 | Spec |
+| [INFRA](docs/INFRA.md) | AWS from first principles — written to teach | 6 | Spec |
+| [VOICE](docs/VOICE.md) | Vapi adapter, latency budget, what changes for speech | 7 | Spec |
+| [OPERATIONS](docs/OPERATIONS.md) | Backups, deploys, alarms, runbook | 8 | Spec |
 
 ## Quick start
 

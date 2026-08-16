@@ -1,5 +1,8 @@
 # Build log
 
+> **Status:** Current — this is the one document that always describes reality.
+> If another doc and this one disagree about what exists, this one is right.
+
 What has actually been built, phase by phase. `docs/ARCHITECTURE.md` describes the
 design; this records what exists on disk and what the next phase picks up.
 
@@ -119,6 +122,60 @@ back edge, and popped while BLACK it is correctly skipped.
   `docs/ARCHITECTURE.md` but land with the code that uses them in Phase 3, so the
   first migration reflects something real.
 - `apps/web` — Next.js scaffold lands in Phase 5.
+
+---
+
+## Documentation pass · 2026-08-16
+
+Not a phase — a gap-filling round after auditing coverage against the eight phases.
+
+**The problem measured.** Documentation was front-loaded and infra-heavy: 6,457 words,
+but the phases with the most remaining work had the least. Coverage by phase was 0 ✅,
+1 partial, 2 partial, **3 none**, 4 ✅, **5 none**, 6 ✅, **7 none**, **8 none**. Grepping
+confirmed it — "state machine", "threat", "seccomp", "escape test", "Monaco", and
+"restore" appeared nowhere, despite escape tests and a restore drill being stated gates.
+
+Structurally, the docs were hub-and-spoke with no spokes touching: README had 9 outbound
+links, and the eight docs had **one** link between them in total. Reading GRADING never
+led to ADAPTIVE, even though evidence is what connects them.
+
+**What was added.** Seven documents, each unblocking a phase that would otherwise have
+been improvised:
+
+| Doc | Unblocks |
+|---|---|
+| RESEARCH | Phase 1 — the pipeline that turns "no seed bank" into a corpus |
+| SECURITY | Phase 2 — threat model and the five escape tests its gate depends on |
+| API | Phase 3 — the contract the web app *and* the Vapi shim both build against |
+| WEB | Phase 5 |
+| VOICE | Phase 7 |
+| OPERATIONS | Phase 8 — plus backup/rollback, which go live with Phase 6 |
+| GLOSSARY | Vocabulary that was previously scattered across files |
+
+Plus a structural pass: a status banner on every doc so built-vs-designed is visible at a
+glance, cross-links between related docs, and a README documentation map with per-phase
+status.
+
+**Decisions recorded along the way** (fuller detail in each doc):
+
+- Archetype ranking is by evidence density — a recency-weighted count of independent
+  registrable domains — never by asking a model to score novelty or importance.
+- The originality rule is a *process* constraint, not only a validator check: read
+  sources to learn that a pattern is asked, then close them and write from the pattern.
+- The security posture prioritises credential exposure over sandbox exotica, because a
+  leaked Bedrock role against $10k of credits is the worst realistic outcome here.
+- Prompt injection is handled by capability design rather than filtering — the agent has
+  no tool that writes the corpus, sends anything outbound, or reads secrets.
+- `abandoned` sessions write evidence for what was graded; `failed` sessions write none.
+- Coding mode over voice grades the *explanation*, not the code, and writes evidence
+  against communication concepts. Pretending otherwise would write misleading evidence.
+- Only two tables are irreplaceable — `concept_evidence` and the session transcripts.
+  Everything else is derived, in git, or in Terraform.
+
+**Honest caveat.** These are specifications, not built systems. The odds that all of them
+survive contact with implementation unchanged are low — the API surface and the adaptive
+weights are the most likely to move. They are written to make Phases 1–8 executable
+rather than improvised, and the buildlog remains the record of what is actually true.
 
 ### Next: Phase 1 — Corpus v1
 

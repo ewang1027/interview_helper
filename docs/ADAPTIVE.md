@@ -1,6 +1,11 @@
 # The adaptive engine
 
-How the system decides what to make you do next. Implemented in Phase 4.
+> **Status:** Specification — not built. Lands in **Phase 4**. The weights in the
+> priority formula are placeholders to be calibrated against real sessions, not tuned
+> values.
+> Related: [CONCEPTS](CONCEPTS.md) (the DAG it plans over) · [GRADING](GRADING.md) (where evidence comes from) · [API](API.md#mastery-and-planning) (how it is exposed) · [GLOSSARY](GLOSSARY.md)
+
+How the system decides what to make you do next.
 
 ## The problem with the obvious approach
 

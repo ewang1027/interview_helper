@@ -1,5 +1,9 @@
 # Architecture
 
+> **Status:** Design. The service boundaries are real; almost none of the code is —
+> only health endpoints and the corpus loader exist today (**Phase 0**).
+> Related: [GLOSSARY](GLOSSARY.md) · [API](API.md) · [SECURITY](SECURITY.md) · [INFRA](INFRA.md) · [BUILDLOG](BUILDLOG.md) (what is actually built)
+
 ```
                         ┌──────────────────────────────────┐
    Claude Code          │  research/  (build time, Max plan)│

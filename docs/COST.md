@@ -1,5 +1,10 @@
 # Cost governance
 
+> **Status:** Policy set, nothing enforced yet — no model call has been made. Budgets and
+> the ledger land in **Phase 3**; AWS alarms in **Phase 6**. The per-session cost table
+> below is empty because no session has run.
+> Related: [ARCHITECTURE](ARCHITECTURE.md#model-routing) · [OPERATIONS](OPERATIONS.md#monitoring) · [RESEARCH](RESEARCH.md#where-it-runs-and-why-that-matters) (why research is free)
+
 This is a designed-in subsystem, not a dashboard bolted on later. A previous project
 (`learning_files`) exhausted a monthly usage cap mid-run and lost sixteen concurrent
 sessions. The rule that came out of that: **the system refuses work rather than

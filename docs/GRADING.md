@@ -1,5 +1,9 @@
 # Grading
 
+> **Status:** Specification — no grader is built. Deterministic graders land in
+> **Phase 2**, rubric graders in **Phase 3**.
+> Related: [SECURITY](SECURITY.md) (the sandbox code runs in) · [ADAPTIVE](ADAPTIVE.md) (what the evidence feeds) · [API](API.md) (how results reach the client) · [OPERATIONS](OPERATIONS.md) (calibration drift)
+
 Every graded artifact produces one thing: `concept_evidence` rows. Everything else —
 the score you see, the report, the next session's plan — is downstream of those.
 

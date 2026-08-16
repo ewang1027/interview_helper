@@ -1,5 +1,9 @@
 # The corpus and how it gets built
 
+> **Status:** Contract built and enforced (**Phase 0**) — schema and validator ship with
+> tests. **Zero items authored so far**; that is **Phase 1**.
+> Related: [RESEARCH](RESEARCH.md) (how items get made) · [CONCEPTS](CONCEPTS.md) (what they tag against) · [GRADING](GRADING.md) (what the grading contracts mean) · [GLOSSARY](GLOSSARY.md)
+
 The corpus is the question bank. It is **researched and authored at build time** by
 Claude Code running on your machine, and committed as versioned JSON under
 `packages/corpus/data/`. Nothing at runtime generates an item.
