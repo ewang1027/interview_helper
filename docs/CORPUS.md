@@ -2,7 +2,7 @@
 
 > **Status:** Contract built and enforced (**Phase 0**) — schema and validator ship with
 > tests. **Zero items authored so far**; that is **Phase 1**.
-> Related: [RESEARCH](RESEARCH.md) (how items get made) · [CONCEPTS](CONCEPTS.md) (what they tag against) · [GRADING](GRADING.md) (what the grading contracts mean) · [GLOSSARY](GLOSSARY.md)
+> Related: [RESEARCH](RESEARCH.md) (how items get made) · [CONCEPTS](CONCEPTS.md) (what they tag against) · [GRADING](GRADING.md) (what the grading contracts mean) · [GLOSSARY](GLOSSARY.md) · [PRACTICE_LOG](PRACTICE_LOG.md) (why its ingestion is manual-entry-only, not URL-fetch)
 
 The corpus is the question bank. It is **researched and authored at build time** by
 Claude Code running on your machine, and committed as versioned JSON under
@@ -56,6 +56,11 @@ published books) stay out of this repo. The validator enforces it mechanically:
 A `sources[].evidence` field is a *paraphrase* of why the source attests the pattern.
 Pasting a problem statement in there will trip the originality check on the very item
 it was meant to support, which is the intended behaviour.
+
+[PRACTICE_LOG](PRACTICE_LOG.md) (Phase 9) stays clear of this rule by construction
+rather than by exemption: it only ever stores a problem's `title`, its `url` (a
+pointer, never dereferenced), and your own notes — never the problem statement text
+itself, so there is nothing for the originality check to apply to.
 
 ## Validator checks
 

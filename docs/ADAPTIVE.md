@@ -3,7 +3,7 @@
 > **Status:** Specification — not built. Lands in **Phase 4**. The weights in the
 > priority formula are placeholders to be calibrated against real sessions, not tuned
 > values.
-> Related: [CONCEPTS](CONCEPTS.md) (the DAG it plans over) · [GRADING](GRADING.md) (where evidence comes from) · [API](API.md#mastery-and-planning) (how it is exposed) · [GLOSSARY](GLOSSARY.md)
+> Related: [CONCEPTS](CONCEPTS.md) (the DAG it plans over) · [GRADING](GRADING.md) (where evidence comes from) · [API](API.md#mastery-and-planning) (how it is exposed) · [GLOSSARY](GLOSSARY.md) · [PRACTICE_LOG](PRACTICE_LOG.md) (a second evidence source, and a lighter FSRS-inspired scheduler at problem granularity)
 
 How the system decides what to make you do next.
 
@@ -61,6 +61,12 @@ near-certain evidence about `two-pointers`; an LLM rubric's read on
 gives three things: the engine can explain itself, the rating math can be swapped
 without data loss, and a grader bug can be corrected by re-running rather than by
 hand-patching state.
+
+From Phase 9, [PRACTICE_LOG](PRACTICE_LOG.md) is a second producer of `concept_evidence`,
+for problems solved outside the app. Its own `practice_problems.due_at`/`stability_days`
+track a *problem's* re-solve schedule (capped at 3 solves, then graduated) and are
+distinct from this concept-level `mastery.due_at`/`stability` despite the shared
+vocabulary — the practice log feeds evidence into this engine, it does not replace it.
 
 ## Weakness priority
 

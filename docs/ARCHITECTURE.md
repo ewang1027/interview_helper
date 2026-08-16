@@ -2,7 +2,7 @@
 
 > **Status:** Design. The service boundaries are real; almost none of the code is —
 > only health endpoints and the corpus loader exist today (**Phase 0**).
-> Related: [GLOSSARY](GLOSSARY.md) · [API](API.md) · [SECURITY](SECURITY.md) · [INFRA](INFRA.md) · [BUILDLOG](BUILDLOG.md) (what is actually built)
+> Related: [GLOSSARY](GLOSSARY.md) · [API](API.md) · [SECURITY](SECURITY.md) · [INFRA](INFRA.md) · [BUILDLOG](BUILDLOG.md) (what is actually built) · [PRACTICE_LOG](PRACTICE_LOG.md)
 
 ```
                         ┌──────────────────────────────────┐
@@ -69,10 +69,11 @@ the database password" are never the same process.
 | `turns` | Every exchange, with the tool calls made. The grading input. |
 | `artifacts` | Code submissions, diagrams, transcripts. |
 | `gradings` | One row per graded artifact: score, per-criterion detail, grader version. |
-| `concept_evidence` | **Immutable.** The source of truth for mastery. |
+| `concept_evidence` | **Immutable.** The source of truth for mastery. Written by graded sessions and, from Phase 9, by the practice log — `item_id`/`session_id` are nullable, and a `source` column plus `practice_problem_id` distinguish the two producers. |
 | `mastery` | Derived projection: ability, stability, due_at, last_seen. |
 | `llm_calls` | Cost ledger: model, tokens in/out/cache, computed $, latency, session. |
 | `research_runs` | Provenance for corpus builds. |
+| `practice_problems`, `practice_solves` | Phase 9. External (LeetCode/Codeforces) problems logged manually, their classification against the corpus taxonomy, and their spaced re-solve schedule. See [PRACTICE_LOG](PRACTICE_LOG.md). |
 
 pgvector is used for semantic retrieval over corpus items and over your own past
 mistakes — "show me things I got wrong that resemble this" is a first-class query.
@@ -87,7 +88,9 @@ mistakes — "show me things I got wrong that resemble this" is a first-class qu
 | Classification, extraction | Haiku 4.5 | Mechanical work |
 
 All calls go through `ModelRouter`, so provider (Bedrock vs Anthropic direct) and model
-choice are config, not call-site decisions.
+choice are config, not call-site decisions. [PRACTICE_LOG](PRACTICE_LOG.md)'s problem
+classification (Phase 9) uses the existing "Classification, extraction" row above — it
+does not need a new job type.
 
 Prompt construction is cache-shaped: the frozen per-mode system prompt and the item
 context sit above the `cache_control` breakpoint, volatile turn content below. A CI

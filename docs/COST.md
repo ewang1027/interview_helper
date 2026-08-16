@@ -3,7 +3,7 @@
 > **Status:** Policy set, nothing enforced yet — no model call has been made. Budgets and
 > the ledger land in **Phase 3**; AWS alarms in **Phase 6**. The per-session cost table
 > below is empty because no session has run.
-> Related: [ARCHITECTURE](ARCHITECTURE.md#model-routing) · [OPERATIONS](OPERATIONS.md#monitoring) · [RESEARCH](RESEARCH.md#where-it-runs-and-why-that-matters) (why research is free)
+> Related: [ARCHITECTURE](ARCHITECTURE.md#model-routing) · [OPERATIONS](OPERATIONS.md#monitoring) · [RESEARCH](RESEARCH.md#where-it-runs-and-why-that-matters) (why research is free) · [PRACTICE_LOG](PRACTICE_LOG.md) (uses the existing classification job)
 
 This is a designed-in subsystem, not a dashboard bolted on later. A previous project
 (`learning_files`) exhausted a monthly usage cap mid-run and lost sixteen concurrent
@@ -62,6 +62,10 @@ Every model call appends to `llm_calls`:
 | `session_id`, `job` | Per-session and per-job attribution |
 
 `make cost-report` reads it. `/costs` in the web app renders it.
+
+[PRACTICE_LOG](PRACTICE_LOG.md)'s problem-classification calls (Phase 9) log here with
+`job="practice_log_classify"`, riding the existing "Classification, extraction" routing
+row above rather than adding a new one.
 
 ## Prompt caching
 

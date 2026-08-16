@@ -88,6 +88,7 @@ buildlog disagree about what exists, the buildlog is right.**
 | [INFRA](docs/INFRA.md) | AWS from first principles — written to teach | 6 | Spec |
 | [VOICE](docs/VOICE.md) | Vapi adapter, latency budget, what changes for speech | 7 | Spec |
 | [OPERATIONS](docs/OPERATIONS.md) | Backups, deploys, alarms, runbook | 8 | Spec |
+| [PRACTICE_LOG](docs/PRACTICE_LOG.md) | External problem tracker: LLM classification, spaced re-solve queue | 9 (needs 3+4) | Spec |
 
 ## Quick start
 
@@ -112,3 +113,4 @@ landed and what the next phase picks up.
 - [ ] **6 — AWS deploy**
 - [ ] **7 — Voice via Vapi**
 - [ ] **8 — Hardening**
+- [ ] **9 — Practice log:** external problem tracking, classification, spaced re-solve queue

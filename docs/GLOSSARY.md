@@ -64,6 +64,20 @@ it you fail for uninformative reasons; above it the item only confirms what is k
 **Calibration plan** — the cold-start session plan used before enough evidence exists to
 detect weakness.
 
+## Practice log
+
+**Practice problem** — an external (LeetCode/Codeforces) problem you logged manually
+after solving it: title, URL, notes, and a taxonomy classification. Never stores the
+problem's own statement text. → [PRACTICE_LOG](PRACTICE_LOG.md)
+
+**Review queue (practice log)** — practice problems that are `active` and past their
+`due_at`, ranked most-overdue first — the problem-level analog of the planner's
+weakness ranking. → [PRACTICE_LOG](PRACTICE_LOG.md#rest-endpoints-and-state-machine)
+
+**Graduation (practice log)** — a practice problem leaving the review queue for good
+after being solved 3 times; `due_at` is cleared and it is never prompted again.
+→ [PRACTICE_LOG](PRACTICE_LOG.md#spaced-re-solve-scheduling)
+
 ## Runtime
 
 **Session** — one mock interview: a mode, a time budget, a plan, a transcript, and the
