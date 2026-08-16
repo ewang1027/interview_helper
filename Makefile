@@ -2,8 +2,8 @@
 SHELL := /bin/bash
 COMPOSE := docker compose -f infra/compose/docker-compose.yml
 
-.PHONY: help setup dev down check lint typecheck test fmt \
-        corpus-validate seed test-sandbox test-e2e cost-report secret-scan clean
+.PHONY: help setup dev dev-api down check lint typecheck test fmt \
+        corpus-validate seed test-sandbox test-e2e test-db cost-report secret-scan clean
 
 help: ## Show this help
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | sort | \
@@ -14,8 +14,12 @@ setup: ## Install Python (uv) and Node (pnpm) dependencies
 	cd apps/web && pnpm install
 	git config core.hooksPath hooks
 
-dev: ## Bring up the full stack locally (Postgres, API, web, executor)
-	$(COMPOSE) up --build
+dev: ## Bring up Postgres (api/web/executor containers land in Phase 6 — see infra/compose/docker-compose.yml)
+	$(COMPOSE) up -d
+	uv run alembic -c apps/api/alembic.ini upgrade head
+
+dev-api: ## Run the API against the compose Postgres (uvicorn --reload)
+	uv run uvicorn api.main:app --reload --app-dir apps/api/src
 
 down: ## Tear down the local stack
 	$(COMPOSE) down
@@ -50,6 +54,9 @@ test-sandbox: ## Executor escape tests — all must fail closed
 
 test-e2e: ## One scripted session per interview mode against a live stack
 	uv run pytest apps/api/tests -q -m e2e
+
+test-db: ## DB-backed tests against a live Postgres (make dev first)
+	uv run pytest apps/api/tests -q -m db
 
 cost-report: ## Per-session token and dollar spend from the llm_calls ledger
 	uv run python -m api.cost_report

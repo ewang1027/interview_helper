@@ -14,6 +14,7 @@ dependencies = [
     "pgvector>=0.3",
     "sse-starlette>=2.2",
     "httpx>=0.28",
+    "python-ulid>=3.0",
     # Claude via Bedrock (credit-funded) with Anthropic-direct as the escape hatch
     "anthropic[bedrock]>=0.69",
     "corpus",

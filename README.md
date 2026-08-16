@@ -93,11 +93,16 @@ buildlog disagree about what exists, the buildlog is right.**
 ## Quick start
 
 ```sh
-make setup      # install Python (uv) and Node (pnpm) dependencies
-make dev        # bring up Postgres, API, and web locally
-make check      # ruff + mypy + pytest + eslint + tsc
+make setup      # install dependencies and the pre-push secret-scan hook
+make dev        # bring up Postgres and run migrations
 make seed       # load the corpus into the database
+make dev-api    # run the API against it (uvicorn --reload)
+make check      # ruff + mypy + pytest + corpus validate + secret scan
+make test-db    # schema tests against the live Postgres
 ```
+
+`make dev` currently brings up Postgres only — the `api`, `web` and `executor`
+containers land in Phase 6, when they have Dockerfiles.
 
 ## Build status
 
@@ -107,7 +112,8 @@ landed and what the next phase picks up.
 - [ ] **0 — Foundations:** repo, schema, taxonomy, corpus contract, CI
 - [ ] **1 — Corpus v1:** researched, evidence-ranked, original statements
 - [ ] **2 — Executor + deterministic grading**
-- [ ] **3 — Interview runtime (text) + API**
+- [ ] **3 — Interview runtime (text) + API** — *DB schema, migrations, settings and
+      model routing landed early (2026-08-16); sessions, grading, auth and budgets remain*
 - [ ] **4 — Adaptive engine**
 - [ ] **5 — Web app**
 - [ ] **6 — AWS deploy**

@@ -13,6 +13,23 @@ jobs:
   python:
     name: Python (lint · types · tests · corpus)
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: interview
+          POSTGRES_PASSWORD: interview
+          POSTGRES_DB: interview_helper
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U interview -d interview_helper"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+psycopg://interview:interview@localhost:5432/interview_helper
+
     steps:
       - uses: actions/checkout@v4
 
@@ -34,6 +51,16 @@ jobs:
 
       - name: Test
         run: uv run pytest -q
+
+      # The schema is only meaningfully tested against real Postgres — the CHECK
+      # constraint on concept_evidence has no SQLite equivalent.
+      - name: Migrate and seed
+        run: |
+          uv run alembic -c apps/api/alembic.ini upgrade head
+          uv run python -m api.seed
+
+      - name: DB tests
+        run: uv run pytest apps/api/tests -q -m db
 
       # The corpus gate is separate so a content-only failure is obvious in the
       # job list without reading logs.

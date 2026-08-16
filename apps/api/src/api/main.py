@@ -1,11 +1,12 @@
 """FastAPI entrypoint.
 
-Phase 0: health and corpus-status endpoints, enough for the compose stack to come up
-and for readiness probes to be wired before there is anything to be ready for.
+Phase 3: DB engine, ModelRouter and the schema exist; the session/grading/mastery
+routes from docs/API.md do not land here yet — this is the infra slice only.
 """
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Any
 
 from fastapi import FastAPI
@@ -26,9 +27,12 @@ def health() -> dict[str, str]:
     return {"status": "ok", "version": __version__}
 
 
-@app.get("/corpus/status")
-def corpus_status() -> dict[str, Any]:
-    """What content this build actually has. Useful before there is a UI."""
+@lru_cache
+def _corpus_status() -> dict[str, Any]:
+    """Cached: the corpus is a build-time artifact (docs/CORPUS.md) and does not
+    change within a running process, so reloading it from disk per request — the
+    Phase 0 behaviour — was pure waste. Was flagged in docs/BUILDLOG.md as a known
+    Phase 3 fix."""
     concepts = load_concepts()
     items = load_items()
     by_domain: dict[str, int] = {}
@@ -41,3 +45,9 @@ def corpus_status() -> dict[str, Any]:
         "archetypes": sum(1 for i in items if i.kind == "archetype"),
         "instances": sum(1 for i in items if i.kind == "instance"),
     }
+
+
+@app.get("/corpus/status")
+def corpus_status() -> dict[str, Any]:
+    """What content this build actually has. Useful before there is a UI."""
+    return _corpus_status()

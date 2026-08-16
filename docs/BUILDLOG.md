@@ -188,3 +188,94 @@ Open question to settle first: how many items per domain are worth authoring bef
 the runtime exists to use them. Leaning toward a thin vertical slice — ~15 instances
 per modality — so Phase 2 and 3 have real content to grade against, then bulk
 authoring after the loop is proven.
+
+---
+
+## Phase 3 (infra slice) — database, migrations, model routing · 2026-08-16
+
+Taken **out of phase order deliberately.** Phases 1 and 2 (corpus authoring, executor)
+are still unstarted; this landed the persistence and config layer they will both write
+into, because the practice log spec (`docs/PRACTICE_LOG.md`, Phase 9) needed a real
+schema to be more than prose. Sessions, the interviewer agent, grading, SSE and auth —
+the rest of `docs/API.md` — are **not** built.
+
+**Verified.** `make check` clean, plus DB-backed tests against real Postgres:
+
+```
+ruff check          All checks passed
+ruff format --check 40 files already formatted
+mypy (strict)       no issues in 15 source files
+pytest              29 passed, 3 deselected
+corpus validate     159 concepts · 0 items · 0 errors, 0 warnings
+secret scan         clean
+pytest -m db        3 passed        (live Postgres, after make dev)
+alembic check       No new upgrade operations detected
+```
+
+Also verified by running, not by reading: `alembic downgrade base && upgrade head`
+round-trips cleanly; `make seed` loads 159 concepts idempotently (run three times);
+`uvicorn api.main:app` boots and serves `/health` and `/corpus/status` (159 concepts,
+52/51/37/19 by domain).
+
+### What landed
+
+| Area | State |
+|---|---|
+| `apps/api/src/api/models.py` | All 15 tables from ARCHITECTURE's data model, plus the two practice-log tables |
+| `apps/api/migrations/` | Alembic env + initial migration `6e1d353bc543`, applied and round-tripped |
+| `apps/api/src/api/settings.py` | Pydantic Settings over every var in `.env.example` — nothing calls `os.environ` |
+| `apps/api/src/api/db.py` | Sync psycopg3 engine + `get_session` dependency |
+| `apps/api/src/api/model_router.py` | Job → model resolution and the Bedrock/Anthropic client factory. **No call sites yet** |
+| `apps/api/src/api/seed.py` | `make seed` — idempotent corpus upsert |
+| `apps/api/src/api/cost_report.py` | `make cost-report` — reads `llm_calls`, prints zeros on an empty ledger |
+| `infra/compose/docker-compose.yml` | Postgres only (pgvector/pgvector:pg16) |
+| CI | Postgres service + migrate/seed/db-test steps |
+
+### Decisions worth keeping
+
+- **`concept_evidence` gained its two-producer shape now rather than at Phase 9.**
+  `item_id`/`session_id` are nullable, `practice_problem_id` and `source` are new, and a
+  CHECK constraint enforces that exactly one of the two is set. Retrofitting a
+  nullability change onto a populated immutable table later would have been the
+  expensive version of this.
+- **`InterviewSession`, not `Session`.** The table is `sessions`, but the class cannot
+  be `Session` without shadowing `sqlmodel.Session` in every module that imports both.
+- **Compose ships Postgres alone.** BUILDLOG previously deferred the whole file to
+  Phase 6 on the grounds that composing not-yet-existing services would be guessing —
+  that reasoning still holds for `api`/`web`/`executor` (none has a Dockerfile). Postgres
+  is the one service that exists and is needed now. `make dev-api` runs uvicorn against it.
+- **A `db` pytest marker, excluded by default.** The CHECK constraint has no SQLite
+  equivalent, so the schema is only meaningfully tested against real Postgres. Default
+  `pytest` stays hermetic; `make test-db` and CI run the DB tests explicitly.
+
+### Things found by running them
+
+- **`script_location = migrations` silently resolves against cwd**, so
+  `alembic -c apps/api/alembic.ini upgrade head` worked from `apps/api/` and failed from
+  the repo root — which is exactly how `make dev` and CI invoke it. Fixed with
+  `%(here)s`. Would have shipped as a green local run and a red CI run.
+- **Alembic's autogenerate emits `sqlmodel.sql.sqltypes.AutoString()` without importing
+  `sqlmodel`**, so the generated migration failed at import. The import is added to the
+  template; check it on every future autogenerate.
+- **`corpus.Concept.deprecated_at` is a `date`, the column is a `datetime`.** mypy strict
+  caught it before Postgres did; `seed.py` converts explicitly rather than relying on
+  driver coercion.
+
+### Deferred deliberately
+
+- **Auth.** `docs/API.md` specifies GitHub OAuth and a signed cookie; nothing is
+  implemented, and no endpoint currently requires one. Any route added before auth lands
+  is open — that is fine while the only routes are `/health` and `/corpus/status`, and it
+  is a gate before anything that reads or writes user data.
+- **The `ModelRouter` has no call sites and has never made a real model call.** It
+  resolves config and constructs a client; that is all that is verified. Token budgets
+  (`MAX_TOKENS_PER_*`) are read into settings but **not enforced anywhere** — the
+  middleware `docs/COST.md` describes does not exist yet.
+- **pgvector is installed in the container and the extension is created, but no table has
+  an embedding column.** Semantic retrieval lands with the code that needs it.
+
+### Next
+
+Phase 1 (corpus) and Phase 2 (executor) remain the real next steps, unchanged. When
+Phase 3 proper resumes, it picks up auth, sessions, the agent loop, and the budget
+middleware against a schema that already exists.
