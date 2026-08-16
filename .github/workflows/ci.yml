@@ -30,7 +30,7 @@ jobs:
           uv run ruff format --check .
 
       - name: Typecheck
-        run: uv run mypy apps/api/src apps/executor/src packages/corpus/src
+        run: uv run mypy apps/api/src apps/executor/src packages/corpus/src research/src
 
       - name: Test
         run: uv run pytest -q
@@ -39,3 +39,6 @@ jobs:
       # job list without reading logs.
       - name: Validate corpus
         run: uv run python -m corpus.validate
+
+      - name: Check research provenance
+        run: uv run python -m research.runlog

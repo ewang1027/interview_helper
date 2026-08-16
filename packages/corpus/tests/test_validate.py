@@ -12,10 +12,10 @@ from typing import Any
 
 from corpus.loader import CorpusPaths, load_concepts
 from corpus.validate import (
-    _registrable_domain,
     check_concept_graph,
     check_items,
     check_schema,
+    registrable_domain,
     run,
 )
 
@@ -245,13 +245,35 @@ def test_detects_rubric_weights_not_summing_to_one() -> None:
 
 
 def test_registrable_domain() -> None:
-    assert _registrable_domain("https://www.example.com/x") == "example.com"
-    assert _registrable_domain("http://example.org") == "example.org"
+    assert registrable_domain("https://www.example.com/x") == "example.com"
+    assert registrable_domain("http://example.org") == "example.org"
     # Two-part public suffixes keep three labels, so co.uk sites stay distinguishable.
-    assert _registrable_domain("https://blog.example.co.uk/x") == "example.co.uk"
+    assert registrable_domain("https://blog.example.co.uk/x") == "example.co.uk"
     # Subdomains of one site must collapse together, or "independent sources" is a lie.
-    assert _registrable_domain("https://a.example.com/x") == _registrable_domain(
+    assert registrable_domain("https://a.example.com/x") == registrable_domain(
         "https://b.example.com/y"
+    )
+
+
+def test_short_domains_are_not_mistaken_for_public_suffixes() -> None:
+    """The bug the length heuristic had: firm sites are exactly where short names live.
+
+    `imc.com` and `drw.com` end in two <=3-letter labels, so the old rule treated the
+    domain itself as a public suffix and kept the subdomain — making two pages on one
+    firm's site look like two independent sources.
+    """
+    assert registrable_domain("https://blog.imc.com/x") == "imc.com"
+    assert registrable_domain("https://www.imc.com/y") == "imc.com"
+    assert registrable_domain("https://careers.drw.com/x") == registrable_domain(
+        "https://www.drw.com/y"
+    )
+
+
+def test_hosting_suffixes_keep_the_publisher_apart() -> None:
+    """Two github.io pages are two authors, not one site echoing itself."""
+    assert registrable_domain("https://alice.github.io/post") == "alice.github.io"
+    assert registrable_domain("https://alice.github.io/post") != registrable_domain(
+        "https://bob.github.io/post"
     )
 
 

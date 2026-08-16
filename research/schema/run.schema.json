@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://interview-helper.local/schema/run.schema.json",
+  "title": "ResearchRun",
+  "description": "One recorded run of the corpus research pipeline. This is the row RESEARCH.md calls `research_runs`: what was searched, what was seen, what was written. It is what makes 'why is this question in the corpus?' answerable months later, so a run that found nothing is still worth recording.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["run_id", "started_at", "domains", "queries", "sources_seen", "outcome"],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9-]+$",
+      "description": "e.g. 2026-08-16-corpus-v1."
+    },
+    "started_at": { "type": "string", "format": "date" },
+    "ended_at": { "type": ["string", "null"], "format": "date" },
+    "phase": { "type": ["integer", "null"], "minimum": 0 },
+    "domains": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "enum": ["coding", "quant", "system_design", "behavioral"] },
+      "uniqueItems": true
+    },
+    "queries": {
+      "type": "array",
+      "description": "Every query issued, whether or not it produced anything. A dry sweep recorded is a dry sweep not repeated next quarter.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["query", "domain", "results"],
+        "properties": {
+          "query": { "type": "string", "minLength": 3 },
+          "domain": { "enum": ["coding", "quant", "system_design", "behavioral"] },
+          "results": { "type": "integer", "minimum": 0 },
+          "kept": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many returned URLs became cited sources."
+          },
+          "note": { "type": "string" }
+        }
+      }
+    },
+    "sources_seen": {
+      "type": "array",
+      "description": "Every URL the sweep surfaced, used or not. Items cite URLs; this is where each URL's tier and publication date live, because the item schema deliberately carries no quality judgement.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["url", "tier", "used"],
+        "properties": {
+          "url": { "type": "string", "format": "uri" },
+          "title": { "type": "string" },
+          "tier": {
+            "enum": ["firsthand", "curated", "listicle"],
+            "description": "firsthand = someone reporting their own loop or a firm describing its own process; curated = an edited guide or course with a named author; listicle = aggregated question dumps."
+          },
+          "published": {
+            "type": ["string", "null"],
+            "pattern": "^[0-9]{4}(-[0-9]{2}(-[0-9]{2})?)?$",
+            "description": "Publication date if the page states one. Null means unknown, which density scoring treats as a stated default rather than guessing."
+          },
+          "used": { "type": "boolean", "description": "Whether any item cites this URL." },
+          "note": { "type": "string" }
+        }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["archetypes_added", "archetypes_merged", "instances_authored"],
+      "properties": {
+        "archetypes_added": { "type": "integer", "minimum": 0 },
+        "archetypes_merged": { "type": "integer", "minimum": 0 },
+        "instances_authored": { "type": "integer", "minimum": 0 },
+        "items_deprecated": { "type": "integer", "minimum": 0, "default": 0 },
+        "validator_errors": { "type": "integer", "minimum": 0 },
+        "validator_warnings": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "notes": { "type": "string" }
+  }
+}
