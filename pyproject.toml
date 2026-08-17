@@ -63,4 +63,4 @@ markers = [
     "llm: tests that make real model calls (cost money, skipped by default)",
     "db: tests requiring a live Postgres (make dev), run via make test-db",
 ]
-addopts = "-m 'not e2e and not llm and not db'"
+addopts = "-m 'not e2e and not llm and not db and not sandbox'"

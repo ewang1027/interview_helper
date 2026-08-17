@@ -279,3 +279,100 @@ round-trips cleanly; `make seed` loads 159 concepts idempotently (run three time
 Phase 1 (corpus) and Phase 2 (executor) remain the real next steps, unchanged. When
 Phase 3 proper resumes, it picks up auth, sessions, the agent loop, and the budget
 middleware against a schema that already exists.
+
+---
+
+## Phase 2 (isolation layer) — the sandbox, measured rather than assumed · 2026-08-18
+
+The executor's **isolation** layer, and only that. `POST /execute`, the language test
+harnesses, and the complexity probe are **not** built — the `test_no_execute_endpoint_yet`
+guard is still in place and still passing, deliberately.
+
+**Verified.**
+
+```
+make check          33 passed, 10 deselected (hermetic — no Docker, 0.52s)
+make test-sandbox   7 passed  (6 escape tests + 1 sanity control, real Docker, 11s)
+ruff / format       All checks passed · 44 files formatted
+mypy (strict)       no issues in 17 source files
+secret scan         clean
+```
+
+### The escape tests were verified to FAIL
+
+A green escape test proves nothing by itself, so each was re-run against a deliberately
+weakened sandbox:
+
+| Weakening | Observed | Test outcome |
+|---|---|---|
+| drop `--network none` | `tcp:REACHED` | would fail |
+| drop the `/etc` overlay | `READ_OK:/etc/passwd` | would fail |
+| drop the explicit `docker kill` | **container still running after its own timeout** | would fail |
+
+A `test_sanity_a_normal_program_runs` control guards the opposite error: a sandbox so
+broken it runs nothing would otherwise make all six escape tests pass.
+
+### Three specified controls did not work as written
+
+All three came out of measuring rather than reading, and all three would have shipped as
+green tests verifying nothing. Full detail in `docs/SECURITY.md`'s new "Measured
+behaviour" section; the short form:
+
+- **`subprocess(timeout=)` on `docker run` kills the CLI, not the container.** The daemon
+  keeps running the code and `--rm` never fires, so the container leaks too. Test 5 would
+  have reported `timeout` correctly while a runaway container burned CPU indefinitely.
+  Reproduced directly during the negative-control pass. An explicit `docker kill` (0.10s)
+  is the actual enforcement; `docker stop` measured 10.1s against a SIGTERM-ignoring
+  process, which is a hang wearing a timeout's clothes.
+- **`--read-only` does not deny reads.** Test 2 was unachievable as specified. Needs a
+  non-root `--user` plus an empty read-only tmpfs over `/etc`.
+- **A custom seccomp profile replaces the default rather than layering on it**, so the
+  spec's "default profile plus explicit denies" is not expressible. Writing the natural
+  version would have *weakened* the sandbox — the default was measured genuinely blocking
+  `unshare(CLONE_NEWUSER)`, which a `defaultAction: ALLOW` profile re-permits. Docker's
+  default is left untouched and **`ptrace` is a named open gap**, not a solved problem.
+
+### Smaller traps, each now a comment in `sandbox.py`
+
+- `--memory` without `--memory-swap` grants an equal amount of swap, silently doubling
+  the real limit.
+- `--workdir` pointed at a tmpfs flips its mode from `1777` to `0755 root:root`, so every
+  execution fails `PermissionError` on its own scratch dir unless `uid=,gid=,mode=` are
+  passed explicitly.
+- Exit 137 means both "OOM-killed" and "we killed it" — telling them apart needs
+  `docker inspect .State.OOMKilled`, which `--rm` makes impossible. Hence run → inspect →
+  remove, plus a labelled reaper.
+- A recursive fork bomb was measured **exiting 0 with empty output**. Never infer success
+  from exit 0 alone.
+- **Bind mounts silently produce an empty directory on Colima** when the source is outside
+  its shared mounts — no error at all — while working fine on Linux CI. Candidate code is
+  fed on stdin instead, which sidesteps the class.
+
+### An architectural question this raised, deliberately left open
+
+`ARCHITECTURE.md` and `.env.example` (`EXECUTOR_URL`) describe the executor as a
+long-lived HTTP service that the API calls. But launching a sandboxed container requires
+access to the Docker socket, and **the Docker socket is root-equivalent control of the
+host** — anyone holding it can start a privileged container mounting `/`. Giving it to
+the service whose entire job is running LLM-generated code would invert the trust
+boundary this project treats as its most valuable property.
+
+That points at a different topology: the *trusted* side launches a short-lived,
+credential-free container per execution, and `apps/executor` becomes the image and
+in-container harness rather than a service. That is a real change to the documented
+service diagram, so it is **not** being made unilaterally — `sandbox.py` is written as a
+library that works under either topology, and the decision is owed before `POST /execute`
+lands. Nothing is blocked meanwhile.
+
+### Deferred deliberately
+
+- `POST /execute` and the language harnesses — they need corpus items with real tests to
+  run against (Phase 1), and the topology question above settled first.
+- Vendoring Docker's default seccomp profile to close the `ptrace` gap.
+- A purpose-built sandbox image. `python:3.12-slim` is used as-is; isolation lives in the
+  run flags, not the image, and a Dockerfile is Phase 6 work anyway.
+
+### Next
+
+Unchanged: Phase 1 (corpus) and the rest of Phase 2 (execution/grading on top of this
+isolation layer). Settle the executor topology question before `POST /execute`.

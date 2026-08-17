@@ -1,7 +1,10 @@
 # Security
 
-> **Status:** Threat model and test specification — the executor itself is not built.
-> Isolation lands in **Phase 2**; AWS-layer enforcement in **Phase 6**.
+> **Status:** Isolation layer **built and verified** (2026-08-18) — the six escape tests
+> pass against real Docker, and each was confirmed to fail against a deliberately
+> weakened sandbox. The execution/grading layer above it (`POST /execute`, the test
+> harness, the complexity probe) is **not** built. AWS-layer enforcement in **Phase 6**.
+> "Measured behaviour" below records where this document's original claims were wrong.
 > Related: [ARCHITECTURE](ARCHITECTURE.md) (service boundaries) · [INFRA](INFRA.md) (where these controls are configured) · [GRADING](GRADING.md) (what the executor is for)
 
 ## Being honest about the threat model
@@ -51,10 +54,10 @@ Six layers, each independently sufficient to prevent a class of harm:
 | Layer | Control | Blocks |
 |---|---|---|
 | Network | No egress. Enforced by Docker network config locally and a security group with **no outbound rules** in AWS | Exfiltration, callbacks, dependency fetching |
-| Filesystem | Read-only root; one writable `tmpfs` scratch dir per execution, destroyed after | Persistence, cross-execution contamination |
+| Filesystem | Read-only root, **plus a read-only `/etc` overlay and a non-root uid** — read-only root alone does not deny *reads*; one writable `tmpfs` scratch dir per execution, destroyed after | Persistence, cross-execution contamination |
 | Identity | Runs as a non-root user with no shell | Privilege escalation |
 | Capabilities | All Linux capabilities dropped; `no-new-privileges` | Kernel-adjacent tricks |
-| Syscalls | Default seccomp profile, plus explicit deny for `mount`, `ptrace`, `unshare`, socket families | Sandbox escape primitives |
+| Syscalls | Docker's default seccomp profile. The "plus explicit deny" this row used to promise is **not** implemented — see "Measured behaviour" for why adding it as written would have *weakened* the sandbox | Sandbox escape primitives |
 | Resources | Wall-clock timeout, memory cap, PID cap, CPU quota | Denial of service against the host |
 
 Isolation is at the **infrastructure** layer, not in code. "The sandbox has no network" is
@@ -71,7 +74,7 @@ the failure is reported as a grading failure rather than a crash. They live in
 |---|---|---|---|
 | 1 | `test_no_network_egress` | DNS resolve, raw socket connect, and an HTTP GET to a public address | All three fail; execution returns a normal failed result |
 | 2 | `test_no_filesystem_escape` | Read `/etc/passwd`, read outside the scratch dir, write outside the scratch dir, traverse with `../` | Reads outside scratch denied; writes outside denied |
-| 3 | `test_pid_exhaustion` | Fork bomb | Killed at the PID cap; **the executor service still answers `/health`** |
+| 3 | `test_pid_exhaustion` | Fork bomb | Killed at the PID cap; the host survives. *Currently asserted as "the Docker daemon still answers" — there is no long-lived execute service to health-check yet; tighten to `/health` when `POST /execute` lands* |
 | 4 | `test_memory_bomb` | Allocate past the memory cap | OOM-killed; service survives; result reports the limit that was hit |
 | 5 | `test_wall_clock_timeout` | Infinite loop | Killed at the timeout; result reports a timeout, not a hang |
 
@@ -84,6 +87,72 @@ grades:
 `learning_files`, where a C++ test whose loop condition depended on the function under
 test hung forever against a safe no-op stub. Every limit above has a hard kill, not a
 best-effort request to stop.
+
+## Measured behaviour — where this document was wrong
+
+Every control above was measured on Colima/macOS arm64 (Docker Engine 29.5.2, Ubuntu
+24.04 kernel, cgroup v2) rather than taken from documentation. Most held exactly as
+specified: `--network none`, `--pids-limit`, `--memory`, `--cap-drop=ALL`, and the tmpfs
+scratch all did what this file claimed. Five things did not.
+
+**1. `--read-only` does not deny reads.** It blocked every write, but `/etc/passwd` read
+fine — so escape test 2 was unachievable as written. Denying reads needs a non-root
+`--user` *plus* overlaying `/etc` with an empty read-only tmpfs. `/proc/1/environ` stays
+readable regardless; there is no flag that closes it, so the compensating control is
+that **the executor is injected with no environment secrets** — which the credential
+rule above already required, now load-bearing for a second reason.
+
+**2. A naive `subprocess(timeout=)` on `docker run` kills the CLI, not the container.**
+The daemon keeps running the code, and because the client died `--rm` never fires, so
+the container leaks too. Escape test 5 would have reported `timeout` perfectly correctly
+while a runaway container burned CPU indefinitely — a green test verifying nothing. An
+explicit `docker kill` is the actual enforcement (measured 0.10s). `docker stop` is not
+an acceptable substitute: measured 10.1s against a process that ignores SIGTERM, which
+is a hang wearing a timeout's clothes.
+
+**3. A custom seccomp profile replaces the default rather than layering on it.** So the
+natural reading of the Syscalls row — default profile *plus* a few denies — is not
+expressible: a `defaultAction: SCMP_ACT_ALLOW` profile with deny rules would re-permit
+everything Docker's default blocks, and the default was measured genuinely blocking
+`unshare(CLONE_NEWUSER)`. Overriding it would have been a **net weakening dressed as
+hardening**. Docker's default is therefore left in place unmodified.
+
+The cost is a real, named gap: **`ptrace` is permitted under the default profile**
+(measured: `PTRACE_TRACEME` returns 0). Closing it requires vendoring the ~900-line
+default profile and appending denies, which is deferred rather than faked. The residual
+risk is small — a single-process container, non-root, all capabilities dropped, with no
+other process worth tracing — but it is a gap, not a solved problem. Custom profiles
+*are* genuinely enforced under Colima (verified three ways, including `SCMP_ACT_KILL`
+producing exit 159), so this is a scoping decision, not a platform limitation.
+
+**4. Exit code 137 is ambiguous, so `--rm` cannot be used.** A wall-clock `docker kill`
+and a kernel OOM kill both exit 137. Telling them apart needs
+`docker inspect .State.OOMKilled`, which is impossible once `--rm` has destroyed the
+container. Escape test 4 requires the result to report *which* limit was hit, so the
+executor runs, inspects, then removes — with a labelled reaper for containers orphaned
+between those steps.
+
+**5. Neither the fork bomb nor the OOM kill can self-report.** At the PID cap the
+process cannot fork enough to print, and a recursive fork bomb was measured **exiting 0
+with empty output** because PID 1 backgrounded its children and returned. Two rules
+follow: never infer success from exit 0 alone, and never expect the sandboxed process to
+explain its own death — the evidence comes from outside the container.
+
+One more trap, not a control failure but a portability one: **bind mounts silently
+produce an empty directory on Colima** when the source is outside its shared mounts, with
+no error at all. The same mount works natively on Linux CI. Candidate code is therefore
+fed on **stdin**, never bind-mounted, which sidesteps a whole class of "green in CI,
+silently mounts nothing locally".
+
+### These tests were verified to fail
+
+A passing escape test proves nothing on its own. Each was re-run against a deliberately
+weakened sandbox to confirm it is load-bearing: removing `--network none` produced
+`tcp:REACHED`, removing the `/etc` overlay produced `READ_OK:/etc/passwd`, and removing
+the explicit `docker kill` left the container **still running after its own timeout**.
+All three would have failed the corresponding test. A `test_sanity_a_normal_program_runs`
+control guards the opposite failure — a sandbox so broken it runs nothing would otherwise
+make every escape test pass.
 
 ## Prompt injection
 

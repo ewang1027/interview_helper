@@ -111,7 +111,8 @@ landed and what the next phase picks up.
 
 - [ ] **0 — Foundations:** repo, schema, taxonomy, corpus contract, CI
 - [ ] **1 — Corpus v1:** researched, evidence-ranked, original statements
-- [ ] **2 — Executor + deterministic grading**
+- [ ] **2 — Executor + deterministic grading** — *isolation layer landed and verified
+      (2026-08-18); `POST /execute`, test harnesses and the complexity probe remain*
 - [ ] **3 — Interview runtime (text) + API** — *DB schema, migrations, settings and
       model routing landed early (2026-08-16); sessions, grading, auth and budgets remain*
 - [ ] **4 — Adaptive engine**
