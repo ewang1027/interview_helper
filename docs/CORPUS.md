@@ -46,12 +46,30 @@ source.
 **Statements are original prose. Sources justify the archetype, never supply the text.**
 
 This is not a soft preference — proprietary problem statements (LeetCode, HackerRank,
-published books) stay out of this repo. The validator enforces it mechanically:
+published books) stay out of this repo.
 
 | Check | Threshold | Level |
 |---|---|---|
-| Shared word run with a source | any 12-gram | error |
-| Containment of a source's 8-grams in the statement | > 15% | error |
+| Shared word run with a source's `evidence` | any 12-gram | error |
+| Containment of a source's `evidence` 8-grams in the statement | > 15% | error |
+
+**Be precise about what this actually enforces.** The validator runs offline and has no
+copy of the source page, so it compares the statement against the item's own
+`sources[].evidence` field — *the author's paraphrase*, not the source text. That catches
+an author who pastes problem text into their evidence note, and nothing else. **A
+statement copied verbatim from a live URL passes this check cleanly.**
+
+So the originality rule is enforced by *process*, not by the validator: read sources to
+learn that a pattern is asked, close them, and write the problem from the pattern. The
+shingle check is a backstop against one specific slip, not a guarantee. Treating it as
+proof of originality would be exactly the false confidence this project keeps trying to
+avoid — and the check's own error message ("overlaps N% of source `<url>` text") reads as
+though the page were compared, which is worth fixing when this is next touched.
+
+Closing the gap properly means storing a snapshot of each source's text at research time
+and shingling against that. That is real work — fetching, storing, and licensing
+third-party text the repo is otherwise careful not to hold — and it is deferred, not
+solved.
 
 A `sources[].evidence` field is a *paraphrase* of why the source attests the pattern.
 Pasting a problem statement in there will trip the originality check on the very item
