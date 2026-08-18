@@ -3,7 +3,8 @@ SHELL := /bin/bash
 COMPOSE := docker compose -f infra/compose/docker-compose.yml
 
 .PHONY: help setup dev dev-api down check lint typecheck test fmt \
-        corpus-validate seed test-sandbox test-e2e test-db cost-report secret-scan clean
+        corpus-validate seed test-sandbox test-e2e test-db cost-report secret-scan \
+        verify-solutions clean
 
 help: ## Show this help
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | sort | \
@@ -45,6 +46,9 @@ corpus-validate: ## Validate the corpus against its schema, provenance and origi
 
 secret-scan: ## Grep tracked files for common secret shapes (repo is public)
 	@bash scripts/secret_scan.sh
+
+verify-solutions: ## Run every coding item's reference solution against its own tests, in the sandbox
+	uv run python scripts/verify_reference_solutions.py --strict-stub-check
 
 seed: ## Load the corpus into the database
 	uv run python -m api.seed

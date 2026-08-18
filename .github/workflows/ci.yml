@@ -70,6 +70,11 @@ jobs:
       - name: Sandbox escape tests
         run: uv run pytest apps/executor/tests -q -m sandbox
 
+      # docs/GRADING.md: reference solutions are verified, not trusted. Runs them
+      # through the same sandbox a candidate's submission gets.
+      - name: Verify reference solutions
+        run: uv run python scripts/verify_reference_solutions.py --strict-stub-check
+
       # The corpus gate is separate so a content-only failure is obvious in the
       # job list without reading logs.
       - name: Validate corpus
