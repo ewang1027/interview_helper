@@ -91,7 +91,11 @@ Run `make corpus-validate`. All seven must pass:
 5. At least two independent sources per item.
 6. Originality — the two shingle thresholds above.
 7. Grading contract matches modality; coding items ship a reference solution for every
-   language they declare; rubric weights sum to 1.0.
+   language they declare; criterion weights sum to 1.0, criterion ids are unique, and any
+   `concept` a criterion names resolves. This applies to **both** `rubric.criteria` and a
+   quant item's `reasoning_rubric` — the weight check originally lived in the rubric
+   branch alone, so a reasoning rubric summing to 0.8 validated cleanly and silently
+   scaled every score derived from it.
 
 Each check has a test in `packages/corpus/tests/test_validate.py` that proves it
 *catches* the corresponding failure. A validator that only ever passes is

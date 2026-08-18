@@ -274,7 +274,7 @@ def check_items(items: list[dict[str, Any]], concepts: list[dict[str, Any]]) -> 
         findings.extend(_check_originality(item, where))
 
         # --- grading contract ---------------------------------------------------
-        findings.extend(_check_grading(item, where))
+        findings.extend(_check_grading(item, where, concept_ids))
 
     return findings
 
@@ -313,7 +313,58 @@ def _check_originality(item: dict[str, Any], where: str) -> list[Finding]:
     return findings
 
 
-def _check_grading(item: dict[str, Any], where: str) -> list[Finding]:
+def _check_criteria(
+    criteria: list[dict[str, Any]], where: str, label: str, concept_ids: set[str]
+) -> list[Finding]:
+    """Weight sum and concept resolution for a criterion list.
+
+    Shared by `rubric.criteria` and `answer.reasoning_rubric`. It used to be inlined in
+    the rubric branch only, so a quant item whose reasoning weights summed to 0.8 passed
+    validation — the criteria are what write evidence, and a short sum silently scales
+    every score derived from them.
+
+    A criterion's `concept` is checked for the same reason item concepts are: it names
+    the concept the resulting evidence is keyed on, and `concept_evidence.concept_id` is
+    a foreign key, so an unresolvable one is a runtime insert failure rather than a
+    mis-tag.
+    """
+    findings: list[Finding] = []
+    if not criteria:
+        return findings
+
+    total = sum(c.get("weight", 0) for c in criteria)
+    if abs(total - 1.0) > 1e-6:
+        findings.append(Finding("error", where, f"{label} weights sum to {total}, expected 1.0"))
+
+    seen: set[str] = set()
+    for c in criteria:
+        cid = c.get("id", "")
+        if cid in seen:
+            findings.append(Finding("error", where, f"{label} has duplicate criterion id '{cid}'"))
+        seen.add(cid)
+
+        concept = c.get("concept")
+        if concept is not None and concept not in concept_ids:
+            findings.append(
+                Finding(
+                    "error",
+                    where,
+                    f"{label} criterion '{cid}' names unknown concept '{concept}'",
+                )
+            )
+        if not c.get("levels"):
+            findings.append(
+                Finding(
+                    "warn",
+                    where,
+                    f"{label} criterion '{cid}' has no score anchors — an LLM grader "
+                    "without `levels` scores on vibe and drifts between runs",
+                )
+            )
+    return findings
+
+
+def _check_grading(item: dict[str, Any], where: str, concept_ids: set[str]) -> list[Finding]:
     findings: list[Finding] = []
     grading = item.get("grading")
     modality = item.get("modality", "")
@@ -356,10 +407,13 @@ def _check_grading(item: dict[str, Any], where: str) -> list[Finding]:
             findings.append(
                 Finding("error", where, "answer grading needs an exact or numeric value")
             )
+        findings.extend(
+            _check_criteria(
+                grading.get("reasoning_rubric", []), where, "reasoning_rubric", concept_ids
+            )
+        )
     elif actual == "rubric":
-        total = sum(c.get("weight", 0) for c in grading.get("criteria", []))
-        if abs(total - 1.0) > 1e-6:
-            findings.append(Finding("error", where, f"rubric weights sum to {total}, expected 1.0"))
+        findings.extend(_check_criteria(grading.get("criteria", []), where, "rubric", concept_ids))
 
     return findings
 

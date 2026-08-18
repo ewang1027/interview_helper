@@ -110,7 +110,9 @@ containers land in Phase 6, when they have Dockerfiles.
 landed and what the next phase picks up.
 
 - [ ] **0 — Foundations:** repo, schema, taxonomy, corpus contract, CI
-- [ ] **1 — Corpus v1:** researched, evidence-ranked, original statements
+- [ ] **1 — Corpus v1:** researched, evidence-ranked, original statements — *thin slice
+      landed (2026-08-19): 12 items across coding and quant, verified; bulk authoring and
+      the design/behavioral domains remain*
 - [ ] **2 — Executor + deterministic grading** — *isolation layer landed and verified
       (2026-08-18); `POST /execute`, test harnesses and the complexity probe remain*
 - [ ] **3 — Interview runtime (text) + API** — *DB schema, migrations, settings and

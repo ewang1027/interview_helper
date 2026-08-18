@@ -376,3 +376,110 @@ lands. Nothing is blocked meanwhile.
 
 Unchanged: Phase 1 (corpus) and the rest of Phase 2 (execution/grading on top of this
 isolation layer). Settle the executor topology question before `POST /execute`.
+
+---
+
+## Phase 1 (thin slice) — first real corpus content · 2026-08-19
+
+Six coding items and six quant items — 3 archetypes + 3 instances each — authored by two
+concurrent agents owning one file apiece (`data/items/coding.json`, `data/items/quant.json`).
+Deliberately a **thin vertical slice**, not bulk authoring: the open question the Phase 0
+log left ("how many items before the runtime exists to use them") is answered here as
+"enough to prove the pipeline, then stop."
+
+**Verified independently of both agent reports.**
+
+```
+corpus validate        159 concepts · 12 items (6 archetypes, 6 instances) · coding=6, quant=6
+                       0 errors, 0 warnings
+verify_reference_...   ok i.code.0001 12/12 · i.code.0002 10/10 · i.code.0003 11/11
+  --strict-stub-check  zero stub passes
+source URLs            15/15 return HTTP 200 (8 coding, 7 quant) — none fabricated
+concept references     all resolve verbatim; every primary_concept is in its own concepts
+source independence    every item cites >=2 sources on distinct registrable domains
+make check             37 passed, 10 deselected
+```
+
+The three quant answers were re-derived from the statements rather than checked against
+the authors' scripts: **39** (exact absorbing-chain solve, value iteration, and 300k-run
+Monte Carlo at 38.99), **149/20** (backward induction *and* brute force over all 2^20
+deterministic stop-set policies, which proves global optimality rather than assuming the
+threshold rule), and **16/3** (exact enumeration of all 495 arrangements).
+
+### Two validator gaps, both the shape this project keeps finding
+
+Neither was a wrong answer — both were **checks that looked stronger than they were.**
+
+**1. The originality rule is not enforced against sources.** `_check_originality` shingles
+the statement against the item's own `sources[].evidence` field — *the author's own
+paraphrase* — because the validator runs offline with no copy of the page. It catches an
+author who pastes problem text into their evidence note and nothing else: **a statement
+copied verbatim from a live URL passes cleanly.** The error message even reads "overlaps
+N% of source `<url>` text", describing a comparison that never happened. `CORPUS.md` now
+says what is actually enforced, and records that the rule is upheld by *process* — read,
+close the tab, write from the pattern — with the shingle check as a backstop against one
+specific slip. Closing it properly means snapshotting source text at research time, which
+means storing third-party text this repo is otherwise careful not to hold. Deferred, named.
+
+Worth noting the quant author ran the *real* check unprompted — stripped the HTML of all
+seven cited pages and shingled the statements against actual page text: **max shared
+12-gram 0, max 8-gram containment 0.000%.** It also caught one of its own drafts sharing a
+generic 10-word phrase with a source (1.96%, far under the 15% threshold) and rewrote the
+sentence rather than ship it.
+
+**2. `reasoning_rubric` weights were never summed.** The weight check lived in the
+`type: "rubric"` branch only, so a quant instance whose reasoning weights summed to 0.8
+validated clean — and those criteria are what write evidence, so a short sum silently
+scales every score derived from them. Found by the quant author reading the validator
+rather than assuming it did what `CORPUS.md` claimed.
+
+Fixed by extracting `_check_criteria`, shared by both branches, which now also rejects
+duplicate criterion ids and criteria naming a concept that does not exist — the latter
+matters because `concept_evidence.concept_id` is a foreign key, so an unresolvable
+criterion concept is an insert failure at grading time rather than a mis-tag. It warns on
+a criterion with no `levels`, since an LLM grader without score anchors drifts between runs.
+
+Four tests added, and the checks were confirmed **load-bearing** by neutralising
+`_check_criteria` and re-running: with it, three defects caught; without it, an item
+carrying all three passes clean.
+
+### Reference solutions are now verified, not trusted
+
+`scripts/verify_reference_solutions.py` runs every coding item's reference solution
+against its own tests **inside `executor.sandbox`** — the same isolation a candidate gets,
+because verifying in a more permissive environment proves the wrong thing. It lives in
+`scripts/` because it is the one place legitimately needing both `corpus` and `executor`,
+and neither package should depend on the other (the executor's dependency list is held
+deliberately short by `SECURITY.md`).
+
+It was verified against synthetic solutions *before* any real content existed: a correct
+solution passes 3/3, a constant-returning one is caught at 1/3, a raising one at 0/3, a
+missing entrypoint is reported, and tuple/list results normalise. Note the
+constant-returning stub still passed one of three tests — which is exactly why
+`--strict-stub-check` exists.
+
+The coding author's own oracle pass is worth recording as method: it recomputed every
+`expected` value with a **separately written brute force** rather than with its reference
+solution, and that caught **three hand-computed expected values that were wrong**.
+Checking a solution against itself would have passed all three.
+
+### A dependency that is specified but not installed
+
+`GRADING.md` grades quant answers by **sympy equivalence**, so `1/3`, `0.333...` and `2/6`
+all pass. **`sympy` is not a dependency of any package in this workspace** — it is absent
+from every `pyproject.toml` and not importable in the project venv. The quant author
+reported "sympy 1.14.0 is installed", which was true of whatever interpreter it reached,
+not of this project. Nothing is broken today because the quant grader does not exist yet;
+it is recorded here so the grader's first commit does not discover it. The three `exact`
+strings on disk (`39`, `149/20`, `16/3`) are trivially parseable, so no content is at risk.
+
+### Deferred deliberately
+
+- The other two domains (`system_design`, `behavioral`) — same pattern, not yet run.
+- Bulk authoring toward the ~400/~150 target. The slice exists to prove the pipeline.
+- `cpp` reference solutions; the harness skips non-python languages with a notice.
+
+### Next
+
+Unchanged: the rest of Phase 2 (`POST /execute`, harnesses, complexity probe), still
+gated on the executor topology question recorded in the Phase 2 entry above.

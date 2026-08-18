@@ -242,6 +242,78 @@ def test_detects_rubric_weights_not_summing_to_one() -> None:
     assert any("weights sum" in m for m in errs)
 
 
+def _answer_item(**rubric_overrides: Any) -> dict[str, Any]:
+    """A quant instance whose reasoning_rubric can be perturbed per test."""
+    criteria = rubric_overrides.pop(
+        "criteria",
+        [
+            {"id": "a", "description": "x" * 20, "weight": 0.5, "levels": {"1": "ok"}},
+            {"id": "b", "description": "y" * 20, "weight": 0.5, "levels": {"1": "ok"}},
+        ],
+    )
+    return _item(
+        modality="quant",
+        domain="quant",
+        concepts=["hash-set-dedup"],
+        primary_concept="hash-set-dedup",
+        grading={
+            "type": "answer",
+            "answer": {"exact": "1/3"},
+            "reasoning_rubric": criteria,
+        },
+    )
+
+
+def test_detects_reasoning_rubric_weights_not_summing_to_one() -> None:
+    """The weight check used to live only in the `rubric` branch, so a quant item's
+    reasoning weights were never summed. A short sum silently scales every score
+    derived from those criteria."""
+    item = _answer_item(
+        criteria=[
+            {"id": "a", "description": "x" * 20, "weight": 0.5, "levels": {"1": "ok"}},
+            {"id": "b", "description": "y" * 20, "weight": 0.3, "levels": {"1": "ok"}},
+        ]
+    )
+    errs = _errors(check_items([item, _ARCHETYPE], _CONCEPTS))
+    assert any("reasoning_rubric weights sum" in m for m in errs), errs
+
+
+def test_accepts_reasoning_rubric_summing_to_one() -> None:
+    """Guards the opposite failure: a check that fires on everything is no check."""
+    errs = _errors(check_items([_answer_item(), _ARCHETYPE], _CONCEPTS))
+    assert not any("weights sum" in m for m in errs), errs
+
+
+def test_detects_criterion_naming_an_unknown_concept() -> None:
+    """A criterion's `concept` is what its evidence is keyed on, and
+    `concept_evidence.concept_id` is a foreign key — an unresolvable one is an insert
+    failure at grading time, not a mis-tag."""
+    item = _answer_item(
+        criteria=[
+            {
+                "id": "a",
+                "description": "x" * 20,
+                "weight": 1.0,
+                "levels": {"1": "ok"},
+                "concept": "not-a-real-concept",
+            }
+        ]
+    )
+    errs = _errors(check_items([item, _ARCHETYPE], _CONCEPTS))
+    assert any("unknown concept 'not-a-real-concept'" in m for m in errs), errs
+
+
+def test_detects_duplicate_criterion_id() -> None:
+    item = _answer_item(
+        criteria=[
+            {"id": "same", "description": "x" * 20, "weight": 0.5, "levels": {"1": "ok"}},
+            {"id": "same", "description": "y" * 20, "weight": 0.5, "levels": {"1": "ok"}},
+        ]
+    )
+    errs = _errors(check_items([item, _ARCHETYPE], _CONCEPTS))
+    assert any("duplicate criterion id" in m for m in errs), errs
+
+
 # --- helpers ---------------------------------------------------------------------
 
 

@@ -1,0 +1,442 @@
+{
+  "items": [
+    {
+      "id": "a.quant.0001",
+      "kind": "archetype",
+      "domain": "quant",
+      "modality": "quant",
+      "archetype_id": null,
+      "title": "Expected waiting time until a pattern first appears",
+      "statement_md": "**Pattern.** The candidate is handed a stream of independent trials and asked for the\nexpected number of trials until a short target pattern shows up for the first time —\na run of identical outcomes, or a named two- or three-symbol sequence.\n\n**What it measures.** That the process is Markov in *how much of the target is currently\nmatched*, so the whole history collapses to a handful of states; that one-step\nconditioning turns those states into a small linear system; and that a trial which\nbreaks the partial match resets to the correct state, which is rarely the state you\nstarted in. Interviewers keep this one because a candidate who reasons from the marginal\nprobability alone lands nowhere near the truth, and because the standard follow-up —\ncompare two targets of equal length — instantly separates a memorised answer from an\nunderstood structure.\n\n**Typical realisations.** Expected trials until k consecutive successes on a biased\ntrial; expected flips until a named sequence; explaining why two equally likely patterns\nhave unequal waiting times.",
+      "concepts": [
+        "markov-chain-absorption",
+        "law-total-expectation",
+        "conditional-expectation"
+      ],
+      "primary_concept": "markov-chain-absorption",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1520
+      },
+      "sources": [
+        {
+          "url": "https://whiteoakintel.com/blog/markov-chain-coin-sequence/",
+          "title": "Markov Chain Coin Sequence: E[HH] vs E[HTH] Explained",
+          "retrieved_at": "2026-08-19",
+          "evidence": "A write-up devoted entirely to pattern waiting times, which states outright that the question recurs in quantitative finance loops at named trading firms and that its purpose is to separate candidates who see the absorbing-state structure from those improvising. Also documents the paired-pattern follow-up."
+        },
+        {
+          "url": "https://quantvault.org/top-50-quant-interview-questions.html",
+          "title": "Top 50 Quant Interview Questions (With Full Solutions)",
+          "retrieved_at": "2026-08-19",
+          "evidence": "A compiled bank organised by topic that carves out a whole section for Markov chains and absorption, and whose worked demonstration of the section is a first-occurrence waiting-time computation. Attributes the pool to a shared set of trading-firm loops rather than to one author's taste."
+        },
+        {
+          "url": "https://www.tradinginterview.com/jane-street-interview-questions/",
+          "title": "Example Jane Street Interview Questions",
+          "retrieved_at": "2026-08-19",
+          "evidence": "Independent site collecting phone-round examples for one firm; its first listed category is sequential state-transition modelling, and it notes the round is scored on the reasoning narrated aloud rather than the final figure. Corroborates the pattern from a firm-specific angle instead of a topic taxonomy."
+        }
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-19"
+    },
+    {
+      "id": "i.quant.0001",
+      "kind": "instance",
+      "domain": "quant",
+      "modality": "quant",
+      "archetype_id": "a.quant.0001",
+      "title": "Three gold tokens in a row",
+      "statement_md": "A kiosk hands out one token every time you press its button. Each press independently\nproduces a **gold** token with probability 1/3 and a **silver** token otherwise; nothing\nthe machine has already dispensed changes the odds on the next press.\n\nYou press repeatedly and stop at the exact moment your three most recent tokens are all\ngold.\n\nGive the expected number of presses, as an exact value. Set the calculation up explicitly\nrather than quoting a formula, and say what each quantity you introduce stands for.",
+      "concepts": [
+        "markov-chain-absorption",
+        "law-total-expectation",
+        "conditional-expectation"
+      ],
+      "primary_concept": "markov-chain-absorption",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1620
+      },
+      "expected_minutes": 9,
+      "sources": [
+        {
+          "url": "https://whiteoakintel.com/blog/markov-chain-coin-sequence/",
+          "title": "Markov Chain Coin Sequence: E[HH] vs E[HTH] Explained",
+          "retrieved_at": "2026-08-19",
+          "evidence": "A write-up devoted entirely to pattern waiting times, which states outright that the question recurs in quantitative finance loops at named trading firms and that its purpose is to separate candidates who see the absorbing-state structure from those improvising. Also documents the paired-pattern follow-up."
+        },
+        {
+          "url": "https://quantvault.org/top-50-quant-interview-questions.html",
+          "title": "Top 50 Quant Interview Questions (With Full Solutions)",
+          "retrieved_at": "2026-08-19",
+          "evidence": "A compiled bank organised by topic that carves out a whole section for Markov chains and absorption, and whose worked demonstration of the section is a first-occurrence waiting-time computation. Attributes the pool to a shared set of trading-firm loops rather than to one author's taste."
+        },
+        {
+          "url": "https://www.tradinginterview.com/jane-street-interview-questions/",
+          "title": "Example Jane Street Interview Questions",
+          "retrieved_at": "2026-08-19",
+          "evidence": "Independent site collecting phone-round examples for one firm; its first listed category is sequential state-transition modelling, and it notes the round is scored on the reasoning narrated aloud rather than the final figure. Corroborates the pattern from a firm-specific angle instead of a topic taxonomy."
+        }
+      ],
+      "grading": {
+        "type": "answer",
+        "answer": {
+          "exact": "39",
+          "numeric": 39.0,
+          "tolerance": 1e-06,
+          "unit": "presses"
+        },
+        "accept_forms": [
+          "39",
+          "39.0",
+          "3 + 9 + 27"
+        ],
+        "reasoning_rubric": [
+          {
+            "id": "state_identification",
+            "description": "Collapses the history to the length of the current gold run and says why that is sufficient — the next press does not care what came before the current streak.",
+            "weight": 0.4,
+            "concept": "markov-chain-absorption",
+            "levels": {
+              "0": "Works with the raw sequence or guesses from 1/(1/3)^3 = 27 with no state notion.",
+              "1": "Mentions 'states' but the set is wrong or unbounded (e.g. tracks total golds so far, not the current run).",
+              "2": "Correct states 0, 1, 2 with an absorbing state at 3, but does not justify why run length is the whole story.",
+              "3": "States 0, 1, 2 plus absorption, with an explicit statement that the run length is a sufficient statistic because presses are independent."
+            }
+          },
+          {
+            "id": "conditioning_setup",
+            "description": "Writes the one-step conditioning equations correctly, in particular that a silver token returns the process to a run of zero with no partial credit.",
+            "weight": 0.35,
+            "concept": "law-total-expectation",
+            "levels": {
+              "0": "No equations, or equations that omit the +1 for the press just spent.",
+              "1": "Equations written but the failure branch is wrong — e.g. a silver drops the run by one instead of clearing it.",
+              "2": "All three equations correct; the reset is right but stated without comment.",
+              "3": "All three equations correct, the full reset is called out as the point of the problem, and the +1 per press is justified as conditioning on the next trial."
+            }
+          },
+          {
+            "id": "solve_and_sanity_check",
+            "description": "Solves the system to 39 and applies at least one independent check on the magnitude, rather than reporting whatever the algebra produced.",
+            "weight": 0.25,
+            "concept": "conditional-expectation",
+            "levels": {
+              "0": "Arithmetic error carried through with no check; answer far from 39.",
+              "1": "Reaches a number near 39 but cannot say whether it is plausible.",
+              "2": "Reaches 39 correctly with no sanity check offered.",
+              "3": "Reaches 39 and checks it — e.g. notes it must exceed 27 because resets waste presses, or recovers 3 + 3^2 + 3^3 as a telescoping pattern."
+            }
+          }
+        ]
+      },
+      "hints": [
+        "Nothing about the next press depends on the entire history — only on one number describing where you currently stand. What is that number, and how many values can it take?",
+        "Let E_j be the expected number of further presses given that your current unbroken gold run has length j, for j = 0, 1, 2. Condition on the very next press.",
+        "A silver token does not shorten your run, it erases it: from any j you land back at E_0. Write those three equations and solve, or notice the answer comes out as 3 + 3^2 + 3^3."
+      ],
+      "follow_ups": [
+        "Generalise: gold has probability p and you need a run of k. Give the closed form and check it reproduces your answer.",
+        "Same kiosk, but now you stop the first time a gold is immediately followed by a silver. Is that expectation larger or smaller than the run-of-three answer, and what is structurally different about the reset?",
+        "How would you get the variance of the number of presses, and would you expect it to be small or large relative to the mean here?"
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-19"
+    },
+    {
+      "id": "a.quant.0002",
+      "kind": "archetype",
+      "domain": "quant",
+      "modality": "quant",
+      "archetype_id": null,
+      "title": "Fair value of a bounded keep-or-discard game",
+      "statement_md": "**Pattern.** A game pays out the value of whichever draw the candidate chooses to keep.\nThere is a hard cap on the number of draws, a discarded draw is gone for good, and the\nfinal draw is compulsory. The candidate is asked to price the game and to state the rule\nthey would follow at each decision point.\n\n**What it measures.** Backward induction from the last stage; the realisation that every\nearlier decision is a single comparison between the number in hand and one continuation\nvalue; and arithmetic that survives being done aloud. Trading desks like it because the\noutput *is* a fair value, so the natural escalation is \"now quote me a market on it\",\nwhich carries the identical reasoning into bid/offer language without a new problem.\n\n**Typical realisations.** A die you may reroll a bounded number of times; a bounded\nsequence of card or urn draws with the option to pass; a variant charging a fee per\ndiscard, which shifts every threshold down.",
+      "concepts": [
+        "expected-value-decision",
+        "law-total-expectation",
+        "edge-and-fair-value"
+      ],
+      "primary_concept": "expected-value-decision",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1450
+      },
+      "sources": [
+        {
+          "url": "https://www.techinterview.org/companies/jane-street/",
+          "title": "Jane Street Interview Guide: Mental Math, Probability, Trading Games",
+          "retrieved_at": "2026-08-19",
+          "evidence": "Stage-by-stage loop guide that lists an accept-or-try-again game and its optimal acceptance threshold among the brainteasers, and separately describes trading rounds built on fair-value reasoning. Useful because it places the pattern inside a described interview process, not a question list."
+        },
+        {
+          "url": "https://www.rohan-paul.com/p/ml-interview-q-series-dice-game-strategy",
+          "title": "Dice Game Strategy: Optimal Stopping Decisions Using Expected Value",
+          "retrieved_at": "2026-08-19",
+          "evidence": "An interview-question series entry treating the bounded-chances stopping game as a standalone asked problem, working it by backward induction and then confirming the analytic value with a Monte Carlo script. Attests the pattern from the quant/ML interview-prep side rather than the trading-desk side."
+        },
+        {
+          "url": "https://www.tradinginterview.com/jane-street-interview-questions/",
+          "title": "Example Jane Street Interview Questions",
+          "retrieved_at": "2026-08-19",
+          "evidence": "Lists optimal stopping paired with expected value as one of a handful of example phone-round categories for a single firm, naming backward induction as the expected method. Third independent domain attesting the same pattern."
+        }
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-19"
+    },
+    {
+      "id": "i.quant.0002",
+      "kind": "instance",
+      "domain": "quant",
+      "modality": "quant",
+      "archetype_id": "a.quant.0002",
+      "title": "Pricing a three-roll die game with no recall",
+      "statement_md": "Here is a game. A fair ten-sided die, faces 1 through 10, is rolled where you can see it.\nYou may **bank** the face showing — that ends the game and pays you that many dollars — or\n**discard** it and roll again. You get at most three rolls in total, and a discarded roll\nis gone: you cannot return to it. If you reach the third roll you must bank whatever it\nshows.\n\nAssume you are after the largest expected payout available to you. What is the game worth\nthe moment before anything has been rolled? Give the exact fair value in dollars, and\nstate the rule you would follow at each point where you have a choice.",
+      "concepts": [
+        "expected-value-decision",
+        "law-total-expectation",
+        "edge-and-fair-value"
+      ],
+      "primary_concept": "expected-value-decision",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1540
+      },
+      "expected_minutes": 8,
+      "sources": [
+        {
+          "url": "https://www.techinterview.org/companies/jane-street/",
+          "title": "Jane Street Interview Guide: Mental Math, Probability, Trading Games",
+          "retrieved_at": "2026-08-19",
+          "evidence": "Stage-by-stage loop guide that lists an accept-or-try-again game and its optimal acceptance threshold among the brainteasers, and separately describes trading rounds built on fair-value reasoning. Useful because it places the pattern inside a described interview process, not a question list."
+        },
+        {
+          "url": "https://www.rohan-paul.com/p/ml-interview-q-series-dice-game-strategy",
+          "title": "Dice Game Strategy: Optimal Stopping Decisions Using Expected Value",
+          "retrieved_at": "2026-08-19",
+          "evidence": "An interview-question series entry treating the bounded-chances stopping game as a standalone asked problem, working it by backward induction and then confirming the analytic value with a Monte Carlo script. Attests the pattern from the quant/ML interview-prep side rather than the trading-desk side."
+        },
+        {
+          "url": "https://www.tradinginterview.com/jane-street-interview-questions/",
+          "title": "Example Jane Street Interview Questions",
+          "retrieved_at": "2026-08-19",
+          "evidence": "Lists optimal stopping paired with expected value as one of a handful of example phone-round categories for a single firm, naming backward induction as the expected method. Third independent domain attesting the same pattern."
+        }
+      ],
+      "grading": {
+        "type": "answer",
+        "answer": {
+          "exact": "149/20",
+          "numeric": 7.45,
+          "tolerance": 1e-06,
+          "unit": "dollars"
+        },
+        "accept_forms": [
+          "149/20",
+          "7.45",
+          "$7.45",
+          "7 + 9/20"
+        ],
+        "reasoning_rubric": [
+          {
+            "id": "backward_induction",
+            "description": "Prices the game from the final compulsory roll backwards, rather than trying to reason forward from the first roll.",
+            "weight": 0.4,
+            "concept": "expected-value-decision",
+            "levels": {
+              "0": "Reasons forward or averages the three rolls; no notion of a continuation value.",
+              "1": "Says 'work backwards' but computes only one stage, or reuses 5.5 as the continuation value at both decisions.",
+              "2": "Both stages computed in the right order with the right values (5.5 then 6.75), stated without justification.",
+              "3": "Explicit backward chain — last roll is worth 5.5, that number is what a discard on roll two buys, and 6.75 is what a discard on roll one buys — with the recursion named."
+            }
+          },
+          {
+            "id": "threshold_rule",
+            "description": "States the stopping rule at each decision as a comparison against that stage's continuation value, and gets both thresholds right.",
+            "weight": 0.35,
+            "concept": "expected-value-decision",
+            "levels": {
+              "0": "No rule given, or a fixed rule such as 'keep 6 only' applied at every stage.",
+              "1": "One threshold correct, the other wrong or absent; or thresholds given as numbers with no comparison principle behind them.",
+              "2": "Bank 7 or higher on the first roll, bank 6 or higher on the second — correct but asserted.",
+              "3": "Both thresholds correct AND derived as 'keep the face iff it beats what the remaining game is worth', with the boundary case (a face exactly equal to the continuation value) addressed as indifferent."
+            }
+          },
+          {
+            "id": "arithmetic_and_value",
+            "description": "Carries the stage arithmetic accurately to the exact fair value and offers a plausibility check on the number.",
+            "weight": 0.25,
+            "concept": "edge-and-fair-value",
+            "levels": {
+              "0": "Value materially wrong, or reported without units or exactness.",
+              "1": "Method sound but an arithmetic slip leaves the value off; error not noticed.",
+              "2": "Reaches 7.45 exactly, no commentary.",
+              "3": "Reaches 7.45 exactly and bounds it sensibly — above 6.75, below 10, and rising with each extra roll but by less each time."
+            }
+          }
+        ]
+      },
+      "hints": [
+        "Start at the end. What is this game worth to you at the instant you are about to take your last, compulsory roll?",
+        "At every earlier point the only question is whether the number in front of you beats what you still hold if you throw it away. That 'what you still hold' is a single number per stage.",
+        "With one roll left the game is worth 5.5, so on the second roll you bank 6 and up. Work out what that makes the game worth with two rolls left, then apply the same test to the first roll."
+      ],
+      "follow_ups": [
+        "Now each discard costs you 50 cents, paid whether or not you end up better off. Which way do the two thresholds move, and is the game still worth playing?",
+        "You have to quote a two-sided market on this game to someone who knows exactly what you know. Where do you put your bid and offer, and what determines the width?",
+        "Allow n rolls instead of three. What does the value tend to as n grows, and roughly how quickly does it get there?"
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-19"
+    },
+    {
+      "id": "a.quant.0003",
+      "kind": "archetype",
+      "domain": "quant",
+      "modality": "quant",
+      "archetype_id": null,
+      "title": "Expected count over a random arrangement via indicators",
+      "statement_md": "**Pattern.** The candidate is asked for the expected size of a count taken over a random\narrangement — matches, adjacencies, runs, records, fixed points — in a setting where the\nindividual contributions to that count are plainly not independent of one another.\n\n**What it measures.** Writing the count as a sum of 0/1 contributions, getting one\ncontribution's probability by a symmetry argument rather than a calculation, and saying\nout loud that adding expectations never required independence in the first place. The\ndependence is the whole trap: candidates who go after the count's distribution run out of\ntime, and candidates who silently assume independence reach the right number for a wrong\nreason — which the variance follow-up exposes immediately.\n\n**Typical realisations.** Expected number of people handed back their own item after a\nshuffle; expected count of neighbouring like or unlike pairs in a shuffled row; expected\nnumber of distinct values observed.",
+      "concepts": [
+        "linearity-of-expectation",
+        "indicator-variables",
+        "symmetry-arguments"
+      ],
+      "primary_concept": "linearity-of-expectation",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1380
+      },
+      "sources": [
+        {
+          "url": "https://www.techinterview.org/post/3233474553/probability-brainteasers-quant-interviews/",
+          "title": "Probability Brainteasers for Quant Interviews: Dice, Coins, Cards, Urns",
+          "retrieved_at": "2026-08-19",
+          "evidence": "A brainteaser taxonomy that names four tools it says the rounds actually test, two of which are the additivity of expectation and the use of 0/1 counters, and which asserts that several named market-making and hedge-fund loops lean on this family. Attests the technique, not merely one puzzle."
+        },
+        {
+          "url": "https://quantvault.org/top-50-quant-interview-questions.html",
+          "title": "Top 50 Quant Interview Questions (With Full Solutions)",
+          "retrieved_at": "2026-08-19",
+          "evidence": "Presents a short list of roughly fifteen recurring techniques behind its question bank and includes additivity of expectation with 0/1 counters among them, with a dedicated expectation-and-variance section. Independent compilation attributing the pool to several firms' loops."
+        },
+        {
+          "url": "https://www.quantt.co.uk/resources/quant-interview-questions",
+          "title": "Quant Interview Questions 2026: 50 With Answers",
+          "retrieved_at": "2026-08-19",
+          "evidence": "A separate question list whose probability section resolves an expected-count problem by splitting the count into per-item contributions and adding them, which is exactly this pattern in use. Names a broad set of employers, so it is not a single desk's habit."
+        }
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-19"
+    },
+    {
+      "id": "i.quant.0003",
+      "kind": "instance",
+      "domain": "quant",
+      "modality": "quant",
+      "archetype_id": "a.quant.0003",
+      "title": "Expected changeovers on a mixed parcel line",
+      "statement_md": "Twelve parcels travel down a conveyor in single file, in an order that is uniformly random\namong all the orders they could arrive in. Four of the twelve are marked **express**; the\nother eight are **standard**.\n\nThe sorter at the end of the belt has to flip its arm whenever two parcels that are next\nto each other in the line carry different markings. Each such flip is one *changeover*.\n\nHow many changeovers should the operator expect over a run of twelve parcels? Give the\nexact expectation, and be explicit about why your method is sound even though whether one\ngap is a changeover clearly tells you something about its neighbour.",
+      "concepts": [
+        "linearity-of-expectation",
+        "indicator-variables",
+        "symmetry-arguments"
+      ],
+      "primary_concept": "linearity-of-expectation",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1470
+      },
+      "expected_minutes": 7,
+      "sources": [
+        {
+          "url": "https://www.techinterview.org/post/3233474553/probability-brainteasers-quant-interviews/",
+          "title": "Probability Brainteasers for Quant Interviews: Dice, Coins, Cards, Urns",
+          "retrieved_at": "2026-08-19",
+          "evidence": "A brainteaser taxonomy that names four tools it says the rounds actually test, two of which are the additivity of expectation and the use of 0/1 counters, and which asserts that several named market-making and hedge-fund loops lean on this family. Attests the technique, not merely one puzzle."
+        },
+        {
+          "url": "https://quantvault.org/top-50-quant-interview-questions.html",
+          "title": "Top 50 Quant Interview Questions (With Full Solutions)",
+          "retrieved_at": "2026-08-19",
+          "evidence": "Presents a short list of roughly fifteen recurring techniques behind its question bank and includes additivity of expectation with 0/1 counters among them, with a dedicated expectation-and-variance section. Independent compilation attributing the pool to several firms' loops."
+        },
+        {
+          "url": "https://www.quantt.co.uk/resources/quant-interview-questions",
+          "title": "Quant Interview Questions 2026: 50 With Answers",
+          "retrieved_at": "2026-08-19",
+          "evidence": "A separate question list whose probability section resolves an expected-count problem by splitting the count into per-item contributions and adding them, which is exactly this pattern in use. Names a broad set of employers, so it is not a single desk's habit."
+        }
+      ],
+      "grading": {
+        "type": "answer",
+        "answer": {
+          "exact": "16/3",
+          "numeric": 5.333333333333333,
+          "tolerance": 1e-06,
+          "unit": "changeovers"
+        },
+        "accept_forms": [
+          "16/3",
+          "5 1/3",
+          "176/33",
+          "5.333",
+          "5.33"
+        ],
+        "reasoning_rubric": [
+          {
+            "id": "indicator_decomposition",
+            "description": "Turns the count into a sum of one 0/1 variable per adjacent gap, and counts the gaps correctly.",
+            "weight": 0.4,
+            "concept": "indicator-variables",
+            "levels": {
+              "0": "Attempts the distribution of the changeover count, or guesses.",
+              "1": "Mentions indicators but attaches them to parcels rather than to gaps, or uses 12 gaps instead of 11.",
+              "2": "Eleven gap indicators summed correctly, set up without comment.",
+              "3": "Eleven gap indicators, with the count-as-a-sum step named as the move that makes the problem tractable."
+            }
+          },
+          {
+            "id": "boundary_probability",
+            "description": "Computes the probability that one particular gap is a changeover, by symmetry over the pair occupying that gap.",
+            "weight": 0.3,
+            "concept": "symmetry-arguments",
+            "levels": {
+              "0": "Uses 4/12 x 8/12 or similar, treating the two slots as sampled with replacement.",
+              "1": "Right idea but only one ordering counted, giving 16/33 halved, or an off-by-one in the 11 denominator.",
+              "2": "Gets 2 x 4 x 8 / (12 x 11) = 16/33 correctly.",
+              "3": "Gets 16/33 and justifies it — the ordered pair in any fixed gap is uniform over ordered pairs of distinct parcels, so the gap's position is irrelevant."
+            }
+          },
+          {
+            "id": "dependence_justification",
+            "description": "Says explicitly that summing expectations is valid here without any independence assumption, and does not smuggle one in.",
+            "weight": 0.3,
+            "concept": "linearity-of-expectation",
+            "levels": {
+              "0": "Asserts the gaps are independent, or multiplies probabilities as though they were.",
+              "1": "Adds the expectations without ever addressing dependence.",
+              "2": "Notes that expectation is additive regardless of dependence.",
+              "3": "Notes additivity holds regardless of dependence, and identifies concretely where the dependence lives — overlapping gaps share a parcel, so their indicators are correlated even though the means still add."
+            }
+          }
+        ]
+      },
+      "hints": [
+        "You are being asked for the expected value of a count. Counts are sums of ones — find the things you are counting.",
+        "Attach a 0/1 variable to each of the eleven boundaries between neighbouring parcels. Then you only ever need the probability for a single boundary.",
+        "Fix any one boundary: the ordered pair of parcels sitting there is uniform over all ordered pairs of distinct parcels, so the chance they differ is 2 x 4 x 8 / (12 x 11). Multiply by 11 and you are done — no independence was ever needed."
+      ],
+      "follow_ups": [
+        "Run the same twelve parcels around a closed loop instead of a straight line. What changes in the setup, and does the answer go up or down?",
+        "Which pairs of boundary indicators are correlated, and in which direction? Sketch how you would get the variance of the changeover count.",
+        "Keep the ratio but scale up: 40 express and 80 standard among 120 parcels. Roughly how many changeovers, and what is the limiting rate per gap?"
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-19"
+    }
+  ]
+}
