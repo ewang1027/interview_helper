@@ -29,6 +29,12 @@ from corpus.loader import CorpusPaths, load_raw_concepts, load_raw_items
 
 # Two shingle thresholds. A single long verbatim run is damning on its own; a high
 # proportion of shared shorter runs means the statement was paraphrased too closely.
+#
+# Scope, because the name oversells it: this compares the statement against each
+# source's `evidence` note — the AUTHOR'S OWN PARAPHRASE — never against the page,
+# which the validator has no offline copy of. It catches an author who pastes problem
+# text into their evidence note, and nothing else. A statement copied verbatim from a
+# live URL passes cleanly. See docs/CORPUS.md, "The originality rule".
 LONG_SHINGLE = 12
 SHORT_SHINGLE = 8
 MAX_SHORT_CONTAINMENT = 0.15
@@ -293,8 +299,8 @@ def _check_originality(item: dict[str, Any], where: str) -> list[Finding]:
                 Finding(
                     "error",
                     where,
-                    f"statement shares a {LONG_SHINGLE}-word run with source "
-                    f"{src.get('url')}: '{next(iter(shared_long))[:80]}...' — "
+                    f"statement shares a {LONG_SHINGLE}-word run with the *evidence note* "
+                    f"for {src.get('url')}: '{next(iter(shared_long))[:80]}...' — "
                     "statements must be original prose",
                 )
             )
@@ -306,8 +312,8 @@ def _check_originality(item: dict[str, Any], where: str) -> list[Finding]:
                     Finding(
                         "error",
                         where,
-                        f"statement overlaps {containment:.0%} of source "
-                        f"{src.get('url')} text (limit {MAX_SHORT_CONTAINMENT:.0%})",
+                        f"statement overlaps {containment:.0%} of the *evidence note* for "
+                        f"{src.get('url')} (limit {MAX_SHORT_CONTAINMENT:.0%})",
                     )
                 )
     return findings

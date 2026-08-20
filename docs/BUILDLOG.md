@@ -483,3 +483,83 @@ strings on disk (`39`, `149/20`, `16/3`) are trivially parseable, so no content 
 
 Unchanged: the rest of Phase 2 (`POST /execute`, harnesses, complexity probe), still
 gated on the executor topology question recorded in the Phase 2 entry above.
+
+---
+
+## Phase 1 (thin slice) — all four domains · 2026-08-20
+
+The coding/quant slice extended to `system_design` and `behavioral`, again by two
+concurrent agents owning one file each. **24 items: 3 archetypes + 3 instances in every
+domain.**
+
+```
+corpus validate   159 concepts · 24 items (12 archetypes, 12 instances)
+                  behavioral=6, coding=6, quant=6, system_design=6
+                  0 errors, 0 warnings
+source URLs       15/15 return HTTP 200 (9 design, 6 behavioral)
+criterion weights  all 6 rubric instances sum to exactly 1.0 in float, not merely
+                  within the validator's 1e-6 tolerance
+criterion ids     unique per item; every one carries >=3 score anchors
+concept refs      every item concept AND every criterion concept resolves verbatim
+make check        37 passed, 10 deselected
+```
+
+The rubric domains are the first content to exercise the `_check_criteria` validation
+added with the quant slice, and it passed clean rather than needing to catch anything.
+
+### Verification is weaker here, and that is worth stating
+
+Coding items are checked by *execution* and quant items by *independent re-derivation*.
+Neither is available for a rubric: there is no reference solution to run and no number to
+recompute. What was verified is **structure** — weights, anchors, concept resolution,
+source liveness — plus a read of whether each criterion is actually citable to a
+transcript span, as `GRADING.md` requires. Whether the rubrics *discriminate well* is
+unproven and cannot be proven until real transcripts exist to grade. That is what
+`GRADING.md`'s calibration harness is for, and it is not built.
+
+Both authors did design against the failure mode: each behavioral instance carries a
+criterion built specifically to separate a real story from a fluent generic one, and the
+design criteria are phrased as observable acts ("computes both the daily aggregate and the
+cost of the single worst notice, and cites that figure") rather than as qualities
+("understands scale"). An uncitable criterion scores *not-demonstrated*, which is a
+distinct state from failed.
+
+### Both agents independently flagged the same misleading message — now fixed
+
+The originality error read "statement overlaps N% of source `<url>` text" when it had in
+fact compared against the item's own `evidence` note. Two agents, working separately,
+each reported it unprompted. It now says *evidence note*, and the constants carry a
+comment stating the scope plainly, because a check that names the wrong thing invites
+exactly the false confidence `CORPUS.md` warns about. The underlying gap — no offline copy
+of the page — is unchanged and still deferred.
+
+### Method worth keeping
+
+- **The quant author ran the real originality check anyway**, unprompted: it stripped the
+  HTML of all seven cited pages and shingled the statements against actual page text (max
+  shared 12-gram 0, max 8-gram containment 0.000%), then caught one of its *own* drafts
+  sharing a generic 10-word phrase with a source and rewrote it rather than ship at 1.96%.
+- **The coding author recomputed every `expected` with a separately written brute force**
+  rather than with its reference solution, catching three wrong hand-computed values.
+  Checking a solution against itself would have passed all three.
+- **A 429 was diagnosed rather than treated as a dead link.** The design author hit a
+  transient GitHub rate limit firing nine requests back-to-back, verified the page twice
+  more plus the raw mirror, and warned that a verification loop would need pacing. It did
+  — the same URL returns 200 with a 3s delay between requests.
+- Three agents disclosed, unprompted, a rule they had bent or a source they had dropped
+  (a 403 read via curl instead of the fetch tool; two candidate URLs rejected rather than
+  cited; read-only `git status` calls against an instruction barring git entirely).
+
+### Deferred deliberately
+
+- Bulk authoring toward ~400 archetypes / ~150 instances. The slice exists to prove the
+  pipeline end to end, and it does.
+- Rubric calibration against real transcripts — blocked on transcripts existing.
+- `cpp` reference solutions; the verifier skips non-python languages with a notice.
+
+### Next
+
+The corpus is no longer the blocker. The rest of Phase 2 — `POST /execute`, the language
+harnesses, the complexity probe — now has real content to run against, and the executor
+topology question that gated it is resolved (see ARCHITECTURE, "Where the sandbox
+actually lives").

@@ -1,0 +1,447 @@
+{
+  "items": [
+    {
+      "id": "a.design.0001",
+      "kind": "archetype",
+      "domain": "system_design",
+      "modality": "design",
+      "archetype_id": null,
+      "title": "Deliver one write to a skewed audience under a read-dominated load",
+      "statement_md": "**Pattern.** One producer writes something; a large audience must see it. The interviewer supplies a workload where reads outnumber writes by orders of magnitude — a timeline, an inbox, an alert list, a comment stream — and lets the candidate discover that audience sizes are not uniform but long-tailed, so the median producer and the largest producer are two different engineering problems.\n\n**What it measures.** Whether the candidate prices the delivery work before picking a mechanism, since writes per second multiplied by audience per write is the number that decides everything downstream. Whether they notice that no single mechanism serves both a producer with forty subscribers and one with four million, and propose a split with a threshold they can defend with a figure. Whether the read path then stitches the two halves together without triggering a second round of fanout. And whether copies already delivered can be corrected when the underlying item is edited or withdrawn. The escalation interviewers reach for is a producer crossing the threshold while traffic is live, because it forces the candidate to reason about their own boundary rather than recite it.\n\n**Typical realisations.** A home timeline assembled from the accounts a reader follows; a topic-subscription alert inbox; a comment stream on a broadcast being watched by millions at once.",
+      "concepts": [
+        "pubsub-fanout",
+        "capacity-estimation",
+        "cache-strategies",
+        "sharding-partitioning"
+      ],
+      "primary_concept": "pubsub-fanout",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1560
+      },
+      "expected_minutes": 40,
+      "sources": [
+        {
+          "url": "https://www.techinterview.org/post/3233476400/designing-a-news-feed-where-fanout-falls-apart/",
+          "title": "Designing a news feed, and where fanout falls apart (techinterview.org)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A prep publisher devotes a whole post to the point at which write-time delivery stops working, and describes the signal an interviewer watches for as holding two delivery strategies at once and routing between them by the shape of the audience. It also names the mid-day threshold crossing as the follow-up that separates a memorised answer from an understood one."
+        },
+        {
+          "url": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/fb-news-feed",
+          "title": "Design Facebook's News Feed (Hello Interview)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A coaching site's worked breakdown states outright that the hard part is skew in both directions — accounts with enormous audiences and readers subscribed to enormous numbers of accounts — and its answer carries a precomputed table with an opt-out flag for the largest producers. Vendor material for a paid product, written by people who say they have run these loops."
+        },
+        {
+          "url": "https://github.com/donnemartin/system-design-primer/blob/master/solutions/system_design/twitter/README.md",
+          "title": "Design the Twitter timeline and search (system-design-primer)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A long-standing open-source prep repository carries a worked timeline solution that marks the delivery service as the bottleneck for accounts with millions of subscribers, and quotes a read-to-write ratio near sixteen to one. Independent of the paid prep vendors, and old enough to predate most of them."
+        }
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-20"
+    },
+    {
+      "id": "i.design.0001",
+      "kind": "instance",
+      "domain": "system_design",
+      "modality": "design",
+      "archetype_id": "a.design.0001",
+      "title": "Disruption alerts for a regional transit app",
+      "statement_md": "A regional transit authority runs a rider app. A rider subscribes to any number of **route-directions** — there are about 1,400 of them — and the app's home screen shows every currently active disruption notice on the route-directions that rider subscribes to, newest first.\n\nDispatch staff publish notices from an operations console: delays, detours, cancelled trips, restored service. A weekday produces roughly 3,000 notices, but they do not arrive evenly. A wet Monday morning can put 40 notices out inside the same minute.\n\nSubscriptions are far more lopsided than the notices. Each of the twenty busiest route-directions carries about 2 million subscribers. The median route-direction carries fewer than 400.\n\nReads dominate: the home screen is opened around 50 million times a day, with a sharp peak between 07:00 and 09:00 local time.\n\nDesign the notice delivery path and the home-screen read path. Cover at least:\n\n- where the work of matching a notice to its subscribers is paid, and what one notice costs at each end of the subscriber distribution;\n- the store the home screen reads from, the key it is partitioned on, and the latency target you are holding yourself to;\n- what happens when a notice is edited or withdrawn twenty minutes after publication;\n- behaviour during the forty-notices-in-a-minute peak: how late a notice is allowed to be, and how you would find out that it was late.\n\nTake the rider-to-route subscription list and an authenticated app client as given. Device push transport is out of scope; the home screen is the target.",
+      "concepts": [
+        "pubsub-fanout",
+        "capacity-estimation",
+        "cache-strategies",
+        "sharding-partitioning",
+        "failure-modes"
+      ],
+      "primary_concept": "pubsub-fanout",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1540
+      },
+      "expected_minutes": 40,
+      "sources": [
+        {
+          "url": "https://www.techinterview.org/post/3233476400/designing-a-news-feed-where-fanout-falls-apart/",
+          "title": "Designing a news feed, and where fanout falls apart (techinterview.org)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A prep publisher devotes a whole post to the point at which write-time delivery stops working, and describes the signal an interviewer watches for as holding two delivery strategies at once and routing between them by the shape of the audience. It also names the mid-day threshold crossing as the follow-up that separates a memorised answer from an understood one."
+        },
+        {
+          "url": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/fb-news-feed",
+          "title": "Design Facebook's News Feed (Hello Interview)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A coaching site's worked breakdown states outright that the hard part is skew in both directions — accounts with enormous audiences and readers subscribed to enormous numbers of accounts — and its answer carries a precomputed table with an opt-out flag for the largest producers. Vendor material for a paid product, written by people who say they have run these loops."
+        },
+        {
+          "url": "https://github.com/donnemartin/system-design-primer/blob/master/solutions/system_design/twitter/README.md",
+          "title": "Design the Twitter timeline and search (system-design-primer)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A long-standing open-source prep repository carries a worked timeline solution that marks the delivery service as the bottleneck for accounts with millions of subscribers, and quotes a read-to-write ratio near sixteen to one. Independent of the paid prep vendors, and old enough to predate most of them."
+        }
+      ],
+      "hints": [
+        "Before choosing a mechanism, multiply. How many notice-subscriber pairs does an ordinary weekday produce, and how many does the single worst notice produce on its own?",
+        "The twenty busiest route-directions and the long tail are not the same problem. What breaks first if you write one row per subscriber for a route with 2 million of them? What breaks if instead you resolve every route at read time for a rider subscribed to thirty?",
+        "Nothing obliges you to use one mechanism everywhere. You may precompute for the tail and resolve the busiest routes when the screen is opened — but then say where the boundary sits and which number put it there.",
+        "For a busy route every subscriber sees an identical list, so it can be one shared cached object rather than 2 million copies. Withdrawal then has exactly one place to land for those routes, and a bounded number of copies to chase for the rest."
+      ],
+      "follow_ups": [
+        "A quiet route crosses your threshold at 08:10 because a station closure goes viral. What do riders see in the minutes around the switch, and what do you do about it?",
+        "Product wants the home screen ordered by relevance instead of recency. Which half of your design survives that, and which half does not?",
+        "The operations console is compromised and publishes 100,000 notices in one minute. What in your design bounds the damage, and what does a rider see?"
+      ],
+      "grading": {
+        "type": "rubric",
+        "criteria": [
+          {
+            "id": "delivery_cost_math",
+            "description": "States a subscriber-weighted delivery volume — notices multiplied by subscribers per notice — and points at that number when choosing the mechanism, rather than asserting a choice.",
+            "weight": 0.25,
+            "concept": "capacity-estimation",
+            "levels": {
+              "0": "Produces no arithmetic, or repeats the figures from the prompt without combining them into a delivery volume.",
+              "2": "Computes an average — notices times mean subscribers — but never separates the busiest routes from the tail, so the estimate hides the case that actually decides the design.",
+              "4": "Computes both the daily aggregate and the cost of the single worst notice (order of two million recipients), converts at least one into a write rate or a storage figure, and cites that figure when justifying where fanout happens."
+            }
+          },
+          {
+            "id": "fanout_placement",
+            "description": "Chooses where matching happens — precomputed per-rider rows, resolution at read time, or a split — and names the threshold together with the reason it sits there.",
+            "weight": 0.3,
+            "concept": "pubsub-fanout",
+            "levels": {
+              "0": "Applies one mechanism to all routes with no comparison, or leaves the choice implicit inside a box on a diagram.",
+              "2": "Names both mechanisms and the tradeoff and picks a split, but the threshold is unquantified ('big routes get pulled') or the read path is never shown combining the two halves.",
+              "4": "Splits on subscriber count with a threshold tied to a cost the candidate computed, then walks the read path merging precomputed rows with live resolution of the busy routes, including how the merged list is ordered and paged."
+            }
+          },
+          {
+            "id": "hot_route_reads_and_withdrawal",
+            "description": "Serves the busiest routes from one shared cached notice list rather than per-rider copies, and states how a withdrawn or edited notice leaves both that cache and any precomputed rows.",
+            "weight": 0.25,
+            "concept": "cache-strategies",
+            "levels": {
+              "0": "No caching is discussed, or a cache appears on the diagram with no key, no owner and no invalidation story.",
+              "2": "Caches the busy routes under a sensible key, but handles withdrawal for only one of the two representations — the cached list or the precomputed rows — and not the other.",
+              "4": "Gives the cached object a key and a lifetime, updates or evicts it on edit and withdrawal, says what the precomputed rows do about the same event, and bounds how long a rider may still see a withdrawn notice."
+            }
+          },
+          {
+            "id": "peak_lag_and_observability",
+            "description": "Says what happens in the forty-notices-in-a-minute peak: what absorbs the burst, how far behind delivery is allowed to fall, and which signal would show that it had.",
+            "weight": 0.2,
+            "concept": "failure-modes",
+            "levels": {
+              "0": "Treats the burst as the steady state, or claims the design absorbs it without naming what does the absorbing.",
+              "2": "Puts delivery work on a queue and mentions adding consumers, but offers no lag target and no way to observe the lag.",
+              "4": "Puts a number on tolerable delivery lag, names the consumer-lag or queue-depth signal it would alarm on, and says which work is shed or deferred first when consumers cannot keep up."
+            }
+          }
+        ]
+      },
+      "corpus_version": 1,
+      "created_at": "2026-08-20"
+    },
+    {
+      "id": "a.design.0002",
+      "kind": "archetype",
+      "domain": "system_design",
+      "modality": "design",
+      "archetype_id": null,
+      "title": "Correct effects from an at-least-once stream that also reorders",
+      "statement_md": "**Pattern.** An upstream the candidate does not control delivers state-changing events — money moved, stock adjusted, a meter reading applied — and promises only that each event arrives *at least* once. Retries produce copies hours or days apart, and two events about the same entity can land in the wrong order. The candidate builds the consumer.\n\n**What it measures.** Whether the candidate names the field they collapse duplicates on and can argue it is stable across every delivery attempt. Whether the duplicate check and the effect land in one commit, rather than a read followed by an unguarded write that two concurrent deliveries both pass. Whether order is restored per entity — a partition per key, or a version that lets a stale event be refused — instead of being bought globally at the cost of throughput. And whether the candidate can say plainly what their acknowledgement asserts and what a lost acknowledgement costs. Interviewers press hard on any claim of exactly-once delivery, because the defensible claim is at-least-once delivery with effects that do not care how often they run.\n\n**Typical realisations.** Consuming a payment provider's callbacks; applying a change stream into a derived store; counting clicks or device readings where the emitter retries on its own schedule.",
+      "concepts": [
+        "idempotency",
+        "delivery-semantics",
+        "queues-backpressure",
+        "event-driven-design",
+        "retries-timeouts"
+      ],
+      "primary_concept": "idempotency",
+      "difficulty": {
+        "band": "hard",
+        "elo": 1740
+      },
+      "expected_minutes": 40,
+      "sources": [
+        {
+          "url": "https://systemdesignschool.io/problems/webhook/solution",
+          "title": "Webhook system design — worked solution (System Design School)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "An interview-prep site publishes a full worked answer for a service that receives third-party callbacks, and puts at-least-once processing in its non-functional requirements rather than in a footnote. Its expected mechanism is a stored event identifier checked before the effect runs, which shows the question is about duplicates and retries, not the happy path."
+        },
+        {
+          "url": "https://bugfree.ai/knowledge-hub/idempotency-ordering-webhook-handlers",
+          "title": "Idempotency and ordering in webhook handlers (bugfree.ai)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A system-design interview guide keeps a standalone entry pairing repeat-safe effects with event sequencing, and frames both as things a candidate is expected to demonstrate. It names no employers and offers no sample prompts, so treat it as a weak attestation whose value is being a second, unrelated publisher covering the same pairing."
+        },
+        {
+          "url": "https://algomaster.io/learn/system-design-interviews/design-notification-service",
+          "title": "Design a notification service (AlgoMaster)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "An interview curriculum marks its asynchronous-delivery problem high priority and builds the expected answer on queues, exponential backoff and a dead-letter path, with the choice between at-least-once and exactly-once presented as something the candidate must resolve aloud. Corroborates the same line of questioning from a different problem statement."
+        }
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-20"
+    },
+    {
+      "id": "i.design.0002",
+      "kind": "instance",
+      "domain": "system_design",
+      "modality": "design",
+      "archetype_id": "a.design.0002",
+      "title": "Settlement callbacks into a marketplace's seller ledger",
+      "statement_md": "A marketplace pays its sellers out of a balance it keeps per seller. The card processor it uses reports every state change by calling an HTTP endpoint the marketplace owns:\n\n- `charge.captured` — credit the seller's share to their balance\n- `charge.refunded` — debit it back, possibly only in part\n- `dispute.opened` — place a hold on the amount\n- `dispute.closed` — release the hold or forfeit it\n\nWhat the processor promises, and nothing beyond it:\n\n- every event is delivered **at least once**; any call that does not return 2xx within five seconds is retried with backoff for 72 hours;\n- each event carries a stable `event_id`, and the events about one charge carry a `seq` that increases by one per event on that charge;\n- there is no ordering between different charges, and no bound on the gap between two deliveries of the same event — a duplicate landing three days later is ordinary;\n- roughly 4,000 events per second on a normal evening, and about 25,000 per second in the first minutes of a sale.\n\nBalances are read by sellers in their dashboard and by a nightly payout run. A balance that counts one capture twice is a cash loss the marketplace eats.\n\nDesign the receiving service. Cover at least:\n\n- the endpoint contract: what must be true before it returns 2xx, and what it returns when it cannot handle the event right now;\n- what makes an event a duplicate, where that knowledge is stored, how large that store grows, and when an entry may be dropped;\n- the handling of a `charge.refunded` that arrives before the `charge.captured` it refunds;\n- behaviour when the ledger database commits more slowly than events arrive;\n- what happens when the ledger commit succeeds but the 2xx never reaches the processor.",
+      "concepts": [
+        "idempotency",
+        "delivery-semantics",
+        "queues-backpressure",
+        "data-model-design",
+        "retries-timeouts",
+        "api-contract-design"
+      ],
+      "primary_concept": "idempotency",
+      "difficulty": {
+        "band": "hard",
+        "elo": 1720
+      },
+      "expected_minutes": 40,
+      "sources": [
+        {
+          "url": "https://systemdesignschool.io/problems/webhook/solution",
+          "title": "Webhook system design — worked solution (System Design School)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "An interview-prep site publishes a full worked answer for a service that receives third-party callbacks, and puts at-least-once processing in its non-functional requirements rather than in a footnote. Its expected mechanism is a stored event identifier checked before the effect runs, which shows the question is about duplicates and retries, not the happy path."
+        },
+        {
+          "url": "https://bugfree.ai/knowledge-hub/idempotency-ordering-webhook-handlers",
+          "title": "Idempotency and ordering in webhook handlers (bugfree.ai)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A system-design interview guide keeps a standalone entry pairing repeat-safe effects with event sequencing, and frames both as things a candidate is expected to demonstrate. It names no employers and offers no sample prompts, so treat it as a weak attestation whose value is being a second, unrelated publisher covering the same pairing."
+        },
+        {
+          "url": "https://algomaster.io/learn/system-design-interviews/design-notification-service",
+          "title": "Design a notification service (AlgoMaster)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "An interview curriculum marks its asynchronous-delivery problem high priority and builds the expected answer on queues, exponential backoff and a dead-letter path, with the choice between at-least-once and exactly-once presented as something the candidate must resolve aloud. Corroborates the same line of questioning from a different problem statement."
+        }
+      ],
+      "hints": [
+        "Start from what the processor actually promises. Which of those bullets threatens the balance, and which is only an annoyance?",
+        "Processing every event exactly once is not on offer from a sender that retries. What is on offer is an effect that can run twice and leave the same balance — which field would you key that on?",
+        "Check-then-write is a race once two deliveries of the same event are in flight together. Which database primitive turns the loser of that race into a clean no-op?",
+        "Order only matters within a charge. Partition the work by charge id and order comes free inside the partition; `seq` then tells you when you are looking at a hole rather than at the next event."
+      ],
+      "follow_ups": [
+        "The processor ships a new event type and starts sending it before you deploy support for it. What does your endpoint do with it, and why is that the right answer?",
+        "A seller disputes what their balance was last Tuesday at noon. What in your design lets you reconstruct it?",
+        "Suppose `seq` is withdrawn and you are left with a wall-clock timestamp at millisecond resolution. What changes, and what can you no longer guarantee?"
+      ],
+      "grading": {
+        "type": "rubric",
+        "criteria": [
+          {
+            "id": "dedup_key_and_commit",
+            "description": "Names the exact field the receiver collapses duplicates on and puts the duplicate record and the balance change in one atomic commit, instead of checking and then writing.",
+            "weight": 0.3,
+            "concept": "idempotency",
+            "levels": {
+              "0": "Keys on something that changes between attempts (arrival time, a hash of the request including headers), or does not deduplicate at all.",
+              "2": "Keys on the event identifier, but the check and the ledger write are separate steps and nothing is said about two deliveries being handled at the same instant.",
+              "4": "Keys on the event identifier, commits the duplicate record and the balance change together or lets a unique constraint reject the second writer, and states what the losing delivery returns to the processor."
+            }
+          },
+          {
+            "id": "per_charge_ordering",
+            "description": "Restores order per charge — partitioning work by charge id, or refusing any event whose sequence number is not the next one — and says what becomes of an event that arrives early.",
+            "weight": 0.25,
+            "concept": "delivery-semantics",
+            "levels": {
+              "0": "Assumes events arrive in order, or buys ordering by funnelling every charge through one serial consumer.",
+              "2": "Spots the reordering and orders per charge, but an early event is silently dropped or parked somewhere with no path back into processing.",
+              "4": "Orders per charge only, holds an early event or refetches the charge from the processor, gives a rule for when that hold is abandoned, and says why global ordering was unnecessary."
+            }
+          },
+          {
+            "id": "dedup_retention",
+            "description": "Sizes the duplicate-tracking store against the 72-hour retry window and states what happens to an event whose record has already expired.",
+            "weight": 0.2,
+            "concept": "data-model-design",
+            "levels": {
+              "0": "No retention policy at all: the store grows without bound, or is named as a cache with no lifetime attached.",
+              "2": "Sets an expiry and sizes the store roughly, but the expiry is shorter than the retry window with no comment, or the expired-then-redelivered case is never raised.",
+              "4": "Derives the size from event rate times retention, holds records at least as long as the retry window, and names the fallback for an expired key — for example a ledger entry keyed on the same identifier, so a late duplicate is still refused."
+            }
+          },
+          {
+            "id": "backpressure_and_acks",
+            "description": "Describes endpoint behaviour when the ledger is slower than arrivals, including which response makes the processor retry rather than give up, and what a lost acknowledgement costs.",
+            "weight": 0.25,
+            "concept": "queues-backpressure",
+            "levels": {
+              "0": "Assumes the ledger keeps up, or returns 2xx before anything is durable without saying what is lost on a crash.",
+              "2": "Buffers into a queue and acknowledges quickly, but does not say what happens when that buffer fills, or treats a lost acknowledgement as impossible.",
+              "4": "States exactly what must be durable before 2xx, returns a retryable status under pressure so the processor's own backoff becomes the buffer, bounds the internal queue, and identifies a lost acknowledgement as just another duplicate the dedupe path already absorbs."
+            }
+          }
+        ]
+      },
+      "corpus_version": 1,
+      "created_at": "2026-08-20"
+    },
+    {
+      "id": "a.design.0003",
+      "kind": "archetype",
+      "domain": "system_design",
+      "modality": "design",
+      "archetype_id": null,
+      "title": "Enforce a fleet-wide quota inside the request path on a hard latency budget",
+      "statement_md": "**Pattern.** Every request must be checked against a limit defined across the whole fleet, and the check sits inside the latency path of the thing it is protecting. The interviewer supplies a request rate, a topology with more than one location, and a budget measured in single-digit milliseconds.\n\n**What it measures.** Whether the candidate treats the checker's own latency and its own failure behaviour as part of the design rather than an afterthought. Where is the decision made, and how many network hops does that cost? How far over the limit can a local, approximate counter let a caller go, and is that error acceptable given what the limit exists to prevent? What does the fleet do while the counter store is unreachable — a policy question with a defensible answer in either direction, provided the reason is tied to the consequence? And what does one enormous caller do to whichever key the counters live under? The weak answer names an algorithm and stops. The strong answer names the algorithm in a sentence and spends the remaining time on where the state lives and what happens when it is gone.\n\n**Typical realisations.** Per-key quotas on a paid API; per-user write limits on a social product; throttling failed logins, which is the variant where the availability-versus-protection answer flips.",
+      "concepts": [
+        "rate-limiting",
+        "latency-budget",
+        "consistency-models",
+        "failure-modes"
+      ],
+      "primary_concept": "rate-limiting",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1620
+      },
+      "expected_minutes": 40,
+      "sources": [
+        {
+          "url": "https://www.systemdesignhandbook.com/guides/design-a-rate-limiter/",
+          "title": "Design a rate limiter — a complete guide (System Design Handbook)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A guide devoted to this single problem calls it a favourite interview question and gives the reason: it forces speed, accuracy, scale and fault tolerance to be traded against one another inside one answer. It also treats the choice of what to do when the limiter's own store is unreachable as the central failure question, which is the part this item grades hardest."
+        },
+        {
+          "url": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/distributed-rate-limiter",
+          "title": "Design a distributed rate limiter (Hello Interview)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A coaching site's worked breakdown pins concrete non-functional targets onto the problem — a check costing under ten milliseconds, eventual consistency tolerated across nodes, a million requests a second — and grades expected depth by candidate seniority. Vendor material for a paid product, so an interested but unusually specific attestation."
+        },
+        {
+          "url": "https://www.tryexponent.com/blog/rate-limiter-system-design",
+          "title": "System design interview: design a rate limiter (Exponent)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A recorded mock interview led by a serving engineering manager works this problem end to end, arguing about where the check belongs and whether one shared counter store spanning data centres is affordable. A mock is closer to the real event than a question list, though the page names no employer that asks it."
+        }
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-20"
+    },
+    {
+      "id": "i.design.0003",
+      "kind": "instance",
+      "domain": "system_design",
+      "modality": "design",
+      "archetype_id": "a.design.0003",
+      "title": "Per-key quotas for a metered geocoding API at 40 edge locations",
+      "statement_md": "You sell a geocoding API. Callers authenticate with an API key, and each key sits on a plan:\n\n| plan | steady rate | burst ceiling | included per month |\n|---|---|---|---|\n| free | 60 req/min | 120 | 100 thousand |\n| team | 600 req/min | 1,200 | 5 million |\n| scale | 6,000 req/min | 12,000 | 250 million |\n\nRequests terminate at 40 locations across three continents, each caller reaching whichever is nearest, and one customer's traffic routinely arrives at several locations at once. A cached lookup is answered in about 8 ms, and the product promises that quota enforcement adds no more than 2 ms at the 99th percentile.\n\nAggregate traffic runs around 180,000 requests per second and it is concentrated: the fifty busiest keys are about 70% of it.\n\nRequests beyond the steady rate are refused with `429`. Volume beyond the monthly inclusion is **not** refused — it is billed as overage, and an overage line a customer disputes is expensive to investigate.\n\nDesign the enforcement path. Cover at least:\n\n- where the accept-or-refuse decision is made, and how many network round trips it costs;\n- how per-minute counters are shared across the 40 locations, or deliberately not shared, and how far above their steady rate a customer could get as a result;\n- how monthly volume is recorded, given that it ends up on an invoice;\n- what each location does during a 90-second outage of whatever holds the counters;\n- what the fifty busiest keys do to your storage layout.",
+      "concepts": [
+        "rate-limiting",
+        "latency-budget",
+        "consistency-models",
+        "failure-modes",
+        "data-model-design"
+      ],
+      "primary_concept": "rate-limiting",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1660
+      },
+      "expected_minutes": 40,
+      "sources": [
+        {
+          "url": "https://www.systemdesignhandbook.com/guides/design-a-rate-limiter/",
+          "title": "Design a rate limiter — a complete guide (System Design Handbook)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A guide devoted to this single problem calls it a favourite interview question and gives the reason: it forces speed, accuracy, scale and fault tolerance to be traded against one another inside one answer. It also treats the choice of what to do when the limiter's own store is unreachable as the central failure question, which is the part this item grades hardest."
+        },
+        {
+          "url": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/distributed-rate-limiter",
+          "title": "Design a distributed rate limiter (Hello Interview)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A coaching site's worked breakdown pins concrete non-functional targets onto the problem — a check costing under ten milliseconds, eventual consistency tolerated across nodes, a million requests a second — and grades expected depth by candidate seniority. Vendor material for a paid product, so an interested but unusually specific attestation."
+        },
+        {
+          "url": "https://www.tryexponent.com/blog/rate-limiter-system-design",
+          "title": "System design interview: design a rate limiter (Exponent)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A recorded mock interview led by a serving engineering manager works this problem end to end, arguing about where the check belongs and whether one shared counter store spanning data centres is affordable. A mock is closer to the real event than a question list, though the page names no employer that asks it."
+        }
+      ],
+      "hints": [
+        "Work out the per-request budget before anything else. Eight milliseconds of service time and two milliseconds allowed for the check — what does that rule out immediately, given where the 40 locations are?",
+        "You are not obliged to keep one true counter. Ask what the limit is actually for: is a customer who slips 640 requests through a 600-per-minute cap a problem, and for whom?",
+        "Enforcement and billing are two different accuracy requirements applied to the same requests. Nothing says one counter has to serve both.",
+        "Consider handing each location a share of a key's per-minute budget, topped up centrally on a schedule. The hot path then never leaves the box, the worst-case overshoot is bounded by how many locations hold a share, and the outage answer becomes 'keep spending the last share you were given'."
+      ],
+      "follow_ups": [
+        "One customer is 40% of all traffic and uses a single key. Where does that key's state live, and what breaks first?",
+        "Support wants to raise one customer's limit within a minute, with no deploy. What does that requirement add to your design?",
+        "The same mechanism is now asked to throttle failed logins on the account service. Which of your answers flips, and why?"
+      ],
+      "grading": {
+        "type": "rubric",
+        "criteria": [
+          {
+            "id": "decision_locality",
+            "description": "Places the accept-or-refuse decision somewhere that can meet the stated 2 ms p99 and counts the round trips it costs, rather than treating a counter lookup as free.",
+            "weight": 0.25,
+            "concept": "latency-budget",
+            "levels": {
+              "0": "Routes every request to one central store with no mention of the distance to it, or offers no latency reasoning anywhere.",
+              "2": "Recognises that a cross-continent hop is too slow and keeps state near the request, but never compares the resulting cost against the 2 ms figure.",
+              "4": "Says where the decision is made, counts the hops on the hot path and argues the total against the 2 ms budget, and states what happens on a local miss or a cold process."
+            }
+          },
+          {
+            "id": "counter_sharing_error",
+            "description": "Explains how counters are reconciled across the 40 locations and quantifies the resulting overshoot, instead of asserting the limit holds exactly.",
+            "weight": 0.25,
+            "concept": "consistency-models",
+            "levels": {
+              "0": "Claims exact fleet-wide enforcement with no mechanism behind it, or ignores that one key is seen at several locations at once.",
+              "2": "Proposes local counters with periodic synchronisation but cannot say how far past the limit a customer gets before a sync catches it.",
+              "4": "Names the scheme — budget shares allocated per location, or local counting on a stated sync interval — derives the worst-case overshoot from it in requests, and argues why that error is acceptable for a rate cap."
+            }
+          },
+          {
+            "id": "billing_record_separation",
+            "description": "Keeps the approximate enforcement counter apart from the durable record the invoice is built from, and says how the durable one is written and checked.",
+            "weight": 0.2,
+            "concept": "data-model-design",
+            "levels": {
+              "0": "Invoices straight from the in-memory enforcement counters, or never says how monthly volume is captured at all.",
+              "2": "Emits usage records to a durable pipeline but treats the invoice as whatever that pipeline happens to total, with no reconciliation and no dispute path.",
+              "4": "Keeps enforcement approximate and billing durable, describes how usage records get from an edge location to the billing store, and names the check that would catch a location dropping records before a customer notices."
+            }
+          },
+          {
+            "id": "store_outage_policy",
+            "description": "Names an allow-through or refuse-all policy for the 90-second counter-store outage, ties the reason to this product's consequences, and says what each location runs on meanwhile.",
+            "weight": 0.3,
+            "concept": "failure-modes",
+            "levels": {
+              "0": "Never considers the store being unreachable, or waves it away as highly available and moves on.",
+              "2": "Names the choice between allowing and refusing traffic during the outage but picks one without connecting it to this API's risk, and says nothing about the counters afterwards.",
+              "4": "Picks a policy justified by the actual consequence — an unmetered free tier versus paying customers refused service — falls back to the last known share or a conservative local cap for the duration, and says how counters and usage records settle up once the store returns."
+            }
+          }
+        ]
+      },
+      "corpus_version": 1,
+      "created_at": "2026-08-20"
+    }
+  ]
+}
