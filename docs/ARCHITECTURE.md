@@ -1,7 +1,9 @@
 # Architecture
 
-> **Status:** Design. The service boundaries are real; almost none of the code is —
-> only health endpoints and the corpus loader exist today (**Phase 0**).
+> **Status:** Design, partially built. Real today: the Postgres schema and migrations,
+> settings and `ModelRouter` (unused), the sandbox and `POST /execute`, and a 24-item
+> corpus. Not built: sessions, the agent loop, grading, mastery, auth, and the budget
+> middleware — so no model call has ever been made. `docs/BUILDLOG.md` is authoritative.
 > Related: [GLOSSARY](GLOSSARY.md) · [API](API.md) · [SECURITY](SECURITY.md) · [INFRA](INFRA.md) · [BUILDLOG](BUILDLOG.md) (what is actually built) · [PRACTICE_LOG](PRACTICE_LOG.md)
 
 ```

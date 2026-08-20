@@ -106,10 +106,11 @@ containers land in Phase 6, when they have Dockerfiles.
 
 ## Build status
 
-**Phase 0 — foundations.** See [`docs/BUILDLOG.md`](docs/BUILDLOG.md) for what has actually
-landed and what the next phase picks up.
+**Phase 0 complete. Phases 1, 2 and 3 partially landed**, deliberately out of order —
+each was taken far enough to unblock the next. See [`docs/BUILDLOG.md`](docs/BUILDLOG.md)
+for what actually exists and what each phase still owes.
 
-- [ ] **0 — Foundations:** repo, schema, taxonomy, corpus contract, CI
+- [x] **0 — Foundations:** repo, schema, taxonomy, corpus contract, CI
 - [ ] **1 — Corpus v1:** researched, evidence-ranked, original statements — *thin slice
       landed (2026-08-19): 12 items across coding and quant, verified; bulk authoring and
       the design/behavioral domains remain*

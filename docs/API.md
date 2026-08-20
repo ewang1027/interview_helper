@@ -1,7 +1,10 @@
 # API and session runtime
 
-> **Status:** Specification — only `/health` and `/corpus/status` exist today.
-> The rest lands in **Phase 3**; the Vapi shim in **Phase 7**.
+> **Status:** Specification — of the surface below, only `/health` and `/corpus/status`
+> exist today, and there is **no auth on any of it**. The rest lands in **Phase 3**; the
+> Vapi shim in **Phase 7**. (The executor's `POST /execute` *is* built, but that is a
+> separate service on a separate contract — see [SECURITY](SECURITY.md). The `run_code`
+> tool below is the proxy to it, and that proxy does not exist yet.)
 > Related: [ARCHITECTURE](ARCHITECTURE.md) · [GRADING](GRADING.md) (what the graders do with submissions) · [ADAPTIVE](ADAPTIVE.md) (where the planner gets its input) · [VOICE](VOICE.md) (the second transport) · [WEB](WEB.md) (the first consumer)
 
 This is the contract two separate consumers build against — the web app and the Vapi

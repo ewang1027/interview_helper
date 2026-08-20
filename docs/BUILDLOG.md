@@ -9,6 +9,31 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
+## Where things stand — 2026-08-20
+
+Entries below are **chronological, not in phase order**. Work has deliberately jumped
+between phases, taking each only as far as needed to unblock the next — Phase 3's
+persistence layer landed before Phase 1 had any content, because the practice-log spec
+needed a real schema to be more than prose. Read this table first; the entries are the
+detail behind it.
+
+| Phase | State | What exists | What it still owes |
+|---|---|---|---|
+| **0** Foundations | **complete** | workspace, 159-concept taxonomy, corpus schema + validator, CI | — |
+| **1** Corpus v1 | thin slice | 24 items — 3 archetypes + 3 instances in each of four domains, verified | bulk authoring toward ~400/~150 |
+| **2** Executor + grading | mostly built | sandbox isolation (6 escape tests), `POST /execute`, reference-solution verification | complexity probe, `cpp`, `peak_rss_kb` |
+| **3** Runtime + API | infra only | Postgres schema + migrations, settings, `ModelRouter` | sessions, agent loop, grading, auth, budget middleware |
+| **4** Adaptive engine | not started | — | Elo, FSRS, evidence replay, planner |
+| **5–8** Web, AWS, voice, hardening | not started | — | — |
+| **9** Practice log | spec only | `docs/PRACTICE_LOG.md` | everything; gated on 3 + 4 |
+
+Two things worth knowing before reading anything else as further along than it is:
+**no model call has ever been made** — `ModelRouter` resolves config and builds a client,
+nothing calls it, and the token budgets in `.env.example` are read into settings but
+enforced nowhere — and **there is no auth**, so every endpoint is open. That is fine while
+they are `/health`, `/corpus/status` and `/execute` on a dev machine, and it is a hard
+gate before anything reads or writes user data.
+
 ---
 
 ## Phase 0 — Foundations · complete · 2026-08-15
