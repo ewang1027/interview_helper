@@ -21,7 +21,7 @@ detail behind it.
 |---|---|---|---|
 | **0** Foundations | **complete** | workspace, 159-concept taxonomy, corpus schema + validator, CI | — |
 | **1** Corpus v1 | thin slice | 24 items — 3 archetypes + 3 instances in each of four domains, verified | bulk authoring toward ~400/~150 |
-| **2** Executor + grading | mostly built | sandbox isolation (6 escape tests), `POST /execute`, reference-solution verification | complexity probe, `cpp`, `peak_rss_kb` |
+| **2** Executor + grading | deterministic half **done** | sandbox isolation (6 escape tests), `POST /execute`, complexity probe, reference-solution verification | scoring, `cpp`, `peak_rss_kb` |
 | **3** Runtime + API | infra only | Postgres schema + migrations, settings, `ModelRouter` | sessions, agent loop, grading, auth, budget middleware |
 | **4** Adaptive engine | not started | — | Elo, FSRS, evidence replay, planner |
 | **5–8** Web, AWS, voice, hardening | not started | — | — |
@@ -678,3 +678,89 @@ odd while being typed.
 
 The interview runtime proper — sessions, the agent loop, grading, and the budget
 middleware — against a schema, a corpus, and now an execution path that all exist.
+
+---
+
+## Phase 2 (complexity probe) — measured, and the generator turned out to be the point · 2026-08-20
+
+The last named piece of Phase 2's deterministic grading. It catches what `GRADING.md`
+asks it to: "the accepted-but-quadratic solution that passes small tests".
+
+```
+make check          59 passed, 23 deselected (hermetic)
+make test-sandbox   20 passed (7 escape + 8 /execute + 5 probe, real Docker, 32s)
+verify-solutions    3/3 reference solutions match their declared complexity_target
+                    i.code.0001 slope 1.03 vs O(n) · 0002 slope 1.00 vs O(n)
+                    0003 slope 1.06 vs O(n log S)
+```
+
+### The spec asked for something the schema could not express
+
+`gradingTests` carried `complexity_target` and no way to build an input of size *n* —
+test cases hold fixed `input` arrays, which cannot be grown. "Run at increasing n" was
+**unimplementable as written**, and had been since the schema was authored. Added
+`complexity_probe` (`generator` defining `make_input(n)`, `sizes`, `repeats`) and
+back-filled it onto the three coding items.
+
+### Thresholds are measured, because the textbook ones would fail correct code
+
+Calibrated by running known functions through the same sandbox:
+
+| function | theory at these n | **measured** |
+|---|---|---|
+| `for x in xs: t += x` | 1.00 | 1.006, 1.005 |
+| `sum(xs)` | 1.00 | 1.107, 1.113 |
+| `sorted(xs)` | ~1.09 | **1.505, 1.458** |
+| nested `for`/`for` | 2.00 | 2.196, 2.176 |
+
+Repeat trials agree to ~0.05, so verdicts are stable — but **measured slopes sit well
+above theory**. `sorted` predicts 1.09 and measures 1.5. Bands taken from the textbook
+would have called every correct `sorted`-based solution super-linear and written false
+evidence of weakness. The bands come from the measurements, and the probe reports
+`inconclusive` rather than guessing: `slower_than_target` requires clearing the band by a
+0.35 margin, so an n-log-n solution against an O(n) target is never failed. Splitting O(n)
+from O(n log n) by timing is unreliable and worth less than the cost of being wrong.
+
+### The finding: a random generator disarms the probe entirely
+
+The first negative control — a genuinely naive backward scan against an O(n) target —
+was **not caught**, and the reason is the whole lesson. On random input that scan
+terminates almost immediately, so it really is near-linear. Measured, same solution:
+
+| generator | slope | verdict |
+|---|---|---|
+| random values | 1.277 | **matches** — walks straight through |
+| ascending (worst case) | **2.032** | slower_than_target |
+
+The reference monotonic stack measures 0.995 on the same ascending input, so the
+adversarial generator separates the two cleanly rather than penalising both. **The probe's
+power is in the generator, not in the curve fitting.** Both corpus generators are now
+worst-case by construction — ascending for the span scan, an alphabet of exactly `k` for
+the sliding window so a naive per-start rescan degenerates — and a test pins the finding
+so nobody "simplifies" a generator back to `random.randrange` and quietly disarms the check.
+
+### A fix that made things briefly worse
+
+With adversarial generators the impostors became slow enough that the probe itself timed
+out, and both came back `inconclusive` — **the most damning case producing the least
+verdict.** The driver now carries a time budget: it stops repeating a run once one takes
+over a second, stops growing n once the cumulative spend passes the budget, and reports
+the points it has. Four points still land, and both impostors are caught at slope ~2.01.
+
+Worth stating plainly: for one round of measurement the probe was strictly worse than
+before, and only running it revealed that. A design reasoned through on paper would have
+shipped the adversarial generators and called the job done.
+
+### Deferred deliberately
+
+- **Scoring.** The probe returns a verdict; nothing yet folds it into a score with
+  correctness and hint penalties. `ProbeResult.penalises` marks the only verdict allowed
+  to count against a candidate.
+- **`cpp`.** The driver is Python-specific.
+- **Rubric-graded domains** have no analogue and need none.
+
+### Next
+
+Phase 2's deterministic half is done: isolation, execution, and now growth. What remains
+before a session can run end to end is Phase 3's runtime — sessions, the agent loop,
+grading that writes `concept_evidence`, auth, and the budget middleware.

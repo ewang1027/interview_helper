@@ -20,6 +20,7 @@ import sys
 from typing import Any
 
 from corpus.loader import load_items
+from executor.complexity import run_probe
 from executor.harness import build_driver, parse_result
 from executor.protocol import ExecuteResponse, TestCase
 from executor.sandbox import run_sandboxed
@@ -51,6 +52,15 @@ def main() -> int:
         help=(
             "Also assert a do-nothing stub FAILS each item. A test suite a stub can pass "
             "measures nothing — see docs/BUILDLOG.md on weak tests."
+        ),
+    )
+    parser.add_argument(
+        "--complexity",
+        action="store_true",
+        help=(
+            "Also run the complexity probe against each reference solution and fail if it "
+            "is measurably slower than the item's own declared complexity_target. Slow: "
+            "each item runs at four sizes."
         ),
     )
     args = parser.parse_args()
@@ -101,6 +111,29 @@ def main() -> int:
                         f"{stub_result.passed}/{stub_result.total} — those tests measure nothing"
                     )
                     failed = True
+
+            if args.complexity:
+                probe_spec = grading.get("complexity_probe")
+                target = grading.get("complexity_target")
+                if not probe_spec:
+                    if target:
+                        # complexity_target without a probe is a claim nothing checks.
+                        print(f"     {item.id}: declares {target} but ships no complexity_probe")
+                    continue
+                probe = run_probe(
+                    probe_spec["generator"],
+                    solution,
+                    entrypoint,
+                    probe_spec["sizes"],
+                    target,
+                    repeats=probe_spec.get("repeats", 5),
+                )
+                slope = f"{probe.slope:.2f}" if probe.slope is not None else "n/a"
+                if probe.penalises:
+                    print(f"SLOW {item.id}: slope {slope} vs {target} — {probe.detail}")
+                    failed = True
+                else:
+                    print(f"     {item.id}: complexity {probe.verdict} (slope {slope} vs {target})")
 
     return 1 if failed else 0
 

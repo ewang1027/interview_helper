@@ -72,8 +72,11 @@ jobs:
 
       # docs/GRADING.md: reference solutions are verified, not trusted. Runs them
       # through the same sandbox a candidate's submission gets.
+      # --complexity additionally asserts each reference solution actually meets the
+      # complexity_target its own item declares. CI runs on 4 CPUs vs Colima's 2, but the
+      # verdict is a growth exponent rather than an absolute time, so it ports.
       - name: Verify reference solutions
-        run: uv run python scripts/verify_reference_solutions.py --strict-stub-check
+        run: uv run python scripts/verify_reference_solutions.py --strict-stub-check --complexity
 
       # The corpus gate is separate so a content-only failure is obvious in the
       # job list without reading logs.

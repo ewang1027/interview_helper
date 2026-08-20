@@ -162,6 +162,11 @@
         "languages": ["python"],
         "entrypoint": "longest_uniform_batch",
         "complexity_target": "O(n)",
+        "complexity_probe": {
+          "generator": "def make_input(n):\n    import random\n    r = random.Random(20260820)\n    # Alphabet size == k, so the whole run is one legal window and a naive\n    # per-start rescan degenerates to O(n^2). A wider alphabet hides it.\n    return [[r.randrange(4) for _ in range(n)], 4]\n",
+          "sizes": [4000, 8000, 16000, 32000],
+          "repeats": 5
+        },
         "reference_solutions": {
           "python": "def longest_uniform_batch(colors, k):\n    if k <= 0:\n        return 0\n    counts = {}\n    left = 0\n    best = 0\n    for right, colour in enumerate(colors):\n        counts[colour] = counts.get(colour, 0) + 1\n        while len(counts) > k:\n            dropped = colors[left]\n            counts[dropped] -= 1\n            if counts[dropped] == 0:\n                del counts[dropped]\n            left += 1\n        if right - left + 1 > best:\n            best = right - left + 1\n    return best\n"
         },
@@ -327,6 +332,11 @@
         "languages": ["python"],
         "entrypoint": "pressure_spans",
         "complexity_target": "O(n)",
+        "complexity_probe": {
+          "generator": "def make_input(n):\n    # Ascending is the worst case for a naive backward scan and free for a\n    # monotonic stack. A random log hides the quadratic entirely -- measured.\n    return [list(range(n))]\n",
+          "sizes": [4000, 8000, 16000, 32000],
+          "repeats": 5
+        },
         "reference_solutions": {
           "python": "def pressure_spans(readings):\n    spans = []\n    stack = []  # indices of readings strictly greater than everything after them\n    for i, value in enumerate(readings):\n        while stack and readings[stack[-1]] <= value:\n            stack.pop()\n        spans.append(i + 1 if not stack else i - stack[-1])\n        stack.append(i)\n    return spans\n"
         },
@@ -464,6 +474,11 @@
         "languages": ["python"],
         "entrypoint": "min_peak_load",
         "complexity_target": "O(n log S)",
+        "complexity_probe": {
+          "generator": "def make_input(n):\n    import random\n    r = random.Random(20260820)\n    return [[r.randrange(1, 500) for _ in range(n)], 8]\n",
+          "sizes": [2000, 4000, 8000, 16000],
+          "repeats": 5
+        },
         "reference_solutions": {
           "python": "def min_peak_load(jobs, workers):\n    if not jobs:\n        return 0\n    if workers <= 0:\n        return -1\n\n    def fits(cap):\n        used = 1\n        running = 0\n        for cost in jobs:\n            if running + cost <= cap:\n                running += cost\n            else:\n                used += 1\n                running = cost\n                if used > workers:\n                    return False\n        return True\n\n    lo = max(jobs)\n    hi = sum(jobs)\n    while lo < hi:\n        mid = (lo + hi) // 2\n        if fits(mid):\n            hi = mid\n        else:\n            lo = mid + 1\n    return lo\n"
         },

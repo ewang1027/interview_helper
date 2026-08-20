@@ -140,7 +140,31 @@
         },
         "complexity_target": {
           "type": ["string", "null"],
-          "description": "e.g. 'O(n)'. The complexity probe runs the submission at increasing n and fits the growth curve against this."
+          "description": "e.g. 'O(n)'. The complexity probe fits the growth curve against this. Inert without `complexity_probe`, which is what actually supplies inputs of size n."
+        },
+        "complexity_probe": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["generator", "sizes"],
+          "description": "How to build an input of size n. Without this the probe cannot run at all: the fixed `input` arrays in `tests` cannot be grown, so `complexity_target` alone is unenforceable.",
+          "properties": {
+            "generator": {
+              "type": "string",
+              "description": "Python source defining make_input(n) -> list of positional args for the entrypoint. Must be deterministic (seed any randomness) so a verdict is reproducible."
+            },
+            "sizes": {
+              "type": "array",
+              "items": { "type": "integer", "minimum": 1 },
+              "minItems": 3,
+              "description": "Ascending n values. Pick them so the largest run clears ~0.2ms, below which interpreter noise dominates and the probe reports inconclusive."
+            },
+            "repeats": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 5,
+              "description": "Runs per size; the minimum is taken, which rejects scheduling noise better than a mean does."
+            }
+          }
         },
         "limits": {
           "type": "object",

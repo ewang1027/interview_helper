@@ -48,7 +48,7 @@ secret-scan: ## Grep tracked files for common secret shapes (repo is public)
 	@bash scripts/secret_scan.sh
 
 verify-solutions: ## Run every coding item's reference solution against its own tests, in the sandbox
-	uv run python scripts/verify_reference_solutions.py --strict-stub-check
+	uv run python scripts/verify_reference_solutions.py --strict-stub-check --complexity
 
 seed: ## Load the corpus into the database
 	uv run python -m api.seed

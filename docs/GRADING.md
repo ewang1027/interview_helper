@@ -1,12 +1,12 @@
 # Grading
 
-> **Status:** Partially built. The coding grader's *execution* half exists — `POST
-> /execute` runs a submission against an item's tests in the sandbox and reports pass/fail
-> per case with its kind — and reference solutions are verified in CI against their own
-> tests rather than trusted. **Not built:** scoring (the weighted mix below), the
-> complexity probe, hint penalties, the quant answer check, every rubric grader, and the
-> write to `concept_evidence` — so no grading has ever produced a score or a row of
-> evidence. Rubric graders land in **Phase 3**.
+> **Status:** Partially built. Working: `POST /execute` runs a submission against an
+> item's tests in the sandbox and reports pass/fail per case with its kind; the
+> **complexity probe** measures growth against `complexity_target`; and reference
+> solutions are verified in CI against both, rather than trusted. **Not built:** scoring
+> (the weighted mix below), hint penalties, the quant answer check, every rubric grader,
+> and the write to `concept_evidence` — so no grading has ever produced a score or a row
+> of evidence. Rubric graders land in **Phase 3**.
 > Related: [SECURITY](SECURITY.md) (the sandbox code runs in) · [ADAPTIVE](ADAPTIVE.md) (what the evidence feeds) · [API](API.md) (how results reach the client) · [OPERATIONS](OPERATIONS.md) (calibration drift)
 
 Every graded artifact produces one thing: `concept_evidence` rows. Everything else —

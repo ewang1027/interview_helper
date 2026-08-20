@@ -114,8 +114,8 @@ for what actually exists and what each phase still owes.
 - [ ] **1 — Corpus v1:** researched, evidence-ranked, original statements — *thin slice
       landed (2026-08-19): 12 items across coding and quant, verified; bulk authoring and
       the design/behavioral domains remain*
-- [ ] **2 — Executor + deterministic grading** — *isolation layer and `POST /execute`
-      landed and verified (2026-08-20); the complexity probe and `cpp` remain*
+- [ ] **2 — Executor + deterministic grading** — *isolation, `POST /execute` and the
+      complexity probe landed and verified (2026-08-20); scoring and `cpp` remain*
 - [ ] **3 — Interview runtime (text) + API** — *DB schema, migrations, settings and
       model routing landed early (2026-08-16); sessions, grading, auth and budgets remain*
 - [ ] **4 — Adaptive engine**
