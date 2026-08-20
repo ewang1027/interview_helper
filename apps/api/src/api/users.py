@@ -27,5 +27,10 @@ def current_user(db: Session) -> User:
     if user is None:
         user = User(github_id=LOCAL_GITHUB_ID)
         db.add(user)
-        db.flush()
+        # Committed, not just flushed. A read-only route — `GET /mastery`, say — never
+        # commits, so its session rolls back on close and takes the new row with it: the
+        # user would be created and discarded on every such request until some write route
+        # happened to persist one.
+        db.commit()
+        db.refresh(user)
     return user

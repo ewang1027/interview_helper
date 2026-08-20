@@ -26,21 +26,23 @@ from api.users import current_user
 
 
 def _cleanup(session_ids: list[str]) -> None:
-    if not session_ids:
-        return
+    # The replay runs even when a test created no sessions: a test may write a `mastery`
+    # row directly to set up a state that would take fifty sessions to reach honestly, and
+    # leaving that behind would silently change what the next test measures.
     with Session(get_engine()) as db:
-        artifacts = [
-            row.id
-            for row in db.exec(
-                select(Artifact).where(col(Artifact.session_id).in_(session_ids))
-            ).all()
-        ]
-        if artifacts:
-            db.exec(delete(Grading).where(col(Grading.artifact_id).in_(artifacts)))
-        db.exec(delete(ConceptEvidence).where(col(ConceptEvidence.session_id).in_(session_ids)))
-        db.exec(delete(Artifact).where(col(Artifact.session_id).in_(session_ids)))
-        db.exec(delete(InterviewSession).where(col(InterviewSession.id).in_(session_ids)))
-        db.commit()
+        if session_ids:
+            artifacts = [
+                row.id
+                for row in db.exec(
+                    select(Artifact).where(col(Artifact.session_id).in_(session_ids))
+                ).all()
+            ]
+            if artifacts:
+                db.exec(delete(Grading).where(col(Grading.artifact_id).in_(artifacts)))
+            db.exec(delete(ConceptEvidence).where(col(ConceptEvidence.session_id).in_(session_ids)))
+            db.exec(delete(Artifact).where(col(Artifact.session_id).in_(session_ids)))
+            db.exec(delete(InterviewSession).where(col(InterviewSession.id).in_(session_ids)))
+            db.commit()
         recompute(db, current_user(db).id)
 
 

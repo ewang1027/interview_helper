@@ -20,6 +20,7 @@ model is called; the SSE stream, so state changes are observed by polling
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Any, Literal
@@ -35,9 +36,9 @@ from api.executor_client import (
     Language,
 )
 from api.grading.coding import GRADER_VERSION, CodingGrade, grade_coding
-from api.mastery import apply_evidence
+from api.mastery import apply_evidence, lock_projection
 from api.models import Artifact, ConceptEvidence, Grading, InterviewSession, Item
-from api.planner import build_plan, plan_item_ids
+from api.planner import build_plan, eligible_items, plan_item_ids
 from api.users import current_user
 from corpus.loader import load_items
 from corpus.models import Item as CorpusItem
@@ -47,6 +48,8 @@ from corpus.models import Item as CorpusItem
 # planned item has a terminal grading, and -> abandoned from `POST /end`. `wrapping` and
 # `grading` are the agent's and the rubric graders' states; nothing can observe them yet,
 # and inventing transitions through them would be theatre.
+LOGGER = logging.getLogger(__name__)
+
 SessionState = Literal[
     "planning",
     "briefing",
@@ -123,10 +126,17 @@ def create_session(
     )
     item_ids = plan_item_ids(plan)
     if not item_ids:
-        raise unprocessable(
-            f"The corpus has no active {mode} instances matching this request.",
-            focus_concepts=list(focus_concepts),
-        )
+        # Two different emptinesses, and saying "no items match" for the second one sends
+        # you looking for a corpus problem that is not there: an item is *served* for the
+        # concept it is chiefly a measurement of, so focusing on a concept that only ever
+        # appears as a secondary matches items and still plans nothing.
+        detail = f"The corpus has no active {mode} instances matching this request."
+        if focus_concepts and eligible_items(mode, focus_concepts):
+            detail = (
+                f"{list(focus_concepts)} appear only as secondary concepts on {mode} items. "
+                "A session is planned around the concept an item chiefly measures."
+            )
+        raise unprocessable(detail, focus_concepts=list(focus_concepts))
 
     # The corpus is the source of truth and the `items` table is a projection of it, so a
     # plan can name an item the database has never been told about. Say that in a sentence
@@ -251,9 +261,22 @@ def grade_artifact(artifact_id: str, runner: CodeRunner | None = None) -> None:
     seconds — docs/API.md returns 202 for exactly this reason), so it opens its own
     database session rather than borrowing a closed one.
 
-    Never raises: a caller with nothing to return the error to would only lose it. Every
-    failure path ends in a `gradings` row that says what went wrong.
+    Never raises, and the blanket `except` below is what makes that true rather than the
+    docstring saying so. An earlier version caught only the three exceptions `grade_coding`
+    was expected to raise, which left everything after it — the evidence insert, the
+    projection update — able to escape. The consequence was silent and permanent: the
+    session's transaction rolled back, taking the `gradings` row with it, so the item
+    reported `"grading"` forever, the session never completed, and a retry was refused with
+    409 because the artifact already existed. The client had its 202 and never found out.
     """
+    try:
+        _grade(artifact_id, runner)
+    except Exception as exc:
+        LOGGER.exception("grading %s failed outside the grader", artifact_id)
+        _record_crash(artifact_id, f"{type(exc).__name__}: {exc}")
+
+
+def _grade(artifact_id: str, runner: CodeRunner | None) -> None:
     with Session(get_engine()) as db:
         artifact = db.get(Artifact, artifact_id)
         if artifact is None:  # pragma: no cover - only reachable if the row was deleted
@@ -284,6 +307,23 @@ def grade_artifact(artifact_id: str, runner: CodeRunner | None = None) -> None:
         _record_grade(db, artifact, grade)
 
 
+def _record_crash(artifact_id: str, detail: str) -> None:
+    """Record a failure whose own transaction may already be poisoned.
+
+    Opens a fresh session on purpose: an `IntegrityError` mid-write leaves the original
+    transaction unusable, so writing the failure row through it would fail too and the
+    grading would vanish exactly as it did before.
+    """
+    try:
+        with Session(get_engine()) as db:
+            artifact = db.get(Artifact, artifact_id)
+            if artifact is None:  # pragma: no cover - only if the row was deleted
+                return
+            _record_failure(db, artifact, f"grading crashed: {detail}")
+    except Exception:
+        LOGGER.exception("could not record the failed grading for %s", artifact_id)
+
+
 def _record_failure(db: Session, artifact: Artifact, detail: str) -> None:
     db.add(
         Grading(
@@ -299,6 +339,9 @@ def _record_failure(db: Session, artifact: Artifact, detail: str) -> None:
 
 
 def _record_grade(db: Session, artifact: Artifact, grade: CodingGrade) -> None:
+    # Before the evidence rows exist, so their `ts` values are stamped inside the critical
+    # section and a replay sees them in the order they were applied.
+    lock_projection(db)
     db.add(
         Grading(
             artifact_id=artifact.id,

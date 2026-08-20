@@ -9,15 +9,19 @@ checks that it can explain itself while doing it.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
 from fakes import FakeRunner, ScriptedRunner
 from fastapi.testclient import TestClient
+from sqlmodel import Session
 
+from api.db import get_engine
 from api.main import app
 from api.mastery import DEFAULT_ABILITY
-from api.planner import STRATEGY, _prerequisite_substitution
+from api.models import Mastery
+from api.planner import STRATEGY, _prerequisite_substitution, build_plan
 from api.priority import ConceptPriority
 from api.routes.sessions import get_runner
 
@@ -28,6 +32,10 @@ pytestmark = pytest.mark.db
 WEAK_ITEM = "i.code.0002"
 WEAK_ENTRYPOINT = "pressure_spans"
 WEAK_CONCEPT = "monotonic-stack"
+
+# The item the review slot should reach for, and the concept it measures.
+REVIEW_ITEM = "i.code.0003"
+REVIEW_CONCEPT = "binary-search-answer"
 
 SOURCE = "def f(xs):\n    return xs\n"
 
@@ -210,4 +218,46 @@ def _priority(concept_id: str, *, ability: float) -> ConceptPriority:
         calibrating=True,
         unseen=False,
         terms={},
+    )
+
+
+def test_a_due_concept_you_are_good_at_takes_one_slot(created_sessions, user_id, db_session):
+    """docs/ADAPTIVE.md's review slot, which was unreachable until the budget reserved it.
+
+    The `mastery` row is written directly — the only place in the suite that does — because
+    reaching this state honestly takes dozens of successful sessions, and what is under test
+    is the planner's reaction to the state, not the arithmetic that produces it. The
+    fixture replays the projection afterwards, so nothing hand-written survives the test.
+    """
+    with Session(get_engine()) as db:
+        past = datetime.now(UTC) - timedelta(days=30)
+        db.add(
+            Mastery(
+                user_id=user_id,
+                concept_id=REVIEW_CONCEPT,
+                ability=1750.0,
+                observations=6,
+                stability=5.0,
+                due_at=past,
+                last_seen=past,
+            )
+        )
+        db.commit()
+
+    plan = build_plan(db_session, user_id, "coding", 45)
+    served = [entry["item_id"] for entry in plan["items"]]
+
+    assert REVIEW_ITEM in served, served
+    review = next(entry for entry in plan["items"] if entry["item_id"] == REVIEW_ITEM)
+    assert review["reason"]["prerequisite_note"] == "due for review, and you are good at it"
+    # And it is seasoning, not the session: something weak was still served alongside it.
+    assert len(served) >= 2, served
+    assert plan["estimated_minutes"] <= 45
+
+
+def test_nothing_is_marked_review_when_nothing_is_due(created_sessions, user_id, db_session):
+    plan = build_plan(db_session, user_id, "coding", 45)
+    assert all(
+        entry["reason"]["prerequisite_note"] != "due for review, and you are good at it"
+        for entry in plan["items"]
     )

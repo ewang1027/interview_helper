@@ -65,9 +65,22 @@ def run_session(
 
 
 def snapshot(user_id: str) -> dict[str, Any]:
+    """Every column the projection owns, `fsrs_card` included.
+
+    The card is in here deliberately. Comparing only the four derived numbers let a real
+    divergence hide: `fsrs.Card()` stamps its `card_id` from the wall clock, so a rebuilt
+    row differed from the row it was supposed to reproduce while every number computed
+    from it matched. A replay gate that skips a column is a gate with a hole in it.
+    """
     with Session(get_engine()) as db:
         mastery = {
-            row.concept_id: (row.ability, row.observations, row.stability, row.due_at)
+            row.concept_id: (
+                row.ability,
+                row.observations,
+                row.stability,
+                row.due_at,
+                row.fsrs_card,
+            )
             for row in db.exec(select(Mastery).where(Mastery.user_id == user_id)).all()
         }
         items = {row.id: row.elo for row in db.exec(select(Item)).all()}

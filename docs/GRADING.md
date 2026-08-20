@@ -165,3 +165,11 @@ one part of the system that can silently get worse without anything failing.
 A grader that crashes, times out, or returns unparseable output is a **failed grading**
 whose message is the stderr tail — never a silent pass and never a default score. A
 missing grade is visible; a fabricated one corrupts mastery permanently.
+
+**That rule reaches past the grader itself**, and the code had to be corrected to match it.
+Anything raised *after* a grade is computed — the evidence insert, the projection update —
+used to roll the `gradings` row back along with it. The result was worse than a wrong
+score: the item reported `"grading"` forever, the session could never complete, and a
+retry was refused with `409` because the submission already existed. The client had its
+`202` and never learned. Every path through `grade_artifact` now ends in a row, written
+through a fresh transaction because the original one may already be poisoned.

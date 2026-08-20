@@ -1221,3 +1221,135 @@ as a concept id. Declaration order is now load-bearing and says so in a comment.
 Auth, which has been owed since sessions started writing user data, and after that the
 interviewer agent — the first model call in the project's history, and the point where the
 cost ledger and the budget middleware stop being empty tables.
+
+---
+
+## Phase 4 (review pass) — what a cold read found that a green suite did not · 2026-08-20
+
+The engine was finished, every gate was green, and the suite had passed the two tests
+docs/ADAPTIVE.md asks for. An independent review of `mastery`, `priority`, `planner`,
+`sessions` and `grading` — read cold, against the design docs — found eleven things. Seven
+were real enough to fix, and two of those were holes in the gates themselves.
+
+```
+make check          112 passed, 70 deselected (hermetic)
+make test-db        41 passed (live Postgres; was 36)
+make test-sandbox   28 passed (real Docker, 134s)
+make test-e2e       1 passed (43s)
+```
+
+### The projection had no serialisation, and the suite could not see it
+
+`grade_artifact` is a sync function run in a threadpool, one per submission, so two
+gradings genuinely overlap on a deployed server. `apply_evidence` is a read-modify-write of
+`mastery.ability` and `items.elo`. Every database test in the suite runs through
+`TestClient`, **which executes background tasks inline** — so the whole suite had only ever
+exercised the serial case.
+
+Reproduced immediately, and in the worst variant available:
+
+```
+IntegrityError: duplicate key value violates unique constraint "mastery_pkey"
+DETAIL:  Key (user_id, concept_id)=(01M0…, big-o-analysis) already exists.
+```
+
+All three coding items name `big-o-analysis`, so two submissions in flight both found no
+row for it and both inserted one. The quieter failure is worse: two transactions that each
+add their delta to the same rating lose one of them — the evidence row survives, its effect
+does not, and a replay then legitimately disagrees with the live table.
+
+Fixed with a Postgres advisory lock taken **before the evidence rows are constructed**, so
+their `ts` values are stamped inside the critical section and the order a replay sees is
+the order they were applied in. Held to commit.
+
+The test that guards it took three attempts to become worth having:
+
+1. Two threads and a barrier: caught it once, then passed three runs in a row. The window
+   is microseconds wide, and a flaky guard is worse than none.
+2. A delay injected into the read, so the overlap is deterministic — and it *still* passed
+   with the lock disabled, because the exception-safety fix below now catches the collision
+   and records a failed grading. `assert not errors` had become unfalsifiable.
+3. Asserting the gradings actually **succeeded**. Negative control: 3/3 failures with the
+   lock disabled, 3/3 passes with it restored.
+
+### "Never raises" was a docstring, not a property
+
+`grade_artifact` caught the three exceptions `grade_coding` was expected to raise. Anything
+after that — the evidence insert, the projection update — escaped, and the `with Session(...)`
+block rolled back **the `gradings` row along with it**. The session then reported that item
+as `"grading"` forever, never completed, and refused a retry with `409` because the artifact
+already existed. The only exit was `POST /end`, and the client had its `202` long before.
+
+Live triggers existed today: the primary-key collision above, and an `IntegrityError` on
+`concept_evidence.concept_id` if the corpus gained a concept and `make seed` was not re-run
+— which `create_session` already guards for *items*, with a message telling you to seed.
+
+Now: the whole body is guarded, and the failure row is written through a **fresh** session,
+because a transaction that has already raised cannot be used to record why.
+
+### A gate that skipped a column
+
+`fsrs.Card()` stamps `card_id` from `datetime.now()` and sleeps a millisecond to keep those
+ids unique. So every replay produced a different `mastery.fsrs_card` — and the replay gate
+did not notice, because its snapshot compared four derived columns and not the card. Every
+*number* matched; the row did not.
+
+A first card is now built from the evidence (`card_id` and `due` derived from its `ts`),
+which is both deterministic and 25ms faster per twenty concepts. The gate compares every
+column the projection owns. Negative control: restoring the bare `Card()` fails two tests.
+
+### The review slot was unreachable twice over
+
+docs/ADAPTIVE.md asks for a minority of due-for-review items among the weaknesses. It could
+not fire:
+
+- Its "good at it" floor was `0.55` on the **normalised** scale — an Elo of 1810, 260 points
+  above where a concept starts. Simulated with the real K decay, a candidate first crosses
+  it on their **55th** consecutive success, because beating an item drags the item's rating
+  down and shrinks every subsequent gain.
+- Even with the floor fixed, the weakness pass fills greedily and always leaves *less than
+  one item* of budget behind. Considered afterwards, review had nowhere to go — the items
+  on disk are 20–25 minutes and a quarter of a 45-minute session is 11.
+
+The floor is now in Elo, and the slot is **reserved before** the weakness pass runs, which
+then skips it. A test drives it by writing a `mastery` row directly — the one place in the
+suite that does, because reaching that state honestly takes dozens of sessions.
+
+### A comment that claimed a property the code did not have
+
+`recompute`'s docstring justified its tie-breaking by saying rows from one grading are for
+different concepts and therefore independent. They are not: the primary concept's row is
+what moves `items.elo`, and every secondary row for the same item reads that rating to
+compute its own expectation. Applying a secondary first shifts that concept's ability by
+~0.07 Elo — invisible in a report, and enough to fail the gate's `==`.
+
+Also corrected, in the same docstring: the projection is a function of evidence **and the
+corpus priors as they stand now**, not of evidence alone. `make seed` refreshes
+`difficulty_elo` and `primary_concept_id`, so re-authoring an item's difficulty changes what
+a replay of old evidence produces. That is the right behaviour and it is not what
+"rebuildable from evidence alone" implies.
+
+### Four smaller ones, all real
+
+- **A connection pool leaked per submission** — `ExecutorClient` was constructed per
+  request. One per process now.
+- **The local user was created and discarded on every read-only request** — `current_user`
+  flushed without committing, and a route that never writes rolls back on close.
+- **The review query was ordered in Python over an unordered `SELECT`**, so two concepts
+  due at the same instant picked differently between runs.
+- **A misleading `422`.** Focusing on a concept that is only ever *secondary* — like
+  `big-o-analysis`, named by all three coding items and primary to none — matched items,
+  planned nothing, and reported "the corpus has no active coding instances matching this
+  request", which sends you looking for a corpus problem that is not there.
+
+### What this says about the suite
+
+Every one of these lived under a green `make check`, and two of them lived *inside* the
+tests meant to catch exactly that class of bug. The pattern is consistent: the suite tests
+the code as the author imagined it running — serially, in-process, with `TestClient`
+executing background work inline — and the defects were in the gap between that and how it
+actually runs. Worth remembering the next time a passing gate is offered as evidence.
+
+### Next
+
+Auth, unchanged from the last entry, and then the interviewer agent.

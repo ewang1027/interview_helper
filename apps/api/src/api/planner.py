@@ -25,7 +25,7 @@ from typing import Any
 
 from sqlmodel import Session, col, select
 
-from api.mastery import expected_score, normalized_ability
+from api.mastery import DEFAULT_ABILITY, expected_score
 from api.models import ConceptEdge, Item, Mastery
 from api.priority import ConceptPriority, rank_concepts
 from corpus.loader import load_items
@@ -55,10 +55,25 @@ BIAS_SHIFT = 0.10
 # Used when an item declares no `expected_minutes`, so budget arithmetic terminates.
 ASSUMED_MINUTES = 20
 
-# A minority of the budget is kept for review of material you are *good* at, so fluency on
-# solved ground does not rot while the planner drills weaknesses.
-REVIEW_SHARE = 0.25
-REVIEW_ABILITY_FLOOR = 0.55
+# At most one item per session is review of material you are *good* at, so fluency on
+# solved ground does not rot while the planner drills weaknesses. It is reserved *before*
+# the weakness pass fills the budget, and the weakness pass then skips it.
+#
+# There is no fractional share any more, and that is a correction rather than a
+# simplification. A "quarter of the budget" is 11 minutes of a 45-minute session, and the
+# shortest item in the corpus is 20 — so the cap was smaller than anything it could buy,
+# and the weakness pass had already eaten the rest of the budget by the time review was
+# considered. The minority is enforced by "at most one, chosen after the weaknesses are
+# ranked", which is a rule that can actually fire.
+
+# How good "good at it" is, in Elo — the same units as the rating itself.
+#
+# This was a *normalised* 0.55, which is an Elo of 1810: 260 points above where a concept
+# starts. Simulated against this corpus with the real K decay, that floor is first crossed
+# on the **55th** consecutive success, because beating an item also drags the item's rating
+# down and shrinks every subsequent gain. The review slot could not fire, and nothing said
+# so — a documented feature, dormant, with a passing test suite.
+REVIEW_ABILITY_FLOOR_ELO = DEFAULT_ABILITY + 60.0
 
 
 def eligible_items(mode: str, focus_concepts: tuple[str, ...] = ()) -> list[CorpusItem]:
@@ -201,14 +216,23 @@ def build_plan(
     # every sense that matters, and float noise would silently disable the tie-break.
     shortlist.sort(key=lambda row: (-round(row[0], 6), row[1], row[3].id))
 
+    # Reserved first, and excluded from the pass below. A greedy fill always leaves less
+    # than one item's worth of budget behind, so a review slot considered afterwards could
+    # never be filled — the feature was unreachable rather than merely rare.
+    review = _review_item(db, user_id, by_primary, ability, live_elo)
+    reserved = review["expected_minutes"] or ASSUMED_MINUTES if review else 0
+    weakness_budget = max(0, budget_minutes - reserved)
+
     chosen: list[dict[str, Any]] = []
     used: set[str] = set()
     spent = 0
     for _priority, _distance, concept_id, item, reason in shortlist:
-        if spent >= budget_minutes and chosen:
+        if review is not None and item.id == review["item_id"]:
+            continue
+        if spent >= weakness_budget and chosen:
             break
         minutes = item.expected_minutes or ASSUMED_MINUTES
-        if chosen and spent + minutes > budget_minutes:
+        if chosen and spent + minutes > weakness_budget:
             continue
         used.add(item.id)
         spent += minutes
@@ -223,19 +247,9 @@ def build_plan(
             }
         )
 
-    review = _review_item(
-        db,
-        user_id,
-        by_primary,
-        used,
-        ability,
-        live_elo,
-        budget_minutes=budget_minutes,
-        spent=spent,
-    )
-    if review is not None:
+    if review is not None and spent + reserved <= budget_minutes:
         chosen.append(review)
-        spent += review["expected_minutes"] or ASSUMED_MINUTES
+        spent += reserved
 
     calibration = total_observations == 0
     return {
@@ -265,41 +279,33 @@ def _review_item(
     db: Session,
     user_id: str,
     by_primary: dict[str, list[CorpusItem]],
-    used: set[str],
     ability: dict[str, float],
     live_elo: dict[str, float],
-    *,
-    budget_minutes: int,
-    spent: int,
 ) -> dict[str, Any] | None:
-    """One due item you are *good* at, if the budget has room for it.
+    """The one due item you are *good* at that a session should re-serve, if any.
 
     docs/ADAPTIVE.md asks the planner to keep a minority of due-for-review items among the
     weaknesses, so fluency on solved material does not rot. Deliberately at most one: this
-    is a session about what you are bad at, and review is the seasoning.
+    is a session about what you are bad at, and review is the seasoning. Whether it fits is
+    the caller's decision — this only says which item it would be.
     """
-    minutes_left = budget_minutes - spent
-    if minutes_left <= 0:
-        return None
-    # "A minority": review may spend what is left over, up to a quarter of the session.
-    # It never displaces a weakness — this runs after the ranked pass has taken its fill.
-    allowance = min(minutes_left, int(REVIEW_SHARE * budget_minutes))
-
     now = datetime.now(UTC)
+    # Ordered in SQL, not just sorted after: `sorted` is stable over whatever order
+    # Postgres returned, so two concepts due at the same instant would pick differently
+    # between runs. Every other tie in this module is broken explicitly.
     due = [
         row
-        for row in db.exec(select(Mastery).where(Mastery.user_id == user_id)).all()
+        for row in db.exec(
+            select(Mastery)
+            .where(Mastery.user_id == user_id)
+            .order_by(col(Mastery.due_at), col(Mastery.concept_id))
+        ).all()
         if row.due_at is not None
         and row.due_at.astimezone(UTC) <= now
-        and normalized_ability(row.ability) >= REVIEW_ABILITY_FLOOR
+        and row.ability >= REVIEW_ABILITY_FLOOR_ELO
     ]
-    for row in sorted(due, key=lambda r: r.due_at or now):
+    for row in due:
         for item in by_primary.get(row.concept_id, []):
-            if item.id in used:
-                continue
-            minutes = item.expected_minutes or ASSUMED_MINUTES
-            if minutes > allowance:
-                continue
             return {
                 "item_id": item.id,
                 "title": item.title,

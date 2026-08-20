@@ -228,3 +228,17 @@ def test_sessions_list_newest_first(created_sessions):
 
     listed = client.get("/api/v1/sessions", params={"limit": 2}).json()["sessions"]
     assert [row["id"] for row in listed] == [second["id"], first["id"]]
+
+
+def test_focusing_on_a_secondary_only_concept_says_what_actually_happened(created_sessions):
+    """`big-o-analysis` is named by all three coding items and is the primary concept of
+    none, so it matches items and still plans nothing. Reporting "no items match" would
+    send you looking for a corpus problem that is not there."""
+    client = make_client()
+    resp = client.post(
+        "/api/v1/sessions",
+        json={"mode": "coding", "budget_minutes": 45, "focus_concepts": ["big-o-analysis"]},
+    )
+
+    assert resp.status_code == 422
+    assert "secondary concepts" in resp.json()["detail"]

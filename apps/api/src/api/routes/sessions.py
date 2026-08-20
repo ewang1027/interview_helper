@@ -14,6 +14,7 @@ end-to-end test injects nothing and exercises the real sandbox.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Annotated, Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
@@ -27,8 +28,15 @@ from api.schemas import CreateSessionRequest, SubmissionRequest
 router = APIRouter(tags=["sessions"])
 
 
-def get_runner() -> CodeRunner:
+@lru_cache
+def _client() -> ExecutorClient:
+    """One client for the process. `httpx.Client` owns a connection pool and is safe to
+    share across threads; constructing one per request leaked a pool per submission."""
     return ExecutorClient()
+
+
+def get_runner() -> CodeRunner:
+    return _client()
 
 
 DbSession = Annotated[Session, Depends(get_session)]

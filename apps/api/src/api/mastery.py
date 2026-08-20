@@ -33,6 +33,7 @@ from typing import Any, cast
 
 from fsrs import Card, Rating, Scheduler
 from fsrs.card import CardDict
+from sqlalchemy import text
 from sqlmodel import Session, col, select
 
 from api.models import ConceptEvidence, Item, Mastery
@@ -116,6 +117,42 @@ def rating_for(score: float) -> Rating:
 # --- Applying evidence ----------------------------------------------------------------
 
 
+# Any int64 unique within this database. `pg_advisory_xact_lock` is held until the
+# transaction ends and released by commit or rollback, so nothing can leak it.
+PROJECTION_LOCK_KEY = 4_119_204_812
+
+
+def lock_projection(db: Session) -> None:
+    """Serialise everything that writes the projection.
+
+    `apply_evidence` is a read-modify-write of `mastery.ability` and `items.elo`, and two
+    gradings really do overlap on a deployed server: `grade_artifact` is a sync function
+    run in a threadpool, one per submission. Measured without this lock, two submissions
+    graded at once raised `UniqueViolation on mastery_pkey` — both transactions found no
+    row for a shared concept and both inserted one. The quieter failure is worse: two
+    transactions that each add their delta to the same rating lose one of them, the
+    evidence row survives, and a later replay legitimately produces a different table.
+
+    Taken **before the evidence rows are constructed**, so their `ts` values are assigned
+    inside the critical section and the order a replay sees is the order they were applied
+    in. Held to commit, so the whole read-modify-write is atomic against other writers.
+    """
+    db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": PROJECTION_LOCK_KEY})
+
+
+def _new_card(evidence: ConceptEvidence) -> Card:
+    """A first card for a concept, built from the evidence rather than from the clock.
+
+    `fsrs.Card()` stamps `card_id` from `datetime.now()` and sleeps a millisecond to keep
+    those ids unique, so a bare constructor makes `mastery.fsrs_card` different on every
+    replay — the stored column would not reproduce, even though every number derived from
+    it would. Deriving both fields from the evidence keeps the *whole* row replayable, and
+    incidentally takes 25ms off a rebuild of twenty concepts.
+    """
+    moment = as_utc(evidence.ts)
+    return Card(card_id=int(moment.timestamp() * 1000), due=moment)
+
+
 def as_utc(moment: datetime) -> datetime:
     """Normalise an instant to `datetime.timezone.utc` before handing it to FSRS.
 
@@ -140,6 +177,9 @@ def _row_for(db: Session, user_id: str, concept_id: str) -> Mastery:
 
 def apply_evidence(db: Session, evidence: ConceptEvidence, *, user_id: str) -> Mastery:
     """Fold one evidence row into the projection. Never writes evidence, only reads it.
+
+    **The caller must hold `lock_projection`.** This is a read-modify-write over rows two
+    concurrent gradings can share.
 
     `confidence` scales both Elo updates, per docs/ADAPTIVE.md: a hidden-test pass is
     near-certain evidence about a concept, an LLM rubric's read is softer, and the rating
@@ -178,7 +218,7 @@ def apply_evidence(db: Session, evidence: ConceptEvidence, *, user_id: str) -> M
     # `CardDict` is a TypedDict and the column is plain JSONB, so the two need a cast in
     # each direction. The round trip itself is the library's own, which is the point of
     # storing its dict rather than a hand-picked subset of fields.
-    card = Card.from_dict(cast(CardDict, row.fsrs_card)) if row.fsrs_card else Card()
+    card = Card.from_dict(cast(CardDict, row.fsrs_card)) if row.fsrs_card else _new_card(evidence)
     card, _log = SCHEDULER.review_card(
         card, rating_for(evidence.score), review_datetime=as_utc(evidence.ts)
     )
@@ -199,12 +239,18 @@ def recompute(db: Session, user_id: str) -> dict[str, int]:
     outcomes have made of it — so a rebuild that reset only half the state would produce a
     table that no replay could reproduce.
 
-    Ordered by `(ts, id)`. `ts` is microsecond-resolution, so ties are vanishingly rare —
-    and when they do happen the rows share a grading, which means they are for *different*
-    concepts, whose projections are independent. Order between them cannot change the
-    result. (ULIDs sort by creation time only to the millisecond, so `id` is a tie-break,
-    not a guarantee.)
+    Ordered by `(ts, id)`, which has to match the order the rows were *applied* in.
+    `lock_projection` is what makes that true across gradings; within one grading it is
+    true because the rows are constructed in order, primary concept first, each with its
+    own microsecond `ts`.
+
+    Order within a grading is **not** a free choice, and an earlier version of this comment
+    wrongly said it was. The rows are not independent: the primary concept's row is the one
+    that moves `items.elo`, and every secondary row for the same item reads that rating to
+    compute its own expectation. Applying a secondary first shifts that concept's ability
+    by ~0.07 Elo — invisible in a report, and enough to fail the replay gate's `==`.
     """
+    lock_projection(db)
     for row in db.exec(select(Mastery).where(Mastery.user_id == user_id)).all():
         db.delete(row)
     db.flush()

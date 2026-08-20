@@ -110,6 +110,14 @@ gives three things: the engine can explain itself, the rating math can be swappe
 without data loss, and a grader bug can be corrected by re-running rather than by
 hand-patching state.
 
+**Applying evidence is serialised by a Postgres advisory lock**, taken before the evidence
+rows are written so their timestamps are stamped inside the critical section. Two gradings
+really do overlap — `grade_artifact` runs in a threadpool, one per submission — and
+without the lock two transactions read the same rating, each add their delta, and one is
+lost: the evidence row survives, its effect does not, and the replay above stops agreeing
+with the live table. Measured before the lock existed, two concurrent gradings that shared
+a concept raised `UniqueViolation` on `mastery`'s primary key.
+
 **Item ratings are part of that projection.** `items.difficulty_elo` holds the author's
 prior and `items.elo` is what real outcomes made of it, so `recompute` resets the second
 to the first and replays. A rebuild that reset only half the state would produce a table
@@ -151,7 +159,12 @@ A session is a **budget** (minutes) and a **mode**. The planner:
    plan and the original concept is kept. At 24 items that is the common case.
 4. Keeps a minority of due-for-review items that you are *good* at, so fluency on
    solved material does not rot. At most one per session — a session is about what you
-   are bad at, and review is the seasoning.
+   are bad at, and review is the seasoning. **The slot is reserved before the weakness
+   pass fills the budget**, because a greedy fill always leaves less than one item's worth
+   behind: considered afterwards, the review slot was unreachable rather than merely rare.
+   It was unreachable twice over — its "good at it" floor was expressed on the normalised
+   scale rather than in Elo, which put it 260 points above where a concept starts and made
+   it first reachable on a candidate's 55th consecutive success.
 
 Ties in priority are broken by **distance from the informative band**, which is what makes
 a cold start sensible: with nothing measured, every concept scores identically, and
@@ -183,3 +196,10 @@ incremental path and the replay disagreed, because a timestamp written as
 `timezone.utc` returns from Postgres as `ZoneInfo("Etc/UTC")` — the same instant, a
 different object — and FSRS compares `tzinfo` by equality. Only the replay path read
 timestamps back from the database, so only the replay path raised.
+
+It then earned it twice more. The comparison originally covered four derived columns and
+skipped `fsrs_card`, which hid a real divergence: `fsrs.Card()` stamps its id from the wall
+clock, so a rebuilt row differed from the row it was meant to reproduce while every number
+computed from it matched. A first card is now built from the evidence, and the gate
+compares every column the projection owns — a gate that skips a column is a gate with a
+hole in it.
