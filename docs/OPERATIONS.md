@@ -54,6 +54,9 @@ Step 3 is the real test. It proves the restored evidence is not merely present b
 - Migrations run as a one-off task *before* the service rolls, and must be
   backward-compatible with the running version — expand, deploy, contract. A migration
   that breaks the old version turns every deploy into an outage.
+- **CI runs the chain up, all the way back down, and up again.** A rollback that cannot
+  take the schema with it is not a rollback, and developing against a long-lived local
+  database only ever exercises the forward direction.
 
 ## Monitoring
 

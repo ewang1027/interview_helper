@@ -54,10 +54,17 @@ jobs:
 
       # The schema is only meaningfully tested against real Postgres — the CHECK
       # constraint on concept_evidence has no SQLite equivalent.
-      - name: Migrate and seed
+      # Up, all the way back down, and up again. Only the first direction is ever
+      # exercised by developing against a long-lived local database, and OPERATIONS.md
+      # treats a migration that cannot be reversed as a deploy that cannot be rolled back.
+      - name: Migrate, reverse, migrate
         run: |
           uv run alembic -c apps/api/alembic.ini upgrade head
-          uv run python -m api.seed
+          uv run alembic -c apps/api/alembic.ini downgrade base
+          uv run alembic -c apps/api/alembic.ini upgrade head
+
+      - name: Seed
+        run: uv run python -m api.seed
 
       - name: DB tests
         run: uv run pytest apps/api/tests -q -m db
