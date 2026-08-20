@@ -1,0 +1,443 @@
+{
+  "items": [
+    {
+      "id": "a.behav.0001",
+      "kind": "archetype",
+      "domain": "behavioral",
+      "modality": "behavioral",
+      "archetype_id": null,
+      "title": "Technical disagreement with someone whose agreement was required",
+      "statement_md": "**Pattern.** The candidate recounts a technical disagreement with a person they could not\nsimply overrule — a peer, a lead, a neighbouring team — and says how it was settled. The\nprompt arrives in several dresses: a conflict question, a pushback question, or a question\nabout a decision that went against the candidate and that they then had to carry out.\n\n**What it measures.** Whether the disagreement is described as a problem about the\n*decision* or a problem about the *person*; whether the candidate can put the opposing\ncase in terms strong enough that a competent engineer would recognise it as their own;\nand whether the deadlock broke on a mechanism — a measurement, a written comparison, a\nbounded trial, an agreed decider — rather than on seniority or fatigue. Interviewers hold\nonto this prompt because its failure modes are legible from the outside: the account in\nwhich the candidate is correct throughout and the other party merely comes round, and the\naccount in which no decision is ever actually reached.\n\n**Typical realisations.** Two competing designs argued in review; an engineer overruled by\na lead and then asked to build the other option; two teams claiming opposite things about\na shared dependency; a launch-or-hold argument decided under time pressure.",
+      "concepts": [
+        "conflict-resolution",
+        "handling-pushback",
+        "listening-clarifying",
+        "technical-decision-defense"
+      ],
+      "primary_concept": "conflict-resolution",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1450
+      },
+      "sources": [
+        {
+          "url": "https://www.techinterviewhandbook.org/behavioral-interview-questions/",
+          "title": "The 30 most common Software Engineer behavioral interview questions",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A compiled list of the questions most often reported across large technology employers puts three separate variants of this prompt in its top thirty — friction with a co-worker, friction that required persuading somebody, and a clash with one's own manager — and then repeats company-specific versions of it under several individual employers."
+        },
+        {
+          "url": "https://github.com/ashishps1/awesome-behavioral-interviews",
+          "title": "awesome-behavioral-interviews",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A widely forked preparation repository that gives this pattern four distinct entries — clashing with a manager, clashing with a teammate, clashing with a colleague, and defusing friction inside a team — each with a worked answer, which is a strong signal that candidates meet it repeatedly rather than once."
+        },
+        {
+          "url": "https://www.cookd.ai/blog/jane-street-interview-questions-firm",
+          "title": "Jane Street Interview Questions: How to Ace Them",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A firm-specific guide for a quantitative trading loop lists, among a handful of non-technical prompts, one asking for a collaboration in which a technical dispute arose and had to be resolved — attesting the pattern on the trading side, not only in large-tech loops."
+        }
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-20"
+    },
+    {
+      "id": "i.behav.0001",
+      "kind": "instance",
+      "domain": "behavioral",
+      "modality": "behavioral",
+      "archetype_id": "a.behav.0001",
+      "title": "A technical argument you could not win by being senior",
+      "statement_md": "Think of an occasion when you and one other person held incompatible technical positions —\nabout a design, a rollout, a dependency, a number — and you needed that person's agreement\nbefore anything could move.\n\nWalk me through it. What did each of you want, and why did they want theirs? What did you\ndo once it was clear that restating your case a fourth time would not help? How did the\ndecision actually get made, and by whom? Finish with what happened afterwards, including\nwhether the result eventually showed one of you to have been right.\n\nI am after the mechanics — who you spoke to, what you measured or wrote down, what moved\nyour view or theirs — rather than a verdict on who was being reasonable.",
+      "concepts": [
+        "conflict-resolution",
+        "handling-pushback",
+        "listening-clarifying",
+        "quantified-impact",
+        "star-structure"
+      ],
+      "primary_concept": "conflict-resolution",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1480
+      },
+      "expected_minutes": 8,
+      "sources": [
+        {
+          "url": "https://www.techinterviewhandbook.org/behavioral-interview-questions/",
+          "title": "The 30 most common Software Engineer behavioral interview questions",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A compiled list of the questions most often reported across large technology employers puts three separate variants of this prompt in its top thirty — friction with a co-worker, friction that required persuading somebody, and a clash with one's own manager — and then repeats company-specific versions of it under several individual employers."
+        },
+        {
+          "url": "https://github.com/ashishps1/awesome-behavioral-interviews",
+          "title": "awesome-behavioral-interviews",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A widely forked preparation repository that gives this pattern four distinct entries — clashing with a manager, clashing with a teammate, clashing with a colleague, and defusing friction inside a team — each with a worked answer, which is a strong signal that candidates meet it repeatedly rather than once."
+        },
+        {
+          "url": "https://www.cookd.ai/blog/jane-street-interview-questions-firm",
+          "title": "Jane Street Interview Questions: How to Ace Them",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A firm-specific guide for a quantitative trading loop lists, among a handful of non-technical prompts, one asking for a collaboration in which a technical dispute arose and had to be resolved — attesting the pattern on the trading side, not only in large-tech loops."
+        }
+      ],
+      "grading": {
+        "type": "rubric",
+        "criteria": [
+          {
+            "id": "opposing_position_stated",
+            "description": "States the other person's position in concrete technical terms — the constraint, cost or risk they were protecting — rather than as resistance, politics or stubbornness.",
+            "weight": 0.25,
+            "concept": "listening-clarifying",
+            "levels": {
+              "0": "The other side is never given a reason, or is characterised only by disposition ('he was territorial', 'they always block things').",
+              "2": "A reason is attributed to them, but a thin one the candidate immediately dismisses, and no evidence they ever checked it with the person.",
+              "4": "The opposing case is stated in terms a reasonable engineer would recognise as their own, and the candidate says how they confirmed it was really that person's view — a question they asked, a document they read back."
+            }
+          },
+          {
+            "id": "path_to_decision",
+            "description": "Names the specific step that converted a deadlock into a decision: a measurement run, a written comparison, a time-boxed trial, or an escalation to a named decider both sides accepted.",
+            "weight": 0.3,
+            "concept": "conflict-resolution",
+            "levels": {
+              "0": "No decision is reached in the story, or it dissolves ('we eventually just moved on', 'she came round').",
+              "2": "A decision is reached but only by authority or persistence — someone senior chose, or the other person tired of arguing — with no criterion agreed beforehand.",
+              "4": "Names a concrete tie-breaking mechanism and says it was agreed before the result was known: what would be measured or trialled, who would decide, and what outcome would settle it either way."
+            }
+          },
+          {
+            "id": "verifiable_particulars",
+            "description": "Supplies checkable specifics — the system, the numbers in dispute, what the measurement returned, over what period — instead of a narrative that would fit any project.",
+            "weight": 0.25,
+            "concept": "quantified-impact",
+            "levels": {
+              "0": "Entirely generic; swap two nouns and the same story fits any team. No figures, no timeline, no named component.",
+              "2": "Some concrete detail — a system name or a rough duration — but the crux of the disagreement is still described qualitatively ('it would have been slower').",
+              "4": "The disputed quantity is named with figures on both sides, the test or comparison that produced them is described, and the timeline is specific enough to be probed by a follow-up."
+            }
+          },
+          {
+            "id": "after_the_decision",
+            "description": "Says what they did once the decision was fixed, and reports the later outcome even where it undercuts the position they originally argued.",
+            "weight": 0.2,
+            "concept": "handling-pushback",
+            "levels": {
+              "0": "The story stops at the decision, or the candidate describes continuing to relitigate it.",
+              "2": "Says they went along with the outcome, but reports no consequences and no follow-up check on whether it worked.",
+              "4": "Describes committing to the decision in a concrete way — what they built, what they told others — and reports what the outcome turned out to be, volunteering the case where the other person was vindicated."
+            }
+          }
+        ]
+      },
+      "hints": [
+        "One incident, not a description of how you generally handle disagreement. Choose the one you remember in the most detail, even if it is not the one that ended best.",
+        "Before you tell me how it resolved: what was the strongest version of their argument? Put it the way they would have put it.",
+        "What was the single step that turned the argument into a decision — and had both of you agreed to be bound by that step before you knew what it would say?",
+        "Tell me the numbers that were in dispute, and what the test or comparison actually returned."
+      ],
+      "follow_ups": [
+        "Suppose the measurement had come back ambiguous. What would you have done next, and who would have decided?",
+        "While this was unresolved, who else was blocked, and what did the delay cost?",
+        "The same disagreement with the same person happens next week. What do you do differently in the first ten minutes?",
+        "Where in this story were you wrong, and at what point did you know it?"
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-20"
+    },
+    {
+      "id": "a.behav.0002",
+      "kind": "archetype",
+      "domain": "behavioral",
+      "modality": "behavioral",
+      "archetype_id": null,
+      "title": "A confident judgement that turned out wrong, and what changed after",
+      "statement_md": "**Pattern.** The candidate is asked for an occasion when they held a view with confidence\nand the view was wrong, at some cost. Large-company loops usually phrase it as failure or\nas a mistake; trading firms tend to phrase it around belief and revision, because the same\nquestion doubles as a probe of how quickly a position moves once evidence arrives.\n\n**What it measures.** Whether the episode chosen has a cost anyone else would recognise;\nwhether the candidate's own judgement is named as a cause instead of tooling, circumstance\nor a neighbouring team; whether they can point at the particular observation that\noverturned the belief and say roughly when it landed relative to the decision; and whether\nwhat exists now is a mechanism an outsider could observe — a check that runs, a review step\nthat blocks, a habit with a trigger — as opposed to an intention to be more careful.\nRehearsed cost-free failures are the standard evasion and are cheap to detect: no figure,\nno date, nobody hurt.\n\n**Typical realisations.** A migration or rewrite abandoned partway; an estimate defended\nand then missed badly; a model or backtest acted on and contradicted by live behaviour; an\noutage traced back to the candidate's own change.",
+      "concepts": [
+        "failure-and-learning",
+        "contribution-attribution",
+        "ownership-initiative",
+        "situation-framing"
+      ],
+      "primary_concept": "failure-and-learning",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1520
+      },
+      "sources": [
+        {
+          "url": "https://spacecomplexity.ai/blog/optiver-behavioral-interview-questions",
+          "title": "Optiver Behavioral Interview Questions: Five Themes, Every Answer",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A firm-specific breakdown that makes being wrong its first recurring theme and lists several phrasings the round uses. It argues the scoring is on the debrief rather than the delivery, and flags the over-polished failure answer as a negative signal, which is precisely the discrimination this archetype needs."
+        },
+        {
+          "url": "https://www.efinancialcareers.com/news/the-questions-most-candidates-neglect-in-quant-trading-job-interviews",
+          "title": "The questions most candidates neglect in quant trading job interviews",
+          "retrieved_at": "2026-08-20",
+          "evidence": "Trade-press piece reporting that candidates over-prepare the maths and under-prepare this half of the loop, with a recruiter recommending a bank of six to eight rehearsed episodes. It maps themes onto named trading firms, several of which centre on decisions taken under uncertainty and how the candidate handled the aftermath."
+        },
+        {
+          "url": "https://www.techinterviewhandbook.org/behavioral-interview-questions/",
+          "title": "The 30 most common Software Engineer behavioral interview questions",
+          "retrieved_at": "2026-08-20",
+          "evidence": "The same question appears under multiple large technology employers in this compilation — one asks outright for a recent failure and the lesson drawn, another for the worst misstep of a career, another for something the candidate would now do differently — showing the pattern is not confined to trading loops."
+        }
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-20"
+    },
+    {
+      "id": "i.behav.0002",
+      "kind": "instance",
+      "domain": "behavioral",
+      "modality": "behavioral",
+      "archetype_id": "a.behav.0002",
+      "title": "A call you were sure about that cost somebody something",
+      "statement_md": "Tell me about a judgement you made with confidence that turned out to be wrong, where the\ncost landed on something real — a date, a budget, a customer, a position, a colleague's\nweek.\n\nTake me to the moment it stopped being defensible. What were you looking at when your view\nchanged, and how long after the original call was that? Then give me the next hour and the\nnext month: what you did immediately, and what is different today because of it.\n\nBe precise about which part of the cause was yours as opposed to the situation's. And if\nnothing actually changed afterwards, say so plainly — that is a usable answer, and I would\nrather have it than a tidy one.",
+      "concepts": [
+        "failure-and-learning",
+        "contribution-attribution",
+        "ownership-initiative",
+        "situation-framing"
+      ],
+      "primary_concept": "failure-and-learning",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1560
+      },
+      "expected_minutes": 8,
+      "sources": [
+        {
+          "url": "https://spacecomplexity.ai/blog/optiver-behavioral-interview-questions",
+          "title": "Optiver Behavioral Interview Questions: Five Themes, Every Answer",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A firm-specific breakdown that makes being wrong its first recurring theme and lists several phrasings the round uses. It argues the scoring is on the debrief rather than the delivery, and flags the over-polished failure answer as a negative signal, which is precisely the discrimination this archetype needs."
+        },
+        {
+          "url": "https://www.efinancialcareers.com/news/the-questions-most-candidates-neglect-in-quant-trading-job-interviews",
+          "title": "The questions most candidates neglect in quant trading job interviews",
+          "retrieved_at": "2026-08-20",
+          "evidence": "Trade-press piece reporting that candidates over-prepare the maths and under-prepare this half of the loop, with a recruiter recommending a bank of six to eight rehearsed episodes. It maps themes onto named trading firms, several of which centre on decisions taken under uncertainty and how the candidate handled the aftermath."
+        },
+        {
+          "url": "https://www.techinterviewhandbook.org/behavioral-interview-questions/",
+          "title": "The 30 most common Software Engineer behavioral interview questions",
+          "retrieved_at": "2026-08-20",
+          "evidence": "The same question appears under multiple large technology employers in this compilation — one asks outright for a recent failure and the lesson drawn, another for the worst misstep of a career, another for something the candidate would now do differently — showing the pattern is not confined to trading loops."
+        }
+      ],
+      "grading": {
+        "type": "rubric",
+        "criteria": [
+          {
+            "id": "real_cost_named",
+            "description": "Establishes in a couple of sentences what the wrong judgement actually cost — the slipped date, the money, the affected users, the wasted person-weeks — before moving on to the narrative.",
+            "weight": 0.2,
+            "concept": "situation-framing",
+            "levels": {
+              "0": "No cost is identified, or the chosen episode has no victim ('I once picked a library and later switched it'). Setup runs long with no stake established.",
+              "2": "A cost is asserted but left vague ('it set us back a while', 'the customer was unhappy'), or the setup takes so long the cost arrives only under prompting.",
+              "4": "Names a specific cost with a magnitude — weeks lost, money, users affected, the trade or release involved — inside the opening, and the candidate's own authority over the decision is clear."
+            }
+          },
+          {
+            "id": "own_causal_share",
+            "description": "Names their own decision or omission as a cause and describes it concretely, rather than attributing the outcome to circumstance, tooling, or another team.",
+            "weight": 0.3,
+            "concept": "contribution-attribution",
+            "levels": {
+              "0": "Cause sits entirely outside the candidate — bad requirements, a vendor, a reorg — or the 'failure' is really someone else's failure that the candidate cleaned up.",
+              "2": "Accepts blame in general terms ('ultimately it was my call') without saying which specific judgement was wrong or what they had assumed.",
+              "4": "Isolates the specific belief that was wrong and why they held it, separates their share from the situation's without minimising either, and does so unprompted."
+            }
+          },
+          {
+            "id": "moment_of_disconfirmation",
+            "description": "Identifies the particular observation that overturned the belief and roughly when it arrived relative to the original decision.",
+            "weight": 0.2,
+            "concept": "failure-and-learning",
+            "levels": {
+              "0": "The story goes straight from decision to bad outcome; nothing is said about how or when it was noticed.",
+              "2": "Says it became apparent over time, without naming what was seen or by whom, or the timeline cannot be reconstructed from the answer.",
+              "4": "Names the concrete signal — a profile, a metric, a complaint, a reconciliation that did not tie out — with an approximate lag from the decision, and says whether earlier evidence had been available and ignored."
+            }
+          },
+          {
+            "id": "durable_change_installed",
+            "description": "Describes a change that outlived the incident and that someone else could observe — a check that runs, a review step, a rule with a trigger — or states plainly that nothing changed.",
+            "weight": 0.3,
+            "concept": "ownership-initiative",
+            "levels": {
+              "0": "The lesson is a disposition: be more careful, communicate more, test more. Nothing an outsider could verify.",
+              "2": "A change is described but it is personal and untriggered ('I now think harder about estimates'), or it was somebody else's process change that the candidate merely complied with.",
+              "4": "Names a mechanism the candidate put in place, who else it binds, and evidence it is still in use — or honestly reports that nothing was changed and says why, which is scored as demonstrated, not as failure."
+            }
+          }
+        ]
+      },
+      "hints": [
+        "Pick the episode that still stings slightly. The one you have told before is usually the one with the cost sanded off.",
+        "Before the lesson: what did it cost, and who paid it? Give me a number or a name.",
+        "What exactly were you looking at when you realised? Not when you accepted it — when you first saw it.",
+        "If I asked one of your colleagues what is different on that team today because of this, what would they point at?"
+      ],
+      "follow_ups": [
+        "What information was available before the decision that you could have gone and got, and why did you not go and get it?",
+        "How would you know today if the same mistake were happening again? What would trip first?",
+        "Who else believed what you believed at the time, and did any of them dissent?",
+        "You made the same call again with the same information. Is it still wrong?"
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-20"
+    },
+    {
+      "id": "a.behav.0003",
+      "kind": "archetype",
+      "domain": "behavioral",
+      "modality": "behavioral",
+      "archetype_id": null,
+      "title": "Owning an under-specified problem that had no assigned owner",
+      "statement_md": "**Pattern.** The candidate is asked about work they took on where neither the owner nor the\ndefinition of done existed — a visible gap nobody was assigned to, a brief too vague to\nexecute, a task whose open questions had no one available to answer them. The prompt turns\nup as an initiative question, an ambiguity question, or a going-beyond-the-role question.\n\n**What it measures.** Whether the candidate can name the *particular* thing that was\nundefined instead of calling the situation unclear; whether the scope they shipped was\nchosen — with something consciously excluded — or was simply whatever fit the time\navailable; whether assumptions made in the absence of answers were written down and put in\nfront of the people they would bind, so that proceeding was contestable rather than\nunilateral; and whether anything reached other people at the end. Big-company loops treat\nthis as a dimension separate from conflict and from raw execution and scale it by level,\nreading the same story very differently when it involves one stakeholder versus several\nteams.\n\n**Typical realisations.** Building tooling nobody requested; adopting an incident whose\ncause straddled two teams; turning a one-line ask from a non-technical stakeholder into a\nspecification; reviving an abandoned project whose original owner had left.",
+      "concepts": [
+        "ambiguity-navigation",
+        "ownership-initiative",
+        "prioritization-tradeoffs",
+        "quantified-impact"
+      ],
+      "primary_concept": "ambiguity-navigation",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1500
+      },
+      "sources": [
+        {
+          "url": "https://interviewing.io/blog/how-software-engineering-behavioral-interviews-are-evaluated-meta",
+          "title": "How software engineering behavioral interviews are evaluated at Meta",
+          "retrieved_at": "2026-08-20",
+          "evidence": "Written by a former engineer and manager at a large employer who says he ran over a hundred and fifty of these interviews. It enumerates the graded dimensions, one of which is operating without clear direction, and sets out how the expected story scales from a couple of stakeholders at junior level to several teams at staff level."
+        },
+        {
+          "url": "https://github.com/ashishps1/awesome-behavioral-interviews",
+          "title": "awesome-behavioral-interviews",
+          "retrieved_at": "2026-08-20",
+          "evidence": "The repository carries this pattern as several separate prompts: spotting a problem and fixing it instead of waiting for an assignment, exceeding what a project asked for, and an explicit item on how a candidate would resolve ambiguity when handed an under-specified design task."
+        },
+        {
+          "url": "https://www.techinterviewhandbook.org/behavioral-interview-questions/",
+          "title": "The 30 most common Software Engineer behavioral interview questions",
+          "retrieved_at": "2026-08-20",
+          "evidence": "Among the company-specific sets it lists, one large employer asks whether the candidate has shipped work without their manager's sign-off and another asks what they did when the person holding the information they needed went silent — both are this pattern from the initiative side."
+        }
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-20"
+    },
+    {
+      "id": "i.behav.0003",
+      "kind": "instance",
+      "domain": "behavioral",
+      "modality": "behavioral",
+      "archetype_id": "a.behav.0003",
+      "title": "Work that was nobody's job and had no definition of done",
+      "statement_md": "Describe something you picked up that had no owner and no agreed finish line — a problem\neveryone could see, that nobody had been assigned, and where no one could have told you\nwhat finished was supposed to look like.\n\nTake me through how you turned that into something deliverable. What did you rule in, and\nwhat did you deliberately rule out? Which questions did you have to answer for yourself\nbecause nobody could answer them, and who did you tell that you had answered them that way?\n\nThen how it ended: what shipped, who uses it now, and what you would scope differently if\nthe same gap opened tomorrow.",
+      "concepts": [
+        "ambiguity-navigation",
+        "ownership-initiative",
+        "prioritization-tradeoffs",
+        "quantified-impact"
+      ],
+      "primary_concept": "ambiguity-navigation",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1540
+      },
+      "expected_minutes": 8,
+      "sources": [
+        {
+          "url": "https://interviewing.io/blog/how-software-engineering-behavioral-interviews-are-evaluated-meta",
+          "title": "How software engineering behavioral interviews are evaluated at Meta",
+          "retrieved_at": "2026-08-20",
+          "evidence": "Written by a former engineer and manager at a large employer who says he ran over a hundred and fifty of these interviews. It enumerates the graded dimensions, one of which is operating without clear direction, and sets out how the expected story scales from a couple of stakeholders at junior level to several teams at staff level."
+        },
+        {
+          "url": "https://github.com/ashishps1/awesome-behavioral-interviews",
+          "title": "awesome-behavioral-interviews",
+          "retrieved_at": "2026-08-20",
+          "evidence": "The repository carries this pattern as several separate prompts: spotting a problem and fixing it instead of waiting for an assignment, exceeding what a project asked for, and an explicit item on how a candidate would resolve ambiguity when handed an under-specified design task."
+        },
+        {
+          "url": "https://www.techinterviewhandbook.org/behavioral-interview-questions/",
+          "title": "The 30 most common Software Engineer behavioral interview questions",
+          "retrieved_at": "2026-08-20",
+          "evidence": "Among the company-specific sets it lists, one large employer asks whether the candidate has shipped work without their manager's sign-off and another asks what they did when the person holding the information they needed went silent — both are this pattern from the initiative side."
+        }
+      ],
+      "grading": {
+        "type": "rubric",
+        "criteria": [
+          {
+            "id": "undefined_thing_named",
+            "description": "Identifies the specific thing that was missing — the absent requirement, the metric nobody had chosen, the decision-maker who did not exist — instead of describing the situation as generally unclear.",
+            "weight": 0.25,
+            "concept": "ambiguity-navigation",
+            "levels": {
+              "0": "The ambiguity is asserted as atmosphere ('everything was chaotic', 'requirements kept changing') with nothing specific missing.",
+              "2": "One missing input is named, but it is really a normal open question that a single conversation would have closed.",
+              "4": "Names precisely what could not be looked up or asked, and says who they went to before concluding that nobody could answer it."
+            }
+          },
+          {
+            "id": "scope_cut_defended",
+            "description": "Names at least one thing they deliberately left out of scope and the reason, showing the delivered scope was chosen rather than being whatever fit the available time.",
+            "weight": 0.25,
+            "concept": "prioritization-tradeoffs",
+            "levels": {
+              "0": "No exclusions mentioned; the scope is described as everything that was needed, or as whatever they managed to finish.",
+              "2": "Mentions cutting something, but the cut is trivial or was forced by the deadline rather than reasoned about.",
+              "4": "Names a substantive exclusion, says what it would have cost to include and what was gained by dropping it, and identifies who was affected by the omission."
+            }
+          },
+          {
+            "id": "assumptions_made_visible",
+            "description": "Describes writing down or circulating the assumptions to the people they would bind, so that proceeding without answers was something others could contest.",
+            "weight": 0.25,
+            "concept": "ownership-initiative",
+            "levels": {
+              "0": "Assumptions were made silently, or the story implies nobody knew what was being built until it appeared.",
+              "2": "Says they 'kept people in the loop' or mentioned it verbally, with no artefact and no named audience.",
+              "4": "Names the artefact and the audience — a document, a message to a specific team, a review slot — and reports at least one occasion where someone pushed back on an assumption and what happened to it."
+            }
+          },
+          {
+            "id": "outcome_with_particulars",
+            "description": "Reports what actually shipped and its measurable effect — who uses it, how often, what it replaced, what it saved — with figures or named users rather than a claim of success.",
+            "weight": 0.25,
+            "concept": "quantified-impact",
+            "levels": {
+              "0": "No outcome, or the work never reached anyone; success is asserted with no referent ('it was really well received').",
+              "2": "Something shipped and is described qualitatively — it helped the team, it is still used — with no figure and no named user.",
+              "4": "States what shipped, who uses it and how often, and at least one measured effect with a before and after, including any part of the original goal that was not met."
+            }
+          }
+        ]
+      },
+      "hints": [
+        "Not a project you were assigned that turned out to be hard. One where, if you had done nothing, nothing would have happened.",
+        "What was the specific question nobody could answer for you? Name it, and tell me who you asked before deciding it yourself.",
+        "What did you decide not to build? That cut is the part I am most interested in.",
+        "How would somebody other than you know this shipped? Point me at a number or a person who uses it."
+      ],
+      "follow_ups": [
+        "Which of your assumptions turned out to be wrong, and what did that cost when it surfaced?",
+        "How did you know when to stop — what would have told you it was time to hand this to someone whose job it actually was?",
+        "Who could have objected to you spending time on this, and did anyone?",
+        "Same gap, but now three teams depend on the answer instead of one. What changes about how you would approach it?"
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-20"
+    }
+  ]
+}
