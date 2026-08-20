@@ -113,8 +113,8 @@ landed and what the next phase picks up.
 - [ ] **1 — Corpus v1:** researched, evidence-ranked, original statements — *thin slice
       landed (2026-08-19): 12 items across coding and quant, verified; bulk authoring and
       the design/behavioral domains remain*
-- [ ] **2 — Executor + deterministic grading** — *isolation layer landed and verified
-      (2026-08-18); `POST /execute`, test harnesses and the complexity probe remain*
+- [ ] **2 — Executor + deterministic grading** — *isolation layer and `POST /execute`
+      landed and verified (2026-08-20); the complexity probe and `cpp` remain*
 - [ ] **3 — Interview runtime (text) + API** — *DB schema, migrations, settings and
       model routing landed early (2026-08-16); sessions, grading, auth and budgets remain*
 - [ ] **4 — Adaptive engine**

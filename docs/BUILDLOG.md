@@ -563,3 +563,93 @@ The corpus is no longer the blocker. The rest of Phase 2 — `POST /execute`, th
 harnesses, the complexity probe — now has real content to run against, and the executor
 topology question that gated it is resolved (see ARCHITECTURE, "Where the sandbox
 actually lives").
+
+---
+
+## Phase 2 (execution layer) — `POST /execute` · 2026-08-20
+
+The half of Phase 2 that sits on top of the isolation layer. A submission now runs
+against a corpus item's tests and comes back as a typed result.
+
+```
+make check            48 passed, 18 deselected (hermetic — no Docker, 0.54s)
+make test-sandbox     15 passed (7 escape + 8 /execute end-to-end, real Docker)
+verify-solutions      33/33 reference tests, zero stub passes, through the SAME harness
+mypy (strict)         no issues in 18 source files
+corpus validate       24 items, 0 errors, 0 warnings
+```
+
+### The Phase 0 guard was discharged, not deleted
+
+`test_no_execute_endpoint_yet` asserted `/execute` returned 404, deliberately placed to
+stop an execution path landing without its isolation tests. It is now replaced by tests
+pinning the endpoint's contract, and the obligation it encoded was met literally: the
+escape suite landed *before* the endpoint, and `/execute` gained its own
+`test_the_sandbox_still_applies_to_submitted_code` — because an endpoint that quietly
+bypassed the isolation would pass every escape test while defeating all of them.
+
+### The protocol was wrong, and the content is what proved it
+
+`ExecuteRequest.tests` was typed `str`, assuming an item ships test *source code*. It does
+not: `gradingTests.tests` is a list of structured cases (`input`, `expected`, `kind`,
+`hidden`) against a named `entrypoint`. The contract was written in the previous session,
+before a single corpus item existed, and reading like a reasonable guess is exactly what
+made it survive review. Corrected to match the schema, with the history kept in the
+module docstring — **guessing an interface ahead of its data is how a contract ends up
+describing something nothing produces.**
+
+### One driver, not two
+
+`scripts/verify_reference_solutions.py` had its own copy of the test-running driver,
+written before `/execute` existed. Both are now `executor.harness`. A reference-solution
+check that built its driver even slightly differently from the one candidates are graded
+by would be verifying the wrong thing while reporting green — and the two copies had
+already begun to diverge (the script's compared with a local `_norm`, the endpoint would
+have needed its own).
+
+### A bad test found a real bug
+
+Writing the anti-forgery test, the first assertion drafted was
+`assert out.total == 99 or out.total == 2` — which cannot fail. Rewriting it to actually
+discriminate exposed that `parse_result` returned on the **first** marker line it found,
+so a candidate printing a forged result line *before* the driver's would be believed.
+
+Fixed two ways: the last marker now wins, and the driver flushes then `os._exit(0)` so
+candidate code cannot register an `atexit` handler that prints a later line. The residual
+is documented rather than papered over — a candidate that forges a marker and then exits
+the process itself leaves its line as the only one, which is unclosable while the result
+travels on the stdout the candidate can write to, and is out of scope under
+`SECURITY.md`'s threat model (single user, no hostile population, and the only person
+deceived is the one practising).
+
+The lesson is the tautological assertion, not the bug: **a test that cannot fail hides
+the thing it was written to check.** It was caught here only because the assertion looked
+odd while being typed.
+
+### What `/execute` refuses to do
+
+- **Never turns a failed run into a score.** A timeout, OOM kill, missing entrypoint, or
+  early `sys.exit(0)` returns a non-`ok` outcome with `passed = 0`, and `is_gradeable` is
+  false. Scoring a timeout as 0/3 would write evidence of weakness against a concept the
+  candidate may know perfectly well — `GRADING.md`'s "failure is a failure".
+- **Never raises for a bad run.** Always HTTP 200 with an outcome, because the caller has
+  to record the failure either way and an exception would lose the detail. 422 is reserved
+  for a malformed *request* — a missing entrypoint field, zero tests, a typo'd limit.
+- **Never runs unlimited.** A typo'd `wall_millis` is a 422, not a silent default cap.
+
+### Deferred deliberately
+
+- **The complexity probe.** `GRADING.md` requires running at increasing *n* and fitting
+  the growth curve against `complexity_target` (every coding item declares one). It is a
+  measurement problem, not a plumbing one — the Colima VM has 2 CPUs against CI's 4, and
+  wave-1 of `learning_files` recorded `-O2` deleting timing loops outright — so it wants
+  its own pass with real numbers rather than being bolted on here.
+- **`cpp`.** `/execute` returns a `harness_error` naming the language rather than
+  pretending; the corpus declares python only so far.
+- **`peak_rss_kb`** is still always 0. Reporting a number nothing measures would be worse
+  than the zero.
+
+### Next
+
+The interview runtime proper — sessions, the agent loop, grading, and the budget
+middleware — against a schema, a corpus, and now an execution path that all exist.

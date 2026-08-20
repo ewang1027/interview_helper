@@ -1,14 +1,14 @@
 """Run every coding item's reference solution against its own tests, in the sandbox.
 
 `docs/GRADING.md`: "Reference solutions are verified in CI, not trusted." This is that
-check. It deliberately runs through `executor.sandbox`, the same isolation a candidate's
-submission gets — verifying a solution in an environment more permissive than the one it
-will actually be graded in proves the wrong thing.
+check. It goes through `executor.harness` + `executor.sandbox` — the *same* driver and
+the *same* isolation a candidate's submission gets. It used to carry its own copy of the
+driver, which meant it could have verified a solution against a grader subtly unlike the
+real one; sharing the module removes that whole class of drift.
 
-Lives in `scripts/` rather than inside either package because it is the one place that
-legitimately needs both: `corpus` (the items) and `executor` (the sandbox). Neither
-package should take a dependency on the other to satisfy it — `apps/executor` in
-particular is held to FastAPI/uvicorn/Pydantic by docs/SECURITY.md.
+Lives in `scripts/` because it is the one place that legitimately needs both `corpus`
+(the items) and `executor` (the sandbox). Neither package should depend on the other —
+`apps/executor` in particular is held to FastAPI/uvicorn/Pydantic by docs/SECURITY.md.
 
 Usage: `uv run python scripts/verify_reference_solutions.py [--strict-stub-check]`
 """
@@ -16,72 +16,31 @@ Usage: `uv run python scripts/verify_reference_solutions.py [--strict-stub-check
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from typing import Any
 
 from corpus.loader import load_items
+from executor.harness import build_driver, parse_result
+from executor.protocol import ExecuteResponse, TestCase
 from executor.sandbox import run_sandboxed
 
-RESULT_MARKER = "##RESULT "
 
-# Runs INSIDE the sandbox. Compares with == after a normalisation pass, because JSON
-# round-trips tuples to lists and a solution returning a tuple is not wrong for that.
-DRIVER = """
-import json, sys
-
-_PAYLOAD = json.loads({payload!r})
-
-{solution}
-
-def _norm(v):
-    if isinstance(v, tuple):
-        return [_norm(x) for x in v]
-    if isinstance(v, list):
-        return [_norm(x) for x in v]
-    if isinstance(v, dict):
-        return {{k: _norm(x) for k, x in v.items()}}
-    return v
-
-_fn = globals().get(_PAYLOAD["entrypoint"])
-if _fn is None:
-    print("{marker}" + json.dumps({{
-        "error": "entrypoint %r not defined by the solution" % _PAYLOAD["entrypoint"]}}))
-    sys.exit(0)
-
-_passed, _failures = 0, []
-for _t in _PAYLOAD["tests"]:
-    _name = _t.get("name") or "test"
-    try:
-        _got = _fn(*_t["input"])
-    except Exception as exc:
-        _failures.append({{"name": _name, "kind": _t.get("kind", "example"),
-                          "message": "raised %s: %s" % (type(exc).__name__, exc)}})
-        continue
-    if _norm(_got) == _norm(_t["expected"]):
-        _passed += 1
-    else:
-        _failures.append({{"name": _name, "kind": _t.get("kind", "example"),
-                          "message": "expected %r, got %r" % (_t["expected"], _got)}})
-
-print("{marker}" + json.dumps({{"passed": _passed,
-                               "total": len(_PAYLOAD["tests"]),
-                               "failures": _failures}}))
-"""
+def _cases(tests: list[dict[str, Any]]) -> tuple[TestCase, ...]:
+    return tuple(
+        TestCase(
+            input=tuple(t.get("input", [])),
+            expected=t.get("expected"),
+            name=t.get("name") or f"test_{i}",
+            kind=t.get("kind", "edge"),
+            hidden=t.get("hidden", True),
+        )
+        for i, t in enumerate(tests)
+    )
 
 
-def _run_one(solution: str, entrypoint: str, tests: list[dict[str, Any]]) -> dict[str, Any]:
-    payload = json.dumps({"entrypoint": entrypoint, "tests": tests})
-    program = DRIVER.format(payload=payload, solution=solution, marker=RESULT_MARKER)
-    result = run_sandboxed(program)
-
-    if result.outcome != "ok":
-        return {"error": f"sandbox outcome {result.outcome}: {result.detail.strip()[:400]}"}
-    for line in result.detail.splitlines():
-        if line.startswith(RESULT_MARKER):
-            parsed: dict[str, Any] = json.loads(line[len(RESULT_MARKER) :])
-            return parsed
-    return {"error": f"driver produced no result line: {result.detail.strip()[:400]}"}
+def _run(solution: str, entrypoint: str, cases: tuple[TestCase, ...]) -> ExecuteResponse:
+    program = build_driver(solution, entrypoint, cases)
+    return parse_result(run_sandboxed(program), total=len(cases))
 
 
 def main() -> int:
@@ -109,7 +68,7 @@ def main() -> int:
     for item in items:
         grading = item.grading or {}
         entrypoint = grading.get("entrypoint")
-        tests = grading.get("tests", [])
+        cases = _cases(grading.get("tests", []))
         if not entrypoint:
             print(f"FAIL {item.id}: grading.entrypoint is missing")
             failed = True
@@ -120,29 +79,26 @@ def main() -> int:
                 print(f"skip {item.id} [{language}]: only python is supported so far")
                 continue
 
-            outcome = _run_one(solution, entrypoint, tests)
-            if "error" in outcome:
-                print(f"FAIL {item.id} [{language}]: {outcome['error']}")
+            result = _run(solution, entrypoint, cases)
+            if not result.is_gradeable:
+                print(f"FAIL {item.id} [{language}]: {result.outcome} — {result.detail[:300]}")
                 failed = True
                 continue
-
-            passed, total = outcome["passed"], outcome["total"]
-            if passed != total:
-                print(f"FAIL {item.id} [{language}]: {passed}/{total}")
-                for f in outcome["failures"]:
-                    print(f"       {f['name']} ({f['kind']}): {f['message']}")
+            if result.passed != result.total:
+                print(f"FAIL {item.id} [{language}]: {result.passed}/{result.total}")
+                for f in result.failures:
+                    print(f"       {f.name} ({f.kind}): {f.message}")
                 failed = True
                 continue
-            print(f"ok   {item.id} [{language}]: {passed}/{total}")
+            print(f"ok   {item.id} [{language}]: {result.passed}/{result.total}")
 
             if args.strict_stub_check:
                 stub = f"def {entrypoint}(*args, **kwargs):\n    return None\n"
-                stub_outcome = _run_one(stub, entrypoint, tests)
-                stub_passed = stub_outcome.get("passed", 0)
-                if stub_passed:
+                stub_result = _run(stub, entrypoint, cases)
+                if stub_result.is_gradeable and stub_result.passed:
                     print(
-                        f"WEAK {item.id}: a do-nothing stub passes {stub_passed}/{total} "
-                        "— those tests measure nothing"
+                        f"WEAK {item.id}: a do-nothing stub passes "
+                        f"{stub_result.passed}/{stub_result.total} — those tests measure nothing"
                     )
                     failed = True
 
