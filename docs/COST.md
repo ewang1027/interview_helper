@@ -38,9 +38,9 @@ Set in `.env`, resolved by `ModelRouter`; call sites never name a model.
 high, utility classification low. Not implemented: `ModelRouter` resolves a model id and a
 provider client, and carries no per-job parameters.
 
-## Hard budgets — designed, not yet enforced
+## Hard budgets
 
-Two limits. They are read into `Settings` today as `max_tokens_per_session` and
+**Designed, not yet enforced.** Two limits. They are read into `Settings` today as `max_tokens_per_session` and
 `max_tokens_per_day`, and **nothing consumes them** — no middleware exists, and no model
 call has ever been made, so there is nothing yet to refuse. The design, for when the agent
 loop lands:

@@ -30,8 +30,12 @@ attest one, weighted by recency. A count, not an opinion, which is the whole poi
 are one source.
 
 **Originality rule** — statements are original prose; sources justify the archetype and
-never supply text. Enforced mechanically: any shared 12-gram, or >15% containment of a
-source's 8-grams, is a validation error.
+never supply text. Upheld primarily by *process*: read the source, close the tab, write
+from the pattern. The validator is a backstop, not a guarantee — it shingles the statement
+against the item's own `sources[].evidence` **note**, not the live page, so **a statement
+copied verbatim from a URL passes cleanly.** Thresholds: any shared 12-gram, or >15%
+containment of the evidence note's 8-grams, is an error.
+→ [CORPUS](CORPUS.md#the-originality-rule)
 
 **Modality** — which runtime and grader serve an item: `coding`, `quant`, `design`,
 `behavioral`. One-to-one with **domain**, which names the body of knowledge
@@ -41,7 +45,11 @@ source's 8-grams, is a validation error.
 
 **Concept evidence** — an immutable row written by every graded artifact: concept, item,
 session, score, confidence, timestamp, grader version. **The source of truth.** Never
-updated, never deleted. → [ADAPTIVE](ADAPTIVE.md#evidence-not-scores)
+updated, never deleted. Since the Phase 3 slice it has **two producers**, distinguished by
+`source`: session grading (`item_id` + `session_id` set) and the practice log
+(`practice_problem_id` set). `item_id`/`session_id` are nullable and a CHECK constraint
+requires exactly one of `item_id`/`practice_problem_id`. The table is empty — nothing has
+ever written a row. → [ADAPTIVE](ADAPTIVE.md#evidence-not-scores)
 
 **Mastery** — a *derived projection* over evidence, recomputable from scratch. Never
 hand-edited. When it looks wrong, the evidence is wrong.
@@ -77,6 +85,43 @@ weakness ranking. → [PRACTICE_LOG](PRACTICE_LOG.md#rest-endpoints-and-state-ma
 **Graduation (practice log)** — a practice problem leaving the review queue for good
 after being solved 3 times; `due_at` is cleared and it is never prompted again.
 → [PRACTICE_LOG](PRACTICE_LOG.md#spaced-re-solve-scheduling)
+
+## Execution and the sandbox
+
+**Sandbox vs executor** — `apps/executor` is the *service*; the **sandbox** is the
+throwaway container it launches per execution. `executor.sandbox` decides *how safely*
+something runs (the Docker flags); `executor.harness` decides *what* runs and what the
+result means, and is importable without Docker. Under Fargate the task itself becomes the
+boundary — `run_sandboxed` is the seam where that swaps.
+
+**Escape test** — one of the six tests in `apps/executor/tests/test_sandbox_escape.py` that
+must **fail closed**: network egress, filesystem escape, PID exhaustion, memory bomb,
+wall-clock timeout, cross-execution contamination. Three of the six were re-run against a
+deliberately weakened sandbox to prove they can fail; a seventh sanity control guards the
+opposite error, where a sandbox so broken it runs nothing makes every escape test pass.
+
+**Outcome / `is_gradeable`** — every `/execute` run returns an `outcome`: `ok`, `timeout`,
+`out_of_memory`, `pid_limit`, `compile_error`, `harness_error`. **Only `ok` is gradeable.**
+A timeout is a *failed grading*, never a 0/3 — scoring one would write evidence of weakness
+against a concept the candidate may know perfectly well.
+
+**Result marker** — the `##LEARN-RESULT ` prefix the in-sandbox driver prints its JSON
+verdict on. The **last** marker line wins, and the driver flushes then `os._exit(0)`s, so
+neither candidate output printed earlier nor an `atexit` handler can be mistaken for the
+result.
+
+**Complexity probe** — runs a solution at increasing *n* and fits the growth exponent
+against `complexity_target`. Inert without a `complexity_probe` on the item, since fixed
+test inputs cannot be grown.
+
+**Adversarial generator** — a `complexity_probe.generator` that builds its input **worst-case
+by construction**, never randomly. Measured: a naive backward scan slopes 1.28 on random
+input (passes) and 2.03 on ascending (caught). The probe's power is in the generator, not
+the curve fit.
+
+**`inconclusive`** — the probe's third verdict, beside `matches` and `slower_than_target`.
+Returned whenever the data is too thin to judge or the target has no measured band. Only
+`slower_than_target` may count against a candidate (`ProbeResult.penalises`).
 
 ## Runtime
 
@@ -118,8 +163,10 @@ and private (not). The main security boundary in the design.
 
 **ALB** — the public front door: terminates HTTPS, health-checks tasks, routes traffic.
 
-**Security group** — a per-resource firewall. The executor's has **no outbound rules**,
-which is how "the sandbox has no network" is actually enforced.
+**Security group** — a per-resource firewall. The executor's **will have** no outbound
+rules, which is how "the sandbox has no network" becomes infrastructure-enforced in
+Phase 6. No AWS resource exists yet; today it is enforced by `docker run --network none`
+and verified by an escape test.
 
 **IaC / Terraform** — infrastructure as reviewable, diffable, rebuildable files.
 
@@ -132,11 +179,14 @@ latency, session, job.
 name a model.
 
 **Prompt caching** — the frozen prefix (system prompt + item context) sits above the
-`cache_control` breakpoint. A silent invalidation shows up only as a bill, so CI asserts
-non-zero cache reads. → [COST](COST.md#prompt-caching)
+`cache_control` breakpoint. A silent invalidation shows up only as a bill, so the intent
+is that CI assert non-zero cache reads. **No such assertion exists, and no model call has
+ever been made.** → [COST](COST.md#prompt-caching)
 
-**Hard budget** — per-session and per-day token ceilings enforced before the call is made.
-On breach the request is **refused**, never silently downgraded.
+**Hard budget** — the per-session and per-day token ceilings in `.env.example`. The design
+is that a breach **refuses** the request rather than silently downgrading it. **Not
+enforced today:** the values are read into `Settings` and consumed by nothing; no
+middleware exists. → [COST](COST.md)
 
 ## Outside terms used narrowly
 

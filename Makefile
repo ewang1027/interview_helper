@@ -4,7 +4,7 @@ COMPOSE := docker compose -f infra/compose/docker-compose.yml
 
 .PHONY: help setup dev dev-api down check lint typecheck test fmt \
         corpus-validate seed test-sandbox test-e2e test-db cost-report secret-scan \
-        verify-solutions clean
+        doc-links verify-solutions clean
 
 help: ## Show this help
 	@# [a-zA-Z0-9_-] not [a-z-]: the narrower class silently dropped `test-e2e`
@@ -12,9 +12,16 @@ help: ## Show this help
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | sort | \
 	  awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-setup: ## Install Python (uv) and Node (pnpm) dependencies
+setup: ## Install Python deps and the pre-push secret-scan hook
 	uv sync --all-packages
-	cd apps/web && pnpm install
+	@# apps/web is an empty Phase 5 placeholder with no package.json, so an unguarded
+	@# `pnpm install` exits 1 and aborts setup BEFORE the hook is installed — meaning a
+	@# fresh clone silently ends up with no pre-push secret scan on a public repo.
+	@if [ -f apps/web/package.json ]; then \
+	  cd apps/web && pnpm install; \
+	else \
+	  echo "skipping pnpm: apps/web has no package.json yet (Phase 5)"; \
+	fi
 	git config core.hooksPath hooks
 
 dev: ## Bring up Postgres (api/web/executor containers land in Phase 6 — see infra/compose/docker-compose.yml)
@@ -27,9 +34,9 @@ dev-api: ## Run the API against the compose Postgres (uvicorn --reload)
 down: ## Tear down the local stack
 	$(COMPOSE) down
 
-check: lint typecheck test corpus-validate secret-scan ## Everything CI runs
+check: lint typecheck test corpus-validate doc-links secret-scan ## Everything CI runs
 
-lint: ## Ruff + ESLint
+lint: ## Ruff (ESLint joins in Phase 5, with apps/web)
 	uv run ruff check .
 	uv run ruff format --check .
 
@@ -46,6 +53,9 @@ test: ## pytest
 corpus-validate: ## Validate the corpus against its schema, provenance and originality rules
 	uv run python -m corpus.validate
 
+doc-links: ## Verify every internal doc link resolves — file and heading anchor
+	@uv run python scripts/check_doc_links.py
+
 secret-scan: ## Grep tracked files for common secret shapes (repo is public)
 	@bash scripts/secret_scan.sh
 
@@ -58,7 +68,7 @@ seed: ## Load the corpus into the database
 test-sandbox: ## Executor escape tests — all must fail closed
 	uv run pytest apps/executor/tests -q -m sandbox
 
-test-e2e: ## One scripted session per interview mode against a live stack
+test-e2e: ## One scripted session per mode against a live stack — NO e2e tests exist yet (Phase 3)
 	uv run pytest apps/api/tests -q -m e2e
 
 test-db: ## DB-backed tests against a live Postgres (make dev first)

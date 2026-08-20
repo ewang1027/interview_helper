@@ -24,9 +24,9 @@ Single user, self-hosted. Runs in containers anywhere, and deploys to AWS on ECS
                                         │ seeded into
                                         ▼
   Next.js 15 ──SSE──▶  FastAPI  ──▶  Postgres (+pgvector)
-  (apps/web)           (apps/api)      mastery · evidence · sessions
+  (apps/web) [phase 5]  (apps/api)     mastery · evidence · sessions
                           │  │           · llm_calls cost ledger
-                          │  └──▶ Bedrock (Claude) via ModelRouter
+                          │  └──▶ Bedrock (Claude) via ModelRouter   [phase 3]
                           │
                           └──▶ apps/executor  (sandboxed, no network)
                                  Python 3.12 · C++20
@@ -41,7 +41,10 @@ while live sessions run on Bedrock, funded by AWS credits.
 
 ## How it adapts
 
-Every graded artifact writes an immutable `concept_evidence` row. Mastery is *derived*
+**Designed, not yet built (Phase 4).** The tables exist and are empty; nothing writes
+evidence, and no rating or scheduling code exists.
+
+Every graded artifact will write an immutable `concept_evidence` row. Mastery is *derived*
 from that evidence, never hand-written, so it can be recomputed from scratch at any time:
 
 - **`ability`** — an Elo rating per concept, updated against each item's own difficulty
@@ -55,13 +58,15 @@ rate, overdue review, and prerequisite blocking.
 
 | Path | What it is |
 |---|---|
-| `apps/api/` | FastAPI — sessions, interviewer agent, grading, mastery |
-| `apps/web/` | Next.js 15 app |
-| `apps/executor/` | Sandboxed code runner (no network, non-root, resource-capped) |
-| `packages/corpus/` | Versioned question corpus + JSON Schema + validator |
-| `research/` | Claude Code-driven corpus ingestion pipeline (build time) |
-| `infra/compose/` | Portable deployment — runs the stack on any machine |
-| `infra/terraform/` | AWS: VPC, ALB, ECS Fargate, RDS, observability |
+| `apps/api/` | FastAPI — `/health` and `/corpus/status` today; sessions, agent, grading and mastery are Phase 3 |
+| `apps/web/` | *Empty placeholder.* Next.js 15 app, Phase 5 |
+| `apps/executor/` | Sandboxed code runner (no network, non-root, resource-capped) — isolation, `POST /execute` and the complexity probe are built |
+| `packages/corpus/` | Versioned question corpus + JSON Schema + validator (24 items today) |
+| `research/` | *Empty placeholder.* Corpus ingestion pipeline, Phase 1 — the 24 items were hand-authored, not pipeline-produced |
+| `scripts/` | `secret_scan.sh` and `verify_reference_solutions.py` — both CI gates |
+| `hooks/` | `pre-push` secret scan, installed by `make setup` |
+| `infra/compose/` | Local Postgres today; the rest of the stack lands in Phase 6 with the Dockerfiles |
+| `infra/terraform/` | *Empty placeholder.* AWS: VPC, ALB, ECS Fargate, RDS, observability — Phase 6 |
 | `docs/` | Design and specification — see the map below |
 
 ## Documentation
@@ -75,12 +80,12 @@ buildlog disagree about what exists, the buildlog is right.**
 |---|---|---|---|
 | [BUILDLOG](docs/BUILDLOG.md) | What is actually built, and what each wave cost to learn | all | Current |
 | [GLOSSARY](docs/GLOSSARY.md) | Project vocabulary in one place | all | Current |
-| [ARCHITECTURE](docs/ARCHITECTURE.md) | Services, trust boundaries, data model, model routing | all | Design |
+| [ARCHITECTURE](docs/ARCHITECTURE.md) | Services, trust boundaries, data model, model routing | all | Design, partly built |
 | [CONCEPTS](docs/CONCEPTS.md) | The 159-concept taxonomy and its rules | 0 | ✅ Built |
-| [CORPUS](docs/CORPUS.md) | What a corpus item is; the validator's seven checks | 0 → 1 | ✅ Contract built |
+| [CORPUS](docs/CORPUS.md) | What a corpus item is; the validator's eight checks | 0 → 1 | ✅ Contract built |
 | [RESEARCH](docs/RESEARCH.md) | How items get researched and authored | 1 | Spec |
-| [SECURITY](docs/SECURITY.md) | Threat model, sandbox isolation, the five escape tests | 2 | Spec |
-| [GRADING](docs/GRADING.md) | The four graders and what they produce | 2 → 3 | Spec |
+| [SECURITY](docs/SECURITY.md) | Threat model, sandbox isolation, the six escape tests | 2 | ✅ Isolation built |
+| [GRADING](docs/GRADING.md) | The four graders and what they produce | 2 → 3 | Partly built |
 | [API](docs/API.md) | Endpoints, session state machine, SSE events, agent tools | 3 | Spec |
 | [COST](docs/COST.md) | Model routing, hard budgets, the ledger | 3 → 6 | Policy set |
 | [ADAPTIVE](docs/ADAPTIVE.md) | Elo + FSRS, evidence, weakness priority, planning | 4 | Spec |
@@ -99,6 +104,10 @@ make seed       # load the corpus into the database
 make dev-api    # run the API against it (uvicorn --reload)
 make check      # ruff + mypy + pytest + corpus validate + secret scan
 make test-db    # schema tests against the live Postgres
+
+make test-sandbox     # executor escape tests — needs real Docker (colima start)
+make verify-solutions # every reference solution through the same harness candidates get
+make down             # tear down the local stack
 ```
 
 `make dev` currently brings up Postgres only — the `api`, `web` and `executor`
@@ -112,10 +121,11 @@ for what actually exists and what each phase still owes.
 
 - [x] **0 — Foundations:** repo, schema, taxonomy, corpus contract, CI
 - [ ] **1 — Corpus v1:** researched, evidence-ranked, original statements — *thin slice
-      landed (2026-08-19): 12 items across coding and quant, verified; bulk authoring and
-      the design/behavioral domains remain*
+      landed (2026-08-20): 24 items, 3 archetypes + 3 instances in each of the four
+      domains, verified; bulk authoring toward ~400/~150 remains*
 - [ ] **2 — Executor + deterministic grading** — *isolation, `POST /execute` and the
-      complexity probe landed and verified (2026-08-20); scoring and `cpp` remain*
+      complexity probe landed and verified (2026-08-20); scoring, `cpp` and `peak_rss_kb`
+      remain*
 - [ ] **3 — Interview runtime (text) + API** — *DB schema, migrations, settings and
       model routing landed early (2026-08-16); sessions, grading, auth and budgets remain*
 - [ ] **4 — Adaptive engine**

@@ -19,16 +19,19 @@ Budgets alarm.
 
 **Container.** A packaged filesystem plus the command to run. It bundles your code *and*
 its dependencies, so the same artifact behaves identically on your laptop and in AWS.
-This project produces three: `api`, `executor`, `web`.
+This project **will produce** three: `api`, `executor`, `web`. **None has a Dockerfile
+yet** — they are built in Phase 6.
 
 **Image / registry.** An image is the built container; a registry is where images are
 stored. AWS's registry is **ECR** (Elastic Container Registry). You build locally or in
 CI, push to ECR, and AWS pulls from there.
 
 **Docker Compose.** Runs several containers together on one machine, with a network
-between them. This is what `make dev` uses, and it is also a *supported deployment* —
-it is how the stack runs on another device, which you asked for. It is not merely a
-dev-only convenience.
+between them. It is also a *supported deployment* — the intended way the stack runs on
+another device, not merely a dev-only convenience. **Today it composes one service:**
+`make dev` brings up Postgres alone, because `api`, `web` and `executor` have no
+Dockerfiles yet. The other three join in Phase 6, which is when the portability claim
+above becomes testable.
 
 **ECS (Elastic Container Service).** AWS's container orchestrator. You tell it "run 2
 copies of this image, with this much CPU and memory"; it does that and restarts them

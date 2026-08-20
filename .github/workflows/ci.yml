@@ -83,6 +83,11 @@ jobs:
       - name: Validate corpus
         run: uv run python -m corpus.validate
 
+      # Anchors rot invisibly — renaming a heading breaks every link to it and nothing
+      # complains. An audit found four such breaks that an existence-only check missed.
+      - name: Doc links
+        run: uv run python scripts/check_doc_links.py
+
       # Backstop for GitHub's own secret scanning (push protection only sees a
       # push after it lands). This repo is public: see docs/SECURITY.md.
       - name: Secret scan

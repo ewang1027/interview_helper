@@ -62,7 +62,9 @@ than a rewrite.
 The executor is a separate service specifically so that "runs untrusted code" and "holds
 the database password" are never the same process.
 
-### Where the sandbox actually lives — resolved 2026-08-20
+### Where the sandbox actually lives
+
+*Resolved 2026-08-20.*
 
 Building the isolation layer raised a question the diagram above did not answer: launching
 a sandbox container requires the Docker socket, and **the Docker socket is root-equivalent
@@ -103,10 +105,11 @@ diagram." That was wrong, and the error is worth keeping:** it came from reasoni
 the trust boundary in the abstract without checking what the target platform permits. The
 platform constraint decided the design.
 
-## Data model — built (migration `6e1d353bc543`)
+## Data model
 
-Every table below exists and is migrated. All are empty except `concepts`, `items`,
-`concept_edges` and `item_concepts`, which `make seed` populates from the corpus.
+**Built.** Every table below exists and is applied by migration `6e1d353bc543`. All are
+empty except `concepts`, `items`, `concept_edges` and `item_concepts`, which `make seed`
+populates from the corpus.
 
 | Table | Purpose |
 |---|---|

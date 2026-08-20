@@ -25,7 +25,7 @@ detail behind it.
 | **3** Runtime + API | infra only | Postgres schema + migrations, settings, `ModelRouter` | sessions, agent loop, grading, auth, budget middleware |
 | **4** Adaptive engine | not started | — | Elo, FSRS, evidence replay, planner |
 | **5–8** Web, AWS, voice, hardening | not started | — | — |
-| **9** Practice log | spec only | `docs/PRACTICE_LOG.md` | everything; gated on 3 + 4 |
+| **9** Practice log | **schema only** | `practice_problems`, `practice_solves`, and `concept_evidence`'s two-producer shape — all migrated, landed with the Phase 3 slice | classification, endpoints, scheduling; gated on 3 + 4 |
 
 Two things worth knowing before reading anything else as further along than it is:
 **no model call has ever been made** — `ModelRouter` resolves config and builds a client,
@@ -246,7 +246,7 @@ round-trips cleanly; `make seed` loads 159 concepts idempotently (run three time
 
 | Area | State |
 |---|---|
-| `apps/api/src/api/models.py` | All 15 tables from ARCHITECTURE's data model, plus the two practice-log tables |
+| `apps/api/src/api/models.py` | All 13 tables from ARCHITECTURE's data model, plus the two practice-log tables — 15 in total |
 | `apps/api/migrations/` | Alembic env + initial migration `6e1d353bc543`, applied and round-tripped |
 | `apps/api/src/api/settings.py` | Pydantic Settings over every var in `.env.example` — nothing calls `os.environ` |
 | `apps/api/src/api/db.py` | Sync psycopg3 engine + `get_session` dependency |

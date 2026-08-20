@@ -100,7 +100,7 @@ invalidation is the most likely cause and shows as near-zero cache reads
 **Executor wedged**
 It holds no state, so restart the service. If it recurs, look for a submission that
 defeats a limit — then add that case to the escape tests in
-[SECURITY.md](SECURITY.md#the-five-escape-tests).
+[SECURITY.md](SECURITY.md#the-six-escape-tests).
 
 **Mastery looks wrong**
 Do not adjust it. Read `GET /mastery/{concept}` to see the evidence behind the number.

@@ -1,8 +1,11 @@
 # The practice log
 
-> **Status:** Specification — not built. Lands in **Phase 9**, gated on Phase 3
-> (DB, API, ModelRouter) and Phase 4 (concept_evidence/mastery) existing first.
-> Related: [ARCHITECTURE](ARCHITECTURE.md#data-model-lands-in-phase-3) ·
+> **Status:** Schema built, behaviour not. The two tables below and the `concept_evidence`
+> extension exist and are migrated (they landed with the Phase 3 slice, 2026-08-16); the
+> classification call, the REST surface and the scheduling rule are **not** built. Lands
+> in **Phase 9**, still gated on the rest of Phase 3 (API, a live `ModelRouter`) and
+> Phase 4 (mastery) existing first.
+> Related: [ARCHITECTURE](ARCHITECTURE.md#data-model) ·
 > [ADAPTIVE](ADAPTIVE.md) (the evidence/scheduling machinery this reuses) ·
 > [CORPUS](CORPUS.md) (why this is manual-entry-only) ·
 > [COST](COST.md#model-routing) (the classification job) ·
@@ -35,8 +38,9 @@ by exemption. Classification runs on that metadata alone.
 
 ## Data model
 
-Two new tables, plus an extension to the existing `concept_evidence` table
-([ARCHITECTURE](ARCHITECTURE.md#data-model-lands-in-phase-3)).
+Two tables — **already created by migration `6e1d353bc543`** — plus an extension to the
+existing `concept_evidence` table
+([ARCHITECTURE](ARCHITECTURE.md#data-model)).
 
 ### `practice_problems`
 
@@ -87,8 +91,11 @@ evidence table — a parallel table would defeat the point of feeding the shared
 - `item_id` — made nullable.
 - `session_id` — made nullable.
 - `practice_problem_id` — new, nullable FK → `practice_problems.id`.
-- `source` — new, enum(`session_grading`,`practice_log`). A CHECK constraint requires
-  exactly one of (`item_id`, `practice_problem_id`) to be set, consistent with `source`.
+- `source` — new, text holding `session_grading` | `practice_log` (a plain column, not a
+  Postgres enum). A CHECK constraint, `concept_evidence_exactly_one_source`, requires
+  exactly one of (`item_id`, `practice_problem_id`) to be set. **It does not cross-check
+  `source`** — a row claiming `practice_log` with `item_id` set passes, so keeping the
+  column consistent with the populated FK is the writer's job, not the database's.
 - `grader_version` is reused as-is; for practice-log evidence it records the scheduling
   rule version (e.g. `"practice-log-v1"`) so a future constant change stays
   interpretable.
