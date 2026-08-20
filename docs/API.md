@@ -2,9 +2,10 @@
 
 > **Status:** Specification — of the surface below, only `/health` and `/corpus/status`
 > exist today, and there is **no auth on any of it**. The rest lands in **Phase 3**; the
-> Vapi shim in **Phase 7**. (The executor's `POST /execute` *is* built, but that is a
-> separate service on a separate contract — see [SECURITY](SECURITY.md). The `run_code`
-> tool below is the proxy to it, and that proxy does not exist yet.)
+> Vapi shim in **Phase 7**. (The executor's `POST /execute` and `POST /probe` *are* built,
+> but that is a separate service on a separate contract — see [SECURITY](SECURITY.md).
+> `api.executor_client` now speaks to it, and the coding grader uses it; what does not
+> exist is the `run_code` **tool** below — there is no agent to invoke it.)
 > Related: [ARCHITECTURE](ARCHITECTURE.md) · [GRADING](GRADING.md) (what the graders do with submissions) · [ADAPTIVE](ADAPTIVE.md) (where the planner gets its input) · [VOICE](VOICE.md) (the second transport) · [WEB](WEB.md) (the first consumer)
 
 This is the contract two separate consumers build against — the web app and the Vapi
@@ -158,7 +159,7 @@ monotonic `seq`.
 | `agent.message.done` | `{ message_id, text }` | Complete turn; authoritative over deltas |
 | `agent.tool_use` | `{ tool, input, tool_use_id }` | Interviewer invoked a tool |
 | `tool.result` | `{ tool_use_id, output, is_error }` | What came back |
-| `hint.revealed` | `{ item_id, level, text, score_penalty }` | A hint was given — **and what it cost** |
+| `hint.revealed` | `{ item_id, level, text, score_penalty }` | A hint was given — **and what it cost**. `score_penalty` is the schedule in [GRADING.md](GRADING.md#hints-cost-score) — a fraction of the score still on the table, not absolute points |
 | `observation.recorded` | `{ concept_id, signal }` | Mid-session evidence captured |
 | `grading.started` | `{ item_id }` | Grading began |
 | `grading.result` | `{ item_id, score, criteria[], evidence_written[] }` | Grading finished |
@@ -182,7 +183,7 @@ succeeding buys you very little.
 
 | Tool | Input | Returns | Notes |
 |---|---|---|---|
-| `run_code` | `{ language, source, entrypoint, tests[], test_selection?, wall_ms?, memory_mb? }` | `{ outcome, passed, total, failures[], wall_ms, peak_rss_kb, detail }` | Proxied to the executor's `POST /execute`. The **only** way code runs. `outcome` is load-bearing — only `ok` yields scorable counts. Passes are a count; only *failures* are enumerated. `peak_rss_kb` is always 0, nothing measures it yet |
+| `run_code` | `{ language, source, entrypoint, tests[], test_selection?, wall_ms?, memory_mb? }` | `{ outcome, passed, total, failures[], wall_ms, peak_rss_kb, detail }` | Proxied to the executor's `POST /execute` via `api.executor_client`. The **only** way code runs. `outcome` is load-bearing — only `ok` yields scorable counts. Passes are a count; only *failures* are enumerated. `peak_rss_kb` is always 0, nothing measures it yet. The executor's other endpoint, `POST /probe`, is deliberately **not** exposed as a tool: it is a grading step, and the agent does not grade |
 | `check_answer` | `{ item_id, submitted }` | `{ correct, normalized, method }` | sympy equivalence, then numeric tolerance, then `accept_forms` |
 | `reveal_hint` | `{ item_id, level }` | `{ text, score_penalty }` | Monotonic — level N implies N−1 was given |
 | `record_observation` | `{ concept_id, signal, confidence, span }` | `{ ok }` | Mid-session evidence. `span` cites the transcript |

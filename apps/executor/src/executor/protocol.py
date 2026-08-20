@@ -100,3 +100,56 @@ class ExecuteResponse(BaseModel):
         """Only an `ok` run produces counts a grader may score. Anything else is a
         failed grading — see docs/GRADING.md's "failure is a failure"."""
         return self.outcome == "ok"
+
+
+# --- Complexity probe ----------------------------------------------------------------
+
+# What a growth measurement concluded. `inconclusive` is a real verdict rather than an
+# error: the probe reports it whenever the data cannot carry a call, and it never
+# penalises. Defined here rather than in `complexity` so the wire contract stays
+# importable without the module that shells out to Docker.
+Verdict = Literal["matches", "slower_than_target", "inconclusive"]
+
+
+class ProbeRequest(BaseModel):
+    """Run a submission at increasing *n* and judge its growth against `target`.
+
+    Deliberately a separate contract from `ExecuteRequest`, not extra fields on it.
+    docs/API.md's `run_code` is the interviewer agent's entire code-running surface and
+    carries no probe fields; the probe is a *grading* step the agent never invokes, and
+    keeping it off `/execute` keeps that surface as small as it is documented to be.
+
+    `generator` is Python source defining `make_input(n)`. It arrives in the request
+    because it lives in the item's `complexity_probe` — the caller holds the corpus, and
+    this service deliberately holds none.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    language: Language
+    source: str
+    entrypoint: str
+    generator: str
+    # Three is the floor the fit needs, and matches `complexity_probe.sizes` minItems in
+    # the corpus schema. Fewer is a caller bug worth a 422, not a silent `inconclusive`.
+    sizes: tuple[int, ...] = Field(min_length=3)
+    target: str | None = None
+    repeats: int = Field(default=5, ge=1)
+    wall_ms: int | None = Field(default=None, gt=0)
+    memory_mb: int | None = Field(default=None, gt=0)
+
+
+class ProbeResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    verdict: Verdict
+    slope: float | None = None
+    points: tuple[tuple[int, float], ...] = ()
+    target: str | None = None
+    detail: str = ""
+
+    @property
+    def penalises(self) -> bool:
+        """Only a confident `slower_than_target` may affect a score. Mirrors
+        `executor.complexity.ProbeResult.penalises`, whose value this carries."""
+        return self.verdict == "slower_than_target"

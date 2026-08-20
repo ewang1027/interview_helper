@@ -1,11 +1,12 @@
 # Security
 
 > **Status:** Isolation layer built and verified (2026-08-18); `POST /execute`, the test
-> harness and the complexity probe built on top of it (2026-08-20). The six escape tests
-> pass against real Docker, and **three of the six** were confirmed load-bearing by
+> harness and the complexity probe built on top of it (2026-08-20), and `POST /probe`
+> exposing that probe to the grader rather than only to CI (2026-08-20). The six escape
+> tests pass against real Docker, and **three of the six** were confirmed load-bearing by
 > re-running them against a deliberately weakened sandbox — the PID, memory and
-> contamination tests have had no negative control, and that is owed. Not built: scoring,
-> `cpp`, `peak_rss_kb`. AWS-layer enforcement in **Phase 6**.
+> contamination tests have had no negative control, and that is owed. Not built: `cpp`,
+> `peak_rss_kb`. AWS-layer enforcement in **Phase 6**.
 > "Measured behaviour" below records where this document's original claims were wrong.
 > Related: [ARCHITECTURE](ARCHITECTURE.md) (service boundaries) · [INFRA](INFRA.md) (where these controls are configured) · [GRADING](GRADING.md) (what the executor is for)
 
@@ -66,7 +67,7 @@ Six layers, each independently sufficient to prevent a class of harm:
 | Identity | Runs as uid/gid `65534`, with `/etc` overlaid empty so there is no passwd entry to escalate through. **A shell is present and runnable** — measured: `/bin/sh -c 'id'` succeeds and returns uid 65534 — because `python:3.12-slim` is used as-is and only `/scratch` is `noexec`. Shelling out is possible and inherits the same uid, dropped capabilities and empty network namespace | Privilege escalation |
 | Capabilities | All Linux capabilities dropped; `no-new-privileges` | Kernel-adjacent tricks |
 | Syscalls | Docker's default seccomp profile. The "plus explicit deny" this row used to promise is **not** implemented — see "Measured behaviour" for why adding it as written would have *weakened* the sandbox | Sandbox escape primitives |
-| Resources | Wall-clock timeout, memory cap, PID cap (64), CPU quota (0.5). **The first two are per-request overrides with a positive-integer floor and no ceiling** — a caller may ask for `wall_ms=3600000`; a server-side maximum is owed before the executor is reachable by anything but the API | Denial of service against the host |
+| Resources | Wall-clock timeout, memory cap, PID cap (64), CPU quota (0.5). **The first two are per-request overrides with a positive-integer floor and no ceiling** — a caller may ask for `wall_ms=3600000`; a server-side maximum is owed before the executor is reachable by anything but the API. `POST /probe` runs under the same limits but defaults them **higher** (60s wall, 512 MB) because it deliberately runs the submission at four sizes; its own internal budget stops the sweep at ~20s of process time, so the wall is a backstop rather than the real bound | Denial of service against the host |
 | Output | Captured stdout/stderr truncated at 64 KB | An unbounded stream filling the *caller's* memory — as effective a DoS as an allocation bomb inside the container. Note the grading consequence: if truncation eats the result marker, the run becomes a `harness_error`, so a very chatty correct solution fails |
 
 Isolation is at the **infrastructure** layer, not in code. "The sandbox has no network" is

@@ -37,13 +37,18 @@ import json
 import math
 import re
 from dataclasses import dataclass
-from typing import Literal
 
+from executor.protocol import Verdict
 from executor.sandbox import run_sandboxed
 
 PROBE_MARKER = "##LEARN-PROBE "
 
-Verdict = Literal["matches", "slower_than_target", "inconclusive"]
+# Generous relative to `/execute`'s 5s: the probe deliberately runs the solution at four
+# sizes with repeats, and its own internal budget (20s of process time) is what actually
+# bounds the work. A wall this short would cut the measurement off mid-sweep and report
+# `inconclusive` for a run that was about to produce a verdict.
+PROBE_WALL_MS = 60_000
+PROBE_MEMORY_MB = 512
 
 # Upper edge of each class as MEASURED above, not as derived. The gap between the linear
 # band's top (1.30) and the observed `sorted` slope (1.46) is the deliberate cushion that
@@ -269,12 +274,14 @@ def run_probe(
     sizes: list[int],
     target: str | None,
     repeats: int = 5,
-    wall_ms: int = 60_000,
-    memory_mb: int = 512,
+    wall_ms: int | None = None,
+    memory_mb: int | None = None,
 ) -> ProbeResult:
     """Measure and judge. Never raises; a failed measurement is `inconclusive`."""
     program = build_probe_program(generator, solution, entrypoint, sizes, repeats)
-    raw = run_sandboxed(program, wall_ms=wall_ms, memory_mb=memory_mb)
+    raw = run_sandboxed(
+        program, wall_ms=wall_ms or PROBE_WALL_MS, memory_mb=memory_mb or PROBE_MEMORY_MB
+    )
 
     if raw.outcome != "ok":
         return ProbeResult("inconclusive", None, (), target, f"probe run ended in {raw.outcome}")

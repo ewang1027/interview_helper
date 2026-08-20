@@ -67,8 +67,10 @@ jobs:
       - name: Pull sandbox image
         run: docker pull python:3.12-slim
 
-      - name: Sandbox escape tests
-        run: uv run pytest apps/executor/tests -q -m sandbox
+      # Every sandbox-marked test, not just apps/executor's: the coding grader is
+      # verified end to end through the same containers, from apps/api.
+      - name: Sandbox tests
+        run: uv run pytest -q -m sandbox
 
       # docs/GRADING.md: reference solutions are verified, not trusted. Runs them
       # through the same sandbox a candidate's submission gets.

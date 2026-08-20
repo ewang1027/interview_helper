@@ -41,11 +41,13 @@ while live sessions run on Bedrock, funded by AWS credits.
 
 ## How it adapts
 
-**Designed, not yet built (Phase 4).** The tables exist and are empty; nothing writes
-evidence, and no rating or scheduling code exists.
+**Designed, not yet built (Phase 4).** The tables exist and are empty; nothing
+*persists* evidence, and no rating or scheduling code exists.
 
-Every graded artifact will write an immutable `concept_evidence` row. Mastery is *derived*
-from that evidence, never hand-written, so it can be recomputed from scratch at any time:
+Every graded artifact will write an immutable `concept_evidence` row. The coding grader
+already *produces* those rows — concept, score, confidence — and nothing writes them yet,
+because there is no session to write them against. Mastery is *derived* from that
+evidence, never hand-written, so it can be recomputed from scratch at any time:
 
 - **`ability`** — an Elo rating per concept, updated against each item's own difficulty
   rating. Answers *how hard should the next question be*.
@@ -58,9 +60,9 @@ rate, overdue review, and prerequisite blocking.
 
 | Path | What it is |
 |---|---|
-| `apps/api/` | FastAPI — `/health` and `/corpus/status` today; sessions, agent, grading and mastery are Phase 3 |
+| `apps/api/` | FastAPI — `/health` and `/corpus/status` today, plus the **deterministic coding grader** (`api.grading.coding`) and the executor client it runs on; sessions, agent and mastery are Phase 3 |
 | `apps/web/` | *Empty placeholder.* Next.js 15 app, Phase 5 |
-| `apps/executor/` | Sandboxed code runner (no network, non-root, resource-capped) — isolation, `POST /execute` and the complexity probe are built |
+| `apps/executor/` | Sandboxed code runner (no network, non-root, resource-capped) — isolation, `POST /execute` and `POST /probe` (the complexity probe) are built |
 | `packages/corpus/` | Versioned question corpus + JSON Schema + validator (24 items today) |
 | `research/` | *Empty placeholder.* Corpus ingestion pipeline, Phase 1 — the 24 items were hand-authored, not pipeline-produced |
 | `scripts/` | `secret_scan.sh` and `verify_reference_solutions.py` — both CI gates |
@@ -85,7 +87,7 @@ buildlog disagree about what exists, the buildlog is right.**
 | [CORPUS](docs/CORPUS.md) | What a corpus item is; the validator's eight checks | 0 → 1 | ✅ Contract built |
 | [RESEARCH](docs/RESEARCH.md) | How items get researched and authored | 1 | Spec |
 | [SECURITY](docs/SECURITY.md) | Threat model, sandbox isolation, the six escape tests | 2 | ✅ Isolation built |
-| [GRADING](docs/GRADING.md) | The four graders and what they produce | 2 → 3 | Partly built |
+| [GRADING](docs/GRADING.md) | The four graders and what they produce | 2 → 3 | ✅ Coding grader built; rubric graders are Phase 3 |
 | [API](docs/API.md) | Endpoints, session state machine, SSE events, agent tools | 3 | Spec |
 | [COST](docs/COST.md) | Model routing, hard budgets, the ledger | 3 → 6 | Policy set |
 | [ADAPTIVE](docs/ADAPTIVE.md) | Elo + FSRS, evidence, weakness priority, planning | 4 | Spec |
@@ -105,7 +107,7 @@ make dev-api    # run the API against it (uvicorn --reload)
 make check      # ruff + mypy + pytest + corpus validate + secret scan
 make test-db    # schema tests against the live Postgres
 
-make test-sandbox     # executor escape tests — needs real Docker (colima start)
+make test-sandbox     # every test needing real Docker: escapes, /execute, /probe, grading
 make verify-solutions # every reference solution through the same harness candidates get
 make down             # tear down the local stack
 ```
@@ -115,17 +117,18 @@ containers land in Phase 6, when they have Dockerfiles.
 
 ## Build status
 
-**Phase 0 complete. Phases 1, 2 and 3 partially landed**, deliberately out of order —
-each was taken far enough to unblock the next. See [`docs/BUILDLOG.md`](docs/BUILDLOG.md)
+**Phases 0 and 2 complete for what they were scoped to. Phases 1 and 3 partially
+landed**, deliberately out of order — each was taken far enough to unblock the next. See [`docs/BUILDLOG.md`](docs/BUILDLOG.md)
 for what actually exists and what each phase still owes.
 
 - [x] **0 — Foundations:** repo, schema, taxonomy, corpus contract, CI
 - [ ] **1 — Corpus v1:** researched, evidence-ranked, original statements — *thin slice
       landed (2026-08-20): 24 items, 3 archetypes + 3 instances in each of the four
       domains, verified; bulk authoring toward ~400/~150 remains*
-- [ ] **2 — Executor + deterministic grading** — *isolation, `POST /execute` and the
-      complexity probe landed and verified (2026-08-20); scoring, `cpp` and `peak_rss_kb`
-      remain*
+- [x] **2 — Executor + deterministic grading** — *isolation, `POST /execute`,
+      `POST /probe` and the scoring grader landed and verified (2026-08-20). A quadratic
+      submission that passes every one of an item's tests is caught by the probe and
+      scores 0.75; `cpp` and `peak_rss_kb` remain, both deferred rather than owed*
 - [ ] **3 — Interview runtime (text) + API** — *DB schema, migrations, settings and
       model routing landed early (2026-08-16); sessions, grading, auth and budgets remain*
 - [ ] **4 — Adaptive engine**

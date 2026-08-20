@@ -66,3 +66,38 @@ def test_execute_refuses_an_unsupported_language_without_running_anything() -> N
     body = resp.json()
     assert body["outcome"] == "harness_error"
     assert "not supported" in body["detail"]
+
+
+def test_probe_rejects_a_request_it_could_not_fit() -> None:
+    """Two sizes cannot produce a growth exponent. Refusing here is better than running
+    two containers and reporting `inconclusive` afterwards."""
+    resp = client.post(
+        "/probe",
+        json={
+            "language": "python",
+            "source": "def f(xs):\n    return xs\n",
+            "entrypoint": "f",
+            "generator": "def make_input(n):\n    return [list(range(n))]\n",
+            "sizes": [100, 200],
+            "target": "O(n)",
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_probe_refuses_an_unsupported_language_as_a_verdict_not_an_error() -> None:
+    resp = client.post(
+        "/probe",
+        json={
+            "language": "cpp",
+            "source": "int main(){}",
+            "entrypoint": "f",
+            "generator": "",
+            "sizes": [100, 200, 400],
+            "target": "O(n)",
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["verdict"] == "inconclusive"
+    assert "not supported" in body["detail"]

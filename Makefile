@@ -65,8 +65,11 @@ verify-solutions: ## Run every coding item's reference solution against its own 
 seed: ## Load the corpus into the database
 	uv run python -m api.seed
 
-test-sandbox: ## Executor escape tests — all must fail closed
-	uv run pytest apps/executor/tests -q -m sandbox
+test-sandbox: ## Every test that needs real Docker: escape suite, /execute, /probe, grading
+	@# Not scoped to apps/executor: the coding grader's end-to-end tests live in
+	@# apps/api and need the same real daemon, and a path-scoped target would have
+	@# skipped them silently — which is the failure mode this repo keeps finding.
+	uv run pytest -q -m sandbox
 
 test-e2e: ## One scripted session per mode against a live stack — NO e2e tests exist yet (Phase 3)
 	uv run pytest apps/api/tests -q -m e2e

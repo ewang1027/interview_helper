@@ -1,11 +1,13 @@
 # Architecture
 
 > **Status:** Design, partially built. Real today: the Postgres schema and migrations,
-> settings and `ModelRouter` (unused), the sandbox, `POST /execute`, the test harness and
-> the complexity probe, and a 24-item corpus. Not built: sessions, the agent loop,
-> **scoring and rubric grading** (the deterministic runners exist; nothing turns their
-> output into a score), mastery, auth, and the budget middleware — so no model call has
-> ever been made. `docs/BUILDLOG.md` is authoritative.
+> settings and `ModelRouter` (unused), the sandbox, `POST /execute` and `POST /probe`, the
+> test harness, the complexity probe, the **deterministic coding grader** (`api.grading`
+> — scores a submission and returns the evidence rows it implies), and a 24-item corpus.
+> Not built: sessions, the agent loop, **persistence of grading results** (the grader is
+> pure; nothing writes its rows, so `concept_evidence` is still empty), rubric grading,
+> mastery, auth, and the budget middleware — so no model call has ever been made.
+> `docs/BUILDLOG.md` is authoritative.
 > Related: [GLOSSARY](GLOSSARY.md) · [API](API.md) · [SECURITY](SECURITY.md) · [INFRA](INFRA.md) · [BUILDLOG](BUILDLOG.md) (what is actually built) · [PRACTICE_LOG](PRACTICE_LOG.md)
 
 ```

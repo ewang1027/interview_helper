@@ -21,9 +21,9 @@ detail behind it.
 |---|---|---|---|
 | **0** Foundations | **complete** | workspace, 159-concept taxonomy, corpus schema + validator, CI | — |
 | **1** Corpus v1 | thin slice | 24 items — 3 archetypes + 3 instances in each of four domains, verified | bulk authoring toward ~400/~150 |
-| **2** Executor + grading | deterministic half **done** | sandbox isolation (6 escape tests), `POST /execute`, complexity probe, reference-solution verification | scoring, `cpp`, `peak_rss_kb` |
-| **3** Runtime + API | infra only | Postgres schema + migrations, settings, `ModelRouter` | sessions, agent loop, grading, auth, budget middleware |
-| **4** Adaptive engine | not started | — | Elo, FSRS, evidence replay, planner |
+| **2** Executor + grading | deterministic half **done** | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` |
+| **3** Runtime + API | infra only | Postgres schema + migrations, settings, `ModelRouter` | sessions, agent loop, **persisting grades**, rubric graders, auth, budget middleware |
+| **4** Adaptive engine | not started | — | Elo, FSRS, evidence replay, planner. `concept_evidence` rows are now *produced* by grading and written by nothing |
 | **5–8** Web, AWS, voice, hardening | not started | — | — |
 | **9** Practice log | **schema only** | `practice_problems`, `practice_solves`, and `concept_evidence`'s two-producer shape — all migrated, landed with the Phase 3 slice | classification, endpoints, scheduling; gated on 3 + 4 |
 
@@ -768,3 +768,118 @@ shipped the adversarial generators and called the job done.
 Phase 2's deterministic half is done: isolation, execution, and now growth. What remains
 before a session can run end to end is Phase 3's runtime — sessions, the agent loop,
 grading that writes `concept_evidence`, auth, and the budget middleware.
+
+---
+
+## Phase 2 (scoring) — a run becomes a score, and a score becomes evidence · 2026-08-20
+
+The last thing Phase 2 owed, and the seam Phase 3 needs: `api.grading.coding` joins a
+corpus item to its own tests, runs them in the sandbox, measures growth, and returns both
+a score and the `concept_evidence` rows that score implies.
+
+```
+make check          87 passed, 31 deselected (hermetic; was 59)
+make test-sandbox   28 passed — 7 escape + 8 /execute + 5 probe + 3 /probe + 5 grading
+                    (real Docker, 139s)
+verify-solutions    3/3 unchanged — slopes 1.03 / 1.05 / 1.07 against their targets
+```
+
+### The probe earned its keep, on a real item, for the first time
+
+Three submissions to `i.code.0002`, graded through the whole path:
+
+| submission | tests | slope | verdict | score |
+|---|---|---|---|---|
+| the item's own reference (monotonic stack) | **10/10** | 0.995 | matches | **1.00** |
+| the same reference, two hints taken | 10/10 | 1.016 | matches | 0.855 |
+| a naive backward scan | **10/10** | 2.017 | slower_than_target | **0.75** |
+
+**The tests cannot tell rows 1 and 3 apart.** That item's largest stress case is n=800,
+where a quadratic scan is still instant, so the impostor passes every single case. Until
+now that was a claim about a synthetic pair in the probe's own unit tests; this is the
+first time it has been demonstrated end to end, on corpus content, through the grader.
+
+The premise is pinned as its own test: one case asserts `correctness == 1.0` for the
+impostor *before* the next asserts the probe caught it. Without that, a future stress case
+grown large enough to time the impostor out would leave the probe's test passing for
+entirely the wrong reason.
+
+### The spec's own formula paid a wrong answer for being fast
+
+`GRADING.md` asked for "a weighted mix of correctness (dominant), complexity match, and
+hint penalty". Implemented literally — `0.75 * correctness + 0.25 * complexity` — a
+submission that fails every test and returns instantly scores **0.25**: `return []` is
+O(1), and the probe would call it `matches`.
+
+So complexity and hints became *multipliers* on earned correctness rather than terms
+beside it. `score = correctness x complexity_retention x hint_retention`, where the last
+two are only ever ≤ 1. Correctness is now the only term that can put points on the board,
+which is what "dominant" should have meant. The doc was corrected rather than the code
+bent to fit it, and a test (`test_a_fast_wrong_solution_earns_nothing_from_the_probe`)
+holds the line.
+
+The same reasoning fixes where the probe runs at all: it is **skipped when nothing
+passed**, because against a zero it can only confirm the zero at the cost of a 20-second
+sandbox sweep. Zero is the only place that gate can sit without creating a rank
+inversion — gating at "all tests passed" would let an 11/12 quadratic (0.917, unprobed)
+outrank a 12/12 quadratic (0.75).
+
+### The wire contract is copied, and a test is what makes that safe
+
+`apps/api` does not import `executor.protocol`. Importing it would make the service that
+holds the database password depend on the package that owns the Docker-socket launcher,
+and ship `executor.sandbox` inside the API image for the sake of three Pydantic classes.
+So `api.executor_client` carries its own copy — and copies drift silently, in the worst
+possible way: a renamed `passed` field would leave the grader reading a defaulted zero and
+writing evidence that the candidate got nothing right.
+
+`test_executor_contract.py` is the price of that choice. It validates every request body
+the client builds against the real `ExecuteRequest` / `ProbeRequest` — both
+`extra="forbid"`, so an invented or renamed field fails there — round-trips a real
+response through the client's model, and asserts the two sides enumerate the same
+outcomes, kinds and verdicts. Drift is a red test rather than a wrong score.
+
+### Three small traps, each found by running something
+
+- **`make test-sandbox` was path-scoped to `apps/executor`**, and so was CI's step. The
+  new grading tests need the same real daemon and live in `apps/api`, so both would have
+  skipped them in silence while reporting green. Both now select on the marker
+  (`pytest -q -m sandbox`) instead of on a path.
+- **pytest collected a source function as a test.** The grader's helper was called
+  `test_payloads`; imported into a test module, pytest gathered it and failed with
+  "fixture 'item' not found". Renamed `case_payloads`, with a comment saying why — the
+  tempting fix was to add a fixture.
+- **`TestClient` refuses a per-request timeout.** The client set one on every call, which
+  is right against a real server and a deprecation warning against an injected test
+  client. An injected client now owns its own transport policy; only a client this code
+  constructed gets a timeout.
+
+### Deferred deliberately
+
+- **Persistence.** The grader is pure: it returns evidence rows and writes nothing.
+  `concept_evidence` is still empty, and stays that way until there is a session to write
+  rows against. That split is what will let a fixed grader be re-run over old artifacts
+  instead of mastery being hand-patched.
+- **Hint recording.** The penalty schedule is implemented; nothing records that a hint was
+  given. `turns` has no hint column, so the count arrives as an argument from the caller.
+  The column is owed with the session layer.
+- **Per-concept attribution is uniform.** Every concept an item names gets the *same*
+  score; only confidence differs (primary 0.9, secondary 0.54). A complexity miss is
+  arguably evidence about `big-o-analysis` in particular, and this grader cannot say so —
+  rubric criteria can name a concept, test-graded items have no analogue.
+- **Full-pass confidence ignores what the suite contained.** Passing a trivial all-example
+  suite claims as much as passing one with adversarial cases. Not a live risk — every item
+  on disk carries ten or more cases across every kind — and inventing a correction nothing
+  can measure yet is the mistake the complexity bands avoided.
+- **`cpp` and `peak_rss_kb`**, unchanged from the entries above.
+- **No server-side ceiling on `wall_ms` / `memory_mb`.** `/probe` inherits that open item
+  from `/execute` and defaults *higher* (60s wall, 512 MB), bounded in practice by its own
+  20s internal budget. Recorded in SECURITY.md, still owed.
+
+### Next
+
+Phase 3's session layer, which is now the only thing standing between a graded submission
+and a mastery number: the `/api/v1` router, the session state machine, and
+`POST /sessions/{id}/submissions` turning a grade into rows in Postgres. It is also the
+first surface where auth stops being theoretical, since it is the first one that writes
+user data.
