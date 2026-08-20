@@ -25,7 +25,7 @@ detail behind it.
 | **3** Runtime + API | **half built** | schema + migrations, settings, `ModelRouter`, and the **session layer**: `/api/v1`, plan → submit → grade → report, writing `artifacts`, `gradings`, `concept_evidence` | interviewer agent, SSE stream, rubric graders, **auth**, budget middleware |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within five sessions | weights are placeholders until real sessions calibrate them |
 | **5–8** Web, AWS, voice, hardening | not started | — | — |
-| **9** Practice log | **schema only** | `practice_problems`, `practice_solves`, and `concept_evidence`'s two-producer shape — all migrated, landed with the Phase 3 slice | classification, endpoints, scheduling; gated on 3 + 4 |
+| **9** Practice log | **schema only** | `practice_problems`, `practice_solves`, and `concept_evidence`'s two-producer shape — all migrated, landed with the Phase 3 slice | classification, endpoints, scheduling. No longer gated on the engine: `apply_evidence` already handles an evidence row with no item, so a logged solve would feed mastery today. It is gated on a **model call**, which nothing in this project has ever made |
 
 Two things worth knowing before reading anything else as further along than it is:
 **no model call has ever been made** — `ModelRouter` resolves config and builds a client,

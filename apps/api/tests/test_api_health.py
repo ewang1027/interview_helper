@@ -51,3 +51,39 @@ def test_a_malformed_body_is_problem_json() -> None:
     assert body["type"].endswith("/malformed-request")
     assert body["instance"] == "/api/v1/sessions"
     assert body["errors"]
+
+
+# Every route the app serves. Pinned deliberately: docs/API.md carries a per-route "built /
+# not built" column, and the two drift silently — a route added without its doc row reads
+# as unbuilt to anyone planning Phase 5 against the spec, and a route removed leaves a row
+# promising something that 404s.
+SURFACE = {
+    ("GET", "/health"),
+    ("GET", "/api/v1/corpus/status"),
+    ("GET", "/api/v1/mastery"),
+    ("GET", "/api/v1/mastery/weaknesses"),
+    ("GET", "/api/v1/mastery/{concept_id}"),
+    ("POST", "/api/v1/mastery/recompute"),
+    ("GET", "/api/v1/plan/next"),
+    ("POST", "/api/v1/sessions"),
+    ("GET", "/api/v1/sessions"),
+    ("GET", "/api/v1/sessions/{session_id}"),
+    ("POST", "/api/v1/sessions/{session_id}/submissions"),
+    ("POST", "/api/v1/sessions/{session_id}/end"),
+    ("GET", "/api/v1/sessions/{session_id}/report"),
+}
+
+
+def test_the_route_surface_is_what_the_api_doc_says_it_is() -> None:
+    spec = client.get("/openapi.json")
+    assert spec.status_code == 200, "the schema failed to generate, so /docs is broken too"
+
+    served = {
+        (method.upper(), path)
+        for path, operations in spec.json()["paths"].items()
+        for method in operations
+    }
+    assert served == SURFACE, (
+        "the route surface changed — update docs/API.md's per-route status column, "
+        f"then this set. added={sorted(served - SURFACE)} removed={sorted(SURFACE - served)}"
+    )
