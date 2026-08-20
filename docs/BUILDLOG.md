@@ -1557,6 +1557,16 @@ payload; the malformed-body test had to sign in to keep testing what it was writ
 And a stranger's session id now answers `404` — the same as a made-up one, because a `403`
 would confirm it exists.
 
+### And then against a real server, because the tests never load the environment
+
+Every test overrides `get_settings`, so nothing in the suite proved that `SESSION_SECRET`
+is read from the environment at all — the one step between "the code is right" and "the
+deployment works". Against `uvicorn` on a real port: `/health` 200 open; `/api/v1/mastery`
+401 with a problem document; `/auth/login` 503 naming all three unset OAuth variables;
+`make login`'s cookie accepted, and the same cookie with its last character changed
+refused. With `SESSION_SECRET` unset in the environment, `/health` still 200 and
+`/api/v1/mastery` 503 — fail-closed, from configuration rather than from a test double.
+
 ### Deferred deliberately
 
 - **No server-side session store, so no instant revocation.** Logout clears the browser's
