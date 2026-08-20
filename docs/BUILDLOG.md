@@ -296,8 +296,12 @@ round-trips cleanly; `make seed` loads 159 concepts idempotently (run three time
   resolves config and constructs a client; that is all that is verified. Token budgets
   (`MAX_TOKENS_PER_*`) are read into settings but **not enforced anywhere** — the
   middleware `docs/COST.md` describes does not exist yet.
-- **pgvector is installed in the container and the extension is created, but no table has
-  an embedding column.** Semantic retrieval lands with the code that needs it.
+- **pgvector is installed in the container but no table has an embedding column.**
+  Semantic retrieval lands with the code that needs it. *Correction (2026-08-20): this
+  entry originally said "the extension is created". It was created by hand with a one-off
+  `docker exec … CREATE EXTENSION` on the dev database. **No migration runs it**, so a
+  fresh clone does not have it — the claim was true of my machine and false of the repo,
+  which is the distinction this log exists to keep.*
 
 ### Next
 

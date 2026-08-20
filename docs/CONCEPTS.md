@@ -1,6 +1,9 @@
 # The concept taxonomy
 
-> **Status:** Built and verified (**Phase 0**). 159 concepts, DAG-validated in CI.
+> **Status:** The taxonomy is built and verified (**Phase 0**) — 159 concepts,
+> DAG-validated in CI. The planner and adaptive-engine behaviours described below are
+> **Phase 4 design, not built**: nothing reads `prereqs` today except the validator, and
+> nothing reads `band` at runtime at all.
 > Related: [CORPUS](CORPUS.md) (items tag against these) · [ADAPTIVE](ADAPTIVE.md) (mastery is tracked per concept) · [GLOSSARY](GLOSSARY.md)
 
 `packages/corpus/data/concepts.json` is the machine-readable source; this file explains
@@ -36,11 +39,13 @@ The description is what a grader reads when deciding whether evidence applies.
 `prereqs` means *should be solid before this is drilled*, and forms a DAG — the
 validator rejects cycles and dangling references.
 
-It is used in two places:
+It is designed for two uses, **neither built yet** (both Phase 4):
 - **Hard gate** in the session planner. It will not serve `dp-knapsack` while `dp-1d`
   is weak; it serves `dp-1d`.
 - **Priority weight** in the adaptive engine. A weak concept that unlocks six others
   outranks an isolated leaf.
+
+Today the only consumer of `prereqs` is the validator's cycle and dangling-reference check.
 
 Keep edges to genuine dependencies. `sliding-window` requires `two-pointers` and
 `hash-map-counting` because the technique is built from both. It does not require
@@ -51,7 +56,8 @@ for no reason.
 
 `foundational` · `core` · `advanced` — a rough tier, advisory only. It seeds cold-start
 ordering and nothing else. Difficulty is a property of *items*, not concepts, and the
-Elo rating supersedes the band as soon as evidence exists.
+Elo rating **will supersede** the band once the adaptive engine exists and evidence has
+accumulated. Nothing reads `band` at runtime today.
 
 ## Stability rules
 
@@ -68,8 +74,8 @@ Elo rating supersedes the band as soon as evidence exists.
 `system_design` carries four low-latency concepts (`network-latency-physics`,
 `hot-path-design`, `kernel-bypass-concepts`, `deterministic-replay`) that a general SWE
 loop never asks about but a quant-dev loop does. They are in `system_design` rather
-than `quant` because they are *system* questions; the session planner selects by mode,
-so a SWE-mode session simply will not reach for them.
+than `quant` because they are *system* questions; once the planner exists it will select
+by mode, so a SWE-mode session will not reach for them.
 
 `quant` deliberately includes mental arithmetic (`fast-multiplication`,
 `fraction-percent-arithmetic`, `log-exp-estimation`). Trading interviews test it under

@@ -1,6 +1,10 @@
 # The research pipeline
 
-> **Status:** Specification — not yet built. Lands in **Phase 1**.
+> **Status:** Specification — **not built, and already partly bypassed.** `research/` is
+> empty; no stage below has ever run. Phase 1's 24-item thin slice on disk was authored
+> directly by Claude Code agents working from `CORPUS.md`'s checklist, skipping
+> sweep/extract/cluster/rank entirely and recording no `research_runs` row. This remains
+> the design for **bulk** authoring toward the ~400/~150 target, which has not started.
 > Related: [CORPUS](CORPUS.md) (what a good item is) · [CONCEPTS](CONCEPTS.md) (the taxonomy it tags against) · [COST](COST.md) (why this runs on the Max plan)
 
 [CORPUS.md](CORPUS.md) defines *what* a corpus item must be. This file defines *how* items
@@ -111,9 +115,14 @@ Per modality, an instance is not done until:
 
 **Statements are original prose. Sources justify the archetype; they never supply text.**
 
-This is enforced mechanically by the validator (any shared 12-gram, or >15% containment
-of a source's 8-grams, is an error). But mechanical enforcement catches only what reaches
-the file. The process rule is stronger:
+The validator is only a partial backstop, and it matters to know exactly what it does not
+do: it shingles the statement against each source's own `evidence` note — *your
+paraphrase* — because it runs offline with no copy of the page. Any shared 12-gram, or
+>15% containment of an evidence note's 8-grams, is an error. **A statement copied verbatim
+from a live URL passes this check cleanly.**
+
+So the process rule below is not a supplement to mechanical enforcement — it *is* the
+enforcement:
 
 > Read sources to learn *that a pattern is asked*, then close them and write the problem
 > from the pattern.
@@ -125,7 +134,10 @@ the very item it was meant to support, which is the intended behaviour.
 
 ## Provenance: `research_runs`
 
-Every run records a row so the corpus can be audited and re-run:
+Every run is *to* record a row so the corpus can be audited and re-run. **Not built, and
+the shape below is not the shape that shipped:** the `research_runs` table exists with
+three JSONB columns — `searched`, `added`, `deprecated` — so the fields below describe
+what must be packed into those, not columns you can query. Nothing has ever written a row.
 
 | Field | Contents |
 |---|---|

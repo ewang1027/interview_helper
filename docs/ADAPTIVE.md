@@ -2,7 +2,9 @@
 
 > **Status:** Specification — not built. Lands in **Phase 4**. The weights in the
 > priority formula are placeholders to be calibrated against real sessions, not tuned
-> values.
+> values. The **tables** it will write already exist: `concept_evidence` and `mastery` are
+> migrated and covered by DB tests (Phase 3 infra slice). Both are empty — nothing has
+> ever written an evidence row — and no rating, scheduling or planning code exists.
 > Related: [CONCEPTS](CONCEPTS.md) (the DAG it plans over) · [GRADING](GRADING.md) (where evidence comes from) · [API](API.md#mastery-and-planning) (how it is exposed) · [GLOSSARY](GLOSSARY.md) · [PRACTICE_LOG](PRACTICE_LOG.md) (a second evidence source, and a lighter FSRS-inspired scheduler at problem granularity)
 
 How the system decides what to make you do next.
@@ -50,7 +52,8 @@ concept you can perform under pressure today.
 Nothing writes directly to `mastery`. Every graded artifact appends:
 
 ```
-concept_evidence(concept_id, item_id, session_id, score, confidence, ts, grader_version)
+concept_evidence(id, concept_id, source, item_id, session_id,
+                 practice_problem_id, score, confidence, ts, grader_version)
 ```
 
 `confidence` matters because the sources differ in reliability: a hidden-test pass is

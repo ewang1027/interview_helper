@@ -64,8 +64,8 @@ So the originality rule is enforced by *process*, not by the validator: read sou
 learn that a pattern is asked, close them, and write the problem from the pattern. The
 shingle check is a backstop against one specific slip, not a guarantee. Treating it as
 proof of originality would be exactly the false confidence this project keeps trying to
-avoid — and the check's own error message ("overlaps N% of source `<url>` text") reads as
-though the page were compared, which is worth fixing when this is next touched.
+avoid. (The check's error message used to read "overlaps N% of source `<url>` text", which
+described a comparison that never happened; it now names the evidence note.)
 
 Closing the gap properly means storing a snapshot of each source's text at research time
 and shingling against that. That is real work — fetching, storing, and licensing
@@ -83,7 +83,7 @@ itself, so there is nothing for the originality check to apply to.
 
 ## Validator checks
 
-Run `make corpus-validate`. All seven must pass:
+Run `make corpus-validate`. All eight must pass:
 
 1. JSON Schema conformance for concepts and items.
 2. Concept graph is a DAG with no dangling prerequisites.
@@ -97,10 +97,26 @@ Run `make corpus-validate`. All seven must pass:
    quant item's `reasoning_rubric` — the weight check originally lived in the rubric
    branch alone, so a reasoning rubric summing to 0.8 validated cleanly and silently
    scaled every score derived from it.
+8. Domain and modality agree. They are 1:1 (`coding`→`coding`, `system_design`→`design`,
+   …), and a mismatch would route an item to a grader that cannot grade it. Added during
+   the Phase 0 self-review and never added to this list until an audit caught it.
 
-Each check has a test in `packages/corpus/tests/test_validate.py` that proves it
-*catches* the corresponding failure. A validator that only ever passes is
-indistinguishable from no validator.
+Several further error-level checks are enforced but not itemised above, because they are
+structural rather than editorial: duplicate item id, duplicate concept id, an archetype
+setting `archetype_id`, an instance with no grading contract, and `answer` grading with
+neither `exact` nor `numeric`.
+
+Checks 2–8 each have a test in `packages/corpus/tests/test_validate.py` proving the check
+*catches* its failure, not merely that it passes. **Check 1 is the exception: JSON Schema
+conformance is covered only by `test_schema_accepts_the_real_concepts`, a pass-only test.**
+No test feeds a schema-violating record and asserts an error comes back. A validator that
+only ever passes is indistinguishable from no validator, so a negative schema test is owed
+— and the gap sitting one line under that sentence is exactly how these things survive.
+
+Alongside the errors above the validator raises **warnings**, which print and exit 0: an
+item tagging a `deprecated_at` concept, a concept tagged outside the item's own domain, a
+reference solution for an undeclared language, and a criterion with no `levels` anchors.
+They are a review prompt, not a gate.
 
 ## Layout
 
@@ -123,9 +139,11 @@ packages/corpus/
 Append-only. Items are retired by setting `deprecated_at`, never deleted — deleting one
 would orphan the `concept_evidence` rows that reference it.
 
-Refresh runs as a scheduled Claude Code job, so it stays on the Max plan. Each run
-records a `research_runs` row for provenance: what was searched, what was added, what
-was deprecated.
+Refresh is *designed* to run as a scheduled Claude Code job so it stays on the Max plan,
+recording a `research_runs` row per run for provenance: what was searched, what was added,
+what was deprecated. **Neither exists yet** — there is no scheduled job, the table is
+migrated but empty, and the 24 items on disk were authored by hand-launched agents with no
+provenance row written for either wave.
 
 ## Authoring checklist (Phase 1)
 
@@ -137,7 +155,11 @@ For each archetype:
 For each instance:
 - [ ] Statement written from scratch, not adapted from a source
 - [ ] Coding: ≥3 tests including edge and adversarial cases; reference solution passes
-      all of them in CI; complexity target stated
+      all of them in CI; complexity target stated **together with a `complexity_probe`
+      whose generator is worst-case by construction** — a target with no probe is inert,
+      since fixed test inputs cannot be grown, and a random generator lets the very defect
+      the probe exists for walk straight through (measured: a naive scan reads 1.28 on
+      random input and 2.03 on adversarial)
 - [ ] Quant: exact and/or numeric answer, tolerance, plus a reasoning rubric — a right
       number with wrong reasoning is not a pass in a real quant interview
 - [ ] Design/behavioral: ≥3 criteria with score anchors, weights summing to 1.0
