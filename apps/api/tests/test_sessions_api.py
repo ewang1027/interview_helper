@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from conftest import sign_in
 from fakes import FakeRunner
 from fastapi.testclient import TestClient
 from sqlmodel import Session, col, select
@@ -32,7 +33,7 @@ def make_client(run: RunResult | None = None, probe: ProbeOutcome | None = None)
     app.dependency_overrides[get_runner] = lambda: FakeRunner(
         run or RunResult(outcome="ok", passed=0, total=0), probe
     )
-    return TestClient(app)
+    return sign_in(TestClient(app))
 
 
 @pytest.fixture(autouse=True)

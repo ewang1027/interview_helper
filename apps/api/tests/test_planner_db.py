@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+from conftest import sign_in
 from fakes import FakeRunner, ScriptedRunner
 from fastapi.testclient import TestClient
 from sqlmodel import Session
@@ -48,7 +49,7 @@ def _clear_overrides():
 
 def client_with(runner: Any) -> TestClient:
     app.dependency_overrides[get_runner] = lambda: runner
-    return TestClient(app)
+    return sign_in(TestClient(app))
 
 
 def start(client: TestClient, created: list[str], budget: int = 45) -> dict[str, Any]:

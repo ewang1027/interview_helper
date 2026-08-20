@@ -10,6 +10,11 @@ The web app is a **pure consumer of [API.md](API.md)**. It holds no secrets, con
 business logic, and never talks to the database or a model provider. If a rule about
 interviewing lives in the frontend, it is in the wrong place.
 
+Auth is a cookie it never reads: `HttpOnly`, so JavaScript cannot see it by design. Every
+request needs `credentials: "include"`, an unauthenticated route should send the browser to
+`/auth/login` rather than rendering an error, and a `401` mid-session means the cookie
+expired ([API.md](API.md#auth)).
+
 ## Routes
 
 | Route | Purpose |

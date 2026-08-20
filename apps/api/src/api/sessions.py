@@ -13,9 +13,14 @@ grade into rows in Postgres. Three rules from the specs are load-bearing here:
   a grader fix is applied by re-running the grader over the stored artifact, which is why
   `api.grading` never touches the database itself (ADAPTIVE.md).
 
+Every function here takes the user id it works on rather than resolving one: since
+auth landed, the caller is whoever the request's signed cookie says it is (`api.auth`),
+and a service that looks up "the current user" would be a service that cannot be told it
+is wrong.
+
 What is deliberately absent: the interviewer agent, so no `turns` are written and no
-model is called; the SSE stream, so state changes are observed by polling
-`GET /sessions/{id}`; and auth, so `current_user` returns the single local user.
+model is called, and the SSE stream, so state changes are observed by polling
+`GET /sessions/{id}`.
 """
 
 from __future__ import annotations
@@ -39,7 +44,6 @@ from api.grading.coding import GRADER_VERSION, CodingGrade, grade_coding
 from api.mastery import apply_evidence, lock_projection
 from api.models import Artifact, ConceptEvidence, Grading, InterviewSession, Item
 from api.planner import build_plan, eligible_items, plan_item_ids
-from api.users import current_user
 from corpus.loader import load_items
 from corpus.models import Item as CorpusItem
 
@@ -103,6 +107,7 @@ def _now() -> datetime:
 def create_session(
     db: Session,
     *,
+    user_id: str,
     mode: str,
     budget_minutes: int,
     focus_concepts: tuple[str, ...] = (),
@@ -115,10 +120,9 @@ def create_session(
             mode=mode,
         )
 
-    user = current_user(db)
     plan = build_plan(
         db,
-        user.id,
+        user_id,
         mode,
         budget_minutes,
         focus_concepts=focus_concepts,
@@ -149,7 +153,7 @@ def create_session(
         )
 
     session_row = InterviewSession(
-        user_id=user.id,
+        user_id=user_id,
         mode=mode,
         budget_minutes=budget_minutes,
         status="briefing",
@@ -161,19 +165,30 @@ def create_session(
     return session_row
 
 
-def get_session(db: Session, session_id: str) -> InterviewSession:
+def get_session(db: Session, session_id: str, *, user_id: str) -> InterviewSession:
+    """One of this user's sessions, or 404.
+
+    Someone else's id answers 404 rather than 403, which is the same answer a made-up id
+    gets: a 403 would confirm the session exists. Multi-tenancy is still out of scope
+    (docs/ARCHITECTURE.md) — this is only the query being scoped the way every mastery
+    query already is, so that no route reads a row the caller does not own."""
     session_row = db.get(InterviewSession, session_id)
-    if session_row is None:
+    if session_row is None or session_row.user_id != user_id:
         raise not_found("session", session_id)
     return session_row
 
 
 def list_sessions(
-    db: Session, *, cursor: str | None = None, limit: int = 20
+    db: Session, *, user_id: str, cursor: str | None = None, limit: int = 20
 ) -> list[InterviewSession]:
     """Newest first, cursor-paginated. ULIDs sort by creation time, so the id *is* the
     cursor — offsets drift when rows are inserted under you (docs/API.md)."""
-    query = select(InterviewSession).order_by(col(InterviewSession.id).desc()).limit(limit)
+    query = (
+        select(InterviewSession)
+        .where(InterviewSession.user_id == user_id)
+        .order_by(col(InterviewSession.id).desc())
+        .limit(limit)
+    )
     if cursor:
         query = query.where(col(InterviewSession.id) < cursor)
     return list(db.exec(query).all())

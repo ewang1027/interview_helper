@@ -2,11 +2,12 @@
 
 > **Status:** Isolation layer built and verified (2026-08-18); `POST /execute`, the test
 > harness and the complexity probe built on top of it (2026-08-20), and `POST /probe`
-> exposing that probe to the grader rather than only to CI (2026-08-20). The six escape
-> tests pass against real Docker, and **three of the six** were confirmed load-bearing by
-> re-running them against a deliberately weakened sandbox — the PID, memory and
-> contamination tests have had no negative control, and that is owed. Not built: `cpp`,
-> `peak_rss_kb`. AWS-layer enforcement in **Phase 6**.
+> exposing that probe to the grader rather than only to CI (2026-08-20). **Authentication
+> landed 2026-08-20** — see below; every `/api/v1` route now requires a session cookie.
+> The six escape tests pass against real Docker, and **three of the six** were confirmed
+> load-bearing by re-running them against a deliberately weakened sandbox — the PID,
+> memory and contamination tests have had no negative control, and that is owed.
+> Not built: `cpp`, `peak_rss_kb`. AWS-layer enforcement in **Phase 6**.
 > "Measured behaviour" below records where this document's original claims were wrong.
 > Related: [ARCHITECTURE](ARCHITECTURE.md) (service boundaries) · [INFRA](INFRA.md) (where these controls are configured) · [GRADING](GRADING.md) (what the executor is for)
 
@@ -172,6 +173,43 @@ load-bearingness is assumed rather than demonstrated. An earlier version of this
 claimed "each was confirmed", which was the same overclaim this section exists to warn
 about.
 
+## Authentication
+
+*Built 2026-08-20.* Until then every route was open, which was acceptable while the
+surface was `/health` and `/execute` and stopped being acceptable the moment the session
+layer started writing user data. What closed it:
+
+| Control | What it does | Where it can fail |
+|---|---|---|
+| GitHub OAuth | The only way to obtain a session | GitHub's own account security is now part of this system's |
+| `GITHUB_ALLOWED_ID` | One numeric account may log in; anyone else authenticates successfully and is refused `403` | Unset refuses everyone — deliberate, and the safe direction |
+| HMAC-SHA256 cookie | `HttpOnly`, `Secure`, `SameSite=Lax`, 30-day expiry, signed with `SESSION_SECRET` | Anyone holding the secret can mint a session for any user id |
+| Signed + echoed `state` | Login-CSRF: an attacker cannot complete their own login inside your browser | Ten-minute window, single use by cookie comparison |
+| Query scoping | Session and mastery reads are filtered by the caller's user id | Not tenant isolation; one bad `where` clause is all it is |
+
+**The threat this actually closes** is the deployed one. On a laptop, an open API behind no
+port forward was a theoretical problem; in Phase 6 the same code sits behind a public ALB,
+where "no auth" means the internet can start sessions, read every transcript, and spend
+Bedrock credits. It was closed before that deploy rather than during it.
+
+**What is deliberately not here:**
+
+- **No rate limiting.** One user, and the expensive routes are behind the cookie. Login is
+  the one unauthenticated write path, and it is bounded by GitHub's own throttling. Revisit
+  when the ALB exists ([INFRA.md](INFRA.md)).
+- **No server-side session store, so no instant revocation.** `POST /auth/logout` clears
+  the browser's copy; a stolen cookie stays valid until it expires. Rotating
+  `SESSION_SECRET` invalidates every session at once, and for one user that is the whole
+  revocation story worth maintaining.
+- **No CSRF token.** `SameSite=Lax` keeps a cross-site form from carrying the cookie into a
+  state-changing `POST`. A same-site attacker would already be past everything else here.
+- **`/openapi.json` and `/docs` stay open.** They describe the route surface, which is in a
+  public repo anyway. Data is what the cookie guards.
+- **No local-login route.** Development mints a cookie with `make login`, outside the
+  process, from the same secret the server verifies with — so there is no code path in the
+  deployed API that issues a session without GitHub. A dev bypass behind a flag would be
+  one flag away from being a production bypass.
+
 ## Prompt injection
 
 Corpus statements are researched from the open web and end up inside prompts. Candidate
@@ -198,6 +236,9 @@ is not worth much**, rather than trying to prevent every injection.
 
 - Never in code, never in images, never in the repo. `.env` is gitignored; `.env.example`
   carries names and shapes only.
+- **`SESSION_SECRET` and `GITHUB_CLIENT_SECRET` have no defaults**, in code or in
+  `.env.example`. A fallback value in a public repo is a secret every clone already knows;
+  the API answering `503` until one is set is the cheaper failure.
 - In AWS: Secrets Manager, injected as environment variables at task start.
 - IAM task roles are per-service and least-privilege. The API may invoke Bedrock and read
   one secret. The executor role can do neither.

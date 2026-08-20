@@ -17,12 +17,49 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlmodel import Session, col, delete, select
 
+from api.auth import SESSION_COOKIE, session_token
 from api.db import get_engine
+from api.main import app
 from api.mastery import recompute
 from api.models import Artifact, ConceptEvidence, Grading, InterviewSession
-from api.users import current_user
+from api.settings import Settings, get_settings
+from api.users import LOCAL_GITHUB_ID, single_user
+
+# Every `/api/v1` route requires a session cookie (docs/API.md), so a test that drives the
+# API needs one. It signs its own rather than logging in: the login flow is GitHub's, and
+# `test_auth.py` is where that conversation is exercised.
+TEST_SESSION_SECRET = "tests-only-never-a-deployed-secret"
+
+
+def auth_settings() -> Settings:
+    """The real configuration — the database URL a db test needs — with auth pinned to a
+    secret the test also knows."""
+    return get_settings().model_copy(
+        update={"session_secret": TEST_SESSION_SECRET, "cookie_secure": False}
+    )
+
+
+def sign_in(
+    client: TestClient, user_id: str | None = None, *, github_id: int = LOCAL_GITHUB_ID
+) -> TestClient:
+    """Give a client the cookie, and the app the secret that verifies it.
+
+    Defaults to the single user, which is who a database-backed test means: passing the id
+    explicitly is for the tests that are *about* users — one client signed in as somebody
+    else, checking it cannot read the first one's sessions.
+    """
+    if user_id is None:
+        with Session(get_engine()) as db:
+            user_id = single_user(db).id
+    app.dependency_overrides[get_settings] = auth_settings
+    client.cookies.set(
+        SESSION_COOKIE,
+        session_token(user_id=user_id, github_id=github_id, secret=TEST_SESSION_SECRET),
+    )
+    return client
 
 
 def _cleanup(session_ids: list[str]) -> None:
@@ -43,7 +80,15 @@ def _cleanup(session_ids: list[str]) -> None:
             db.exec(delete(Artifact).where(col(Artifact.session_id).in_(session_ids)))
             db.exec(delete(InterviewSession).where(col(InterviewSession.id).in_(session_ids)))
             db.commit()
-        recompute(db, current_user(db).id)
+        recompute(db, single_user(db).id)
+
+
+@pytest.fixture(autouse=True)
+def _no_leaked_overrides() -> Iterator[None]:
+    """`app.dependency_overrides` is process-global. `sign_in` writes to it, so without
+    this a module that signed in would hand its test secret to every module after it."""
+    yield
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture
@@ -57,7 +102,7 @@ def created_sessions() -> Iterator[list[str]]:
 @pytest.fixture
 def user_id() -> str:
     with Session(get_engine()) as db:
-        user = current_user(db)
+        user = single_user(db)
         db.commit()
         return user.id
 

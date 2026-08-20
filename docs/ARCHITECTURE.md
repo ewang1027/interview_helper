@@ -5,9 +5,10 @@
 > test harness, the complexity probe, the **deterministic coding grader**, the
 > **session layer** (`/api/v1` — plan, submit, grade, report) writing `artifacts`,
 > `gradings` and `concept_evidence`, the **adaptive engine** (Elo, FSRS, the replayable
-> `mastery` projection, and a planner that ranks by weakness priority), and a 24-item
-> corpus. Not built: the interviewer agent and its SSE stream — so **no model call has
-> ever been made** — rubric grading, auth, and the budget middleware.
+> `mastery` projection, and a planner that ranks by weakness priority), **auth** (GitHub
+> OAuth and a signed session cookie every `/api/v1` route requires), and a 24-item corpus.
+> Not built: the interviewer agent and its SSE stream — so **no model call has ever been
+> made** — rubric grading, and the budget middleware.
 > `docs/BUILDLOG.md` is authoritative.
 > Related: [GLOSSARY](GLOSSARY.md) · [API](API.md) · [SECURITY](SECURITY.md) · [INFRA](INFRA.md) · [BUILDLOG](BUILDLOG.md) (what is actually built) · [PRACTICE_LOG](PRACTICE_LOG.md)
 
@@ -59,7 +60,7 @@ than a rewrite.
 | Service | Responsibility | Trust |
 |---|---|---|
 | `apps/web` | UI only. Holds no secrets, talks only to the API. **Not built — an empty directory until Phase 5.** | Untrusted input |
-| `apps/api` | Sessions, agent loop, grading, mastery, cost ledger. The only service with DB and model credentials. | Trusted |
+| `apps/api` | Sessions, agent loop, grading, mastery, cost ledger, and the only door in — GitHub OAuth and the cookie it issues. The only service with DB and model credentials. | Trusted |
 | `apps/executor` | Runs candidate code. No network, no DB, no credentials. | **Hostile by assumption** |
 
 The executor is a separate service specifically so that "runs untrusted code" and "holds
@@ -123,7 +124,7 @@ worse, would *not* raise inside Phase 4's date arithmetic.
 
 | Table | Purpose |
 |---|---|
-| `users` | One row today. Schema is multi-tenant-shaped so it never needs a rewrite. |
+| `users` | One row today. `github_id` is unique; a sentinel value holds the row until the first real login rewrites it in place, so evidence written before auth existed is not stranded. Schema is multi-tenant-shaped so it never needs a rewrite. |
 | `concepts`, `concept_edges` | Seeded from the corpus; the DAG. |
 | `items` | Seeded from the corpus; carries the live Elo rating, which drifts from the seed. |
 | `item_concepts` | Join table for an item's full concept tuple. `items.primary_concept_id` covers the distinguished one; this covers all of them, including it. |
@@ -167,7 +168,9 @@ exists to make it visible. That assertion is not written.
 ## What is deliberately not here
 
 - **No multi-tenancy.** Single user. The schema allows it later; the code does not
-  implement it now.
+  implement it now. Since auth landed, session and mastery reads *are* filtered by the
+  caller's user id — that is one `where` clause per query, not tenant isolation, and
+  nothing enforces it structurally.
 - **No runtime content generation.** See decision 1.
 - **No LLM in the deterministic grading path.** Code correctness is decided by tests
   in a sandbox, not by a model's opinion of the code.

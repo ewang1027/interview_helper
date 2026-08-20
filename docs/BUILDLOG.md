@@ -22,19 +22,20 @@ detail behind it.
 | **0** Foundations | **complete** | workspace, 159-concept taxonomy, corpus schema + validator, CI | — |
 | **1** Corpus v1 | **partial** — thin slice | 24 items — 3 archetypes + 3 instances in each of four domains, verified | bulk authoring toward ~400/~150 |
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
-| **3** Runtime + API | **partial** — half built | schema + migrations, settings, `ModelRouter`, and the **session layer**: `/api/v1`, plan → submit → grade → report, writing `artifacts`, `gradings`, `concept_evidence` | interviewer agent, SSE stream, rubric graders, **auth**, budget middleware |
+| **3** Runtime + API | **partial** — half built | schema + migrations, settings, `ModelRouter`, the **session layer** (`/api/v1`, plan → submit → grade → report, writing `artifacts`, `gradings`, `concept_evidence`), and **auth** — GitHub OAuth, a signed session cookie, every `/api/v1` route behind it | interviewer agent, SSE stream, rubric graders, budget middleware |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within five sessions | weights are placeholders until real sessions calibrate them |
 | **5–8** Web, AWS, voice, hardening | **not started** | — | — |
 | **9** Practice log | **partial** — schema only | `practice_problems`, `practice_solves`, and `concept_evidence`'s two-producer shape — all migrated, landed with the Phase 3 slice | classification, endpoints, scheduling. No longer gated on the engine: `apply_evidence` already handles an evidence row with no item, so a logged solve would feed mastery today. It is gated on a **model call**, which nothing in this project has ever made |
 
-Two things worth knowing before reading anything else as further along than it is:
-**no model call has ever been made** — `ModelRouter` resolves config and builds a client,
+One thing worth knowing before reading anything else as further along than it is:
+**no model call has ever been made.** `ModelRouter` resolves config and builds a client,
 nothing calls it, and the token budgets in `.env.example` are read into settings but
-enforced nowhere — and **there is no auth**, so every endpoint is open. That was fine
-while the surface was `/health`, `/corpus/status` and `/execute` on a dev machine. As of
-the session layer it is not: those routes write user data, which this file called a hard
-gate. The gate is crossed knowingly, on a single-user machine, and closing it is the next
-thing owed.
+enforced nowhere. Everything downstream of a model — the interviewer agent, rubric
+grading, the SSE stream, the cost ledger, the practice log — is waiting on that one thing.
+
+The auth gate this file carried since the session layer landed is **closed** as of
+2026-08-20: every `/api/v1` route requires a signed session cookie, and the only way to
+one is GitHub OAuth or `make login` with the server's own secret.
 
 ---
 
@@ -1449,3 +1450,133 @@ difference empty.
 
 Unchanged by any of this: auth, owed since sessions started writing user data, and then the
 interviewer agent.
+
+---
+
+## Phase 3 (auth) — the gate that had been owed since the session layer · 2026-08-20
+
+Every route was open. That was defensible while the surface was `/health` and `/execute`
+on a laptop, and stopped being defensible the moment `POST /sessions` started writing user
+data — a line two entries of this file called a hard gate and crossed anyway. It is closed.
+
+The threat it actually closes is not the laptop. It is Phase 6: the same code behind a
+public ALB, where "no auth" means the internet can start sessions, read every transcript
+and spend Bedrock credits. Closing it before that deploy costs a day; closing it during
+one costs the incident.
+
+```
+make check          138 passed, 77 deselected (hermetic; was 112)
+make test-db         48 passed (live Postgres; was 41)
+make test-sandbox    28 passed (real Docker, 132s)
+make test-e2e         1 passed (43s)
+```
+
+### What landed
+
+GitHub OAuth in, a signed cookie afterwards, exactly as docs/API.md specified it:
+`GET /auth/login` → GitHub → `GET /auth/callback`, plus `GET /auth/me` and
+`POST /auth/logout`. The cookie is `HttpOnly`, `SameSite=Lax`, `Secure` unless configured
+otherwise for plain-http localhost, and carries a user id, a GitHub id and an expiry under
+HMAC-SHA256 — stdlib, no new dependency, and nothing secret inside it.
+
+The guard is **one dependency on the `/api/v1` router**, not one per route. A per-route
+decorator is a thing that can be forgotten; a prefix is not. `/health` and `/auth/*` sit
+outside that prefix, so their exemption is structural rather than a branch inside the
+dependency that someone widens later.
+
+### There is no local login, and that is the point
+
+The obvious convenience is a dev-only login route behind `AUTH_MODE=local`. It was
+rejected: a flag is a thing that can be wrong in production, and the failure is silent and
+total. Development instead mints a cookie *outside* the process — `make login`
+(`python -m api.mint_session`) signs one with the same `SESSION_SECRET` the server
+verifies with, which grants nothing that holding the secret did not already grant.
+
+The property that buys: **the deployed API contains no code path that issues a session
+without GitHub.** Not one that is switched off — one that does not exist.
+
+### A missing secret answered "sign in at /auth/login", which nobody can act on
+
+The first draft read the cookie first and resolved `SESSION_SECRET` only if one was
+present. So a server with no secret answered `401` to a request with no cookie: advice to
+go and log in, when logging in needs the same missing secret. The test asking for `503`
+failed, and the fix is the ordering — configuration is checked before credentials are.
+
+That distinction is now a rule the error module encodes: `not-configured` (503) is
+separate from `unauthenticated` (401) and from `dependency-unavailable` (503), because
+"the server is missing a variable" and "your cookie is bad" send an operator to different
+places. The message names the variable.
+
+### The first login has to adopt a row, not create one
+
+`users.github_id` is unique and non-null, so the row that existed before auth carried a
+sentinel `0`. A callback that created a new row for the real account would have stranded
+every `concept_evidence` row written to date behind a user nobody can log in as — mastery
+silently empty, history intact and unreachable. The callback adopts the sentinel row in
+place instead, and a database test drives the whole flow to prove exactly one `users` row
+exists afterwards.
+
+A second real account logging in does *not* adopt anything: that means the configured
+account changed, the newcomer starts with an empty projection, and it is logged as a
+warning rather than quietly inheriting somebody else's practice history.
+
+### FastAPI read a test helper's signature and turned it into a query parameter
+
+`app.dependency_overrides[get_settings] = make_settings`, where `make_settings(**overrides)`
+builds a test configuration. FastAPI inspects an override's signature like any other
+dependency, so `**overrides` became a **required query parameter** named `overrides`, and
+every route answered `400 malformed-request` instead of anything about auth. Twice — once
+in each auth test module, because the second was written from the first.
+
+The fix is a zero-argument callable, and the reason is now a comment in both files. Worth
+knowing generally: a dependency override is not a stub, it is a dependency, and its
+signature is part of the contract.
+
+### What the guard was checked with
+
+Nine tests cover the signature itself — a flipped byte, a stripped signature, another
+server's secret, an expired token, a payload that is a list rather than an object, a
+signed payload with no expiry. Then the one that is not about any particular route:
+
+```python
+def test_every_api_route_requires_a_session(client):
+    paths = client.get("/openapi.json").json()["paths"]
+    ...
+    assert not open_routes, f"reachable without a session: {open_routes}"
+```
+
+It enumerates the surface from the schema the app generates, so it covers routes that do
+not exist yet. Negative control: deleting the router's dependency fails it along with four
+others; restoring it passes all 26. The route-surface test in `test_api_health.py` gained
+the four `/auth` routes for the same reason it exists — a route added without a doc row
+reads as unbuilt to anyone planning Phase 5 against the spec.
+
+Two other verifications worth recording. Auth is decided **before** body validation, so an
+unauthenticated caller with malformed JSON gets `401` rather than a critique of their
+payload; the malformed-body test had to sign in to keep testing what it was written for.
+And a stranger's session id now answers `404` — the same as a made-up one, because a `403`
+would confirm it exists.
+
+### Deferred deliberately
+
+- **No server-side session store, so no instant revocation.** Logout clears the browser's
+  copy; a stolen cookie lives until it expires. Rotating `SESSION_SECRET` invalidates every
+  session at once, which for one user is the whole revocation story worth maintaining.
+- **No rate limiting.** Login is the only unauthenticated write path and GitHub throttles
+  it. Revisit with the ALB in Phase 6.
+- **No CSRF token.** `SameSite=Lax` covers the cross-site `POST`, and a same-site attacker
+  is already past everything else here.
+- **`/openapi.json` and `/docs` stay open.** They describe a route surface that is in a
+  public repo anyway.
+- **Query scoping is not multi-tenancy.** Session reads are filtered by the caller's user
+  id, matching what every mastery query already did. That is one `where` clause, not an
+  enforced boundary, and docs/ARCHITECTURE.md now says so where it says multi-tenancy is
+  out of scope.
+- **The 30-day cookie lifetime is a constant, not a setting.** Six auth variables is
+  already a lot of configuration to keep correct; a seventh nobody will tune is not worth
+  the `.env.example` line the settings test would then require.
+
+### Next
+
+The interviewer agent — the first model call in this project's history, and the point where
+`llm_calls` stops being an empty table and the budget middleware stops being a paragraph.

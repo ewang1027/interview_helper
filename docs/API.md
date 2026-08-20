@@ -3,12 +3,13 @@
 > **Status:** Partly built (2026-08-20). **Live:** the `/api/v1` router, `POST /sessions`,
 > `GET /sessions`, `GET /sessions/{id}`, `POST /sessions/{id}/submissions`,
 > `POST /sessions/{id}/end`, `GET /sessions/{id}/report`, `GET /api/v1/corpus/status`,
-> `GET /mastery`, `GET /mastery/{concept_id}`, `POST /mastery/recompute`, and RFC 9457
-> errors on all of it. `/health` stays at the root deliberately — see below.
+> `GET /mastery`, `GET /mastery/{concept_id}`, `POST /mastery/recompute`, **auth**
+> (`/auth/login`, `/auth/callback`, `/auth/me`, `/auth/logout`, and a session cookie
+> required by every `/api/v1` route), and RFC 9457 errors on all of it. `/health` stays at
+> the root deliberately — see below.
 > **Not built:** the SSE stream and every agent tool (there is no interviewer agent, so no
 > model call has ever been made), the cost routes, `GET /corpus/items/{id}`,
-> `Idempotency-Key`, and **auth — every route is still open**, which was acceptable while
-> nothing wrote user data and is now overdue rather than merely absent. Vapi in **Phase 7**.
+> `Idempotency-Key`, and rate limiting. Vapi in **Phase 7**.
 > (The executor's `POST /execute` and `POST /probe` are built on their own contract — see
 > [SECURITY](SECURITY.md) — and `api.executor_client` is what speaks to them.)
 > Related: [ARCHITECTURE](ARCHITECTURE.md) · [GRADING](GRADING.md) (what the graders do with submissions) · [ADAPTIVE](ADAPTIVE.md) (where the planner gets its input) · [VOICE](VOICE.md) (the second transport) · [WEB](WEB.md) (the first consumer)
@@ -237,17 +238,43 @@ agent cannot point at is not evidence.
 
 ## Auth
 
-**None of this is implemented. Every route is open** — and as of the session layer, open
-routes now read and write user data, which is the line docs/BUILDLOG.md called a hard gate.
-It is crossed, deliberately and on a single-user dev machine, and it is the next thing
-owed. `api.users.current_user` is the seam it lands on: one function resolves the single
-local user today, and nothing downstream has to learn that a user can be someone else.
+**Built (2026-08-20).** Single user. GitHub OAuth in, a signed session cookie afterwards —
+`HttpOnly`, `Secure` (configurable for plain-http localhost), `SameSite=Lax`. One allowed
+GitHub account id, in config. Everything under `/api/v1` requires it; `/health` and
+`/auth/*` do not, and they are outside the prefix so that exemption is structural rather
+than a case inside the dependency.
 
-The design, for when it lands:
+| Route | Does |
+|---|---|
+| `GET /auth/login` | Redirects to GitHub with a signed, cookie-echoed `state` |
+| `GET /auth/callback` | Exchanges the code, checks the account, sets the cookie, answers JSON |
+| `GET /auth/me` | The principal, or `401` |
+| `POST /auth/logout` | Clears the cookie, `204` |
 
-Single user. GitHub OAuth → signed session cookie, `HttpOnly`, `Secure`, `SameSite=Lax`.
-One allowed GitHub account id, in config. Everything under `/api/v1` will require it
-except `/health`.
+**The cookie is signed, not encrypted, and carries no secret** — a user id, its GitHub id,
+and an expiry, under HMAC-SHA256 with `SESSION_SECRET`. Verification never touches the
+database, so `GET /api/v1/corpus/status` still needs no connection; the cost is that a
+cookie stays valid until it expires (30 days), and `POST /auth/logout` clears the browser's
+copy rather than revoking the token. Rotating `SESSION_SECRET` is what invalidates every
+session at once.
+
+**Nothing else mints a session.** There is no local-login route, no dev bypass and no
+`AUTH_MODE` flag, because a flag is a thing that can be wrong in production. Development
+signs its own cookie *outside* the process with `make login`
+(`python -m api.mint_session`), which needs the same secret the server verifies with — so
+the deployed API has no code path that issues a session without GitHub, rather than one
+that is merely switched off.
+
+**Configuration fails closed.** No `SESSION_SECRET` and every `/api/v1` route answers
+`503` naming the variable, not `401` — no credential would help, and a login problem is
+not what is wrong. An incomplete OAuth configuration refuses `/auth/login` for the same
+reason: an OAuth app with no `GITHUB_ALLOWED_ID` would let *any* GitHub user into a
+single-user deployment, so the flow refuses rather than running a weaker version of itself.
+
+Session and mastery queries are scoped to the caller, so another user's session id answers
+`404` — the same answer a made-up id gets, since a `403` would confirm it exists. That is
+query scoping, not multi-tenancy, which stays out of scope
+([ARCHITECTURE.md](ARCHITECTURE.md#what-is-deliberately-not-here)).
 
 The Vapi shim authenticates differently — a shared secret header, since Vapi is a server
 calling us, not a browser. See [VOICE.md](VOICE.md#authentication).
@@ -269,13 +296,14 @@ slug a client can branch on; matching on prose is how error handling rots:
 
 | Code | When |
 |---|---|
-| `400` | Malformed request |
-| `401` | No or invalid session cookie |
-| `404` | Unknown session or item |
+| `400` | Malformed request, or an OAuth callback whose `state` does not match |
+| `401` | No session cookie, one this server did not sign, or an expired one — the three are indistinguishable on the wire on purpose |
+| `403` | Authenticated with GitHub, and not the account this deployment serves |
+| `404` | Unknown session or item — including one belonging to somebody else |
 | `409` | Wrong state — e.g. report requested before `complete` |
 | `422` | Well-formed but invalid, e.g. submission for an item not in the plan |
 | `429` | **Token budget exceeded** — refused, never silently downgraded ([COST.md](COST.md#hard-budgets)). Not reachable: nothing meters tokens, because nothing calls a model |
-| `503` | Executor or model provider unavailable |
+| `503` | Executor or model provider unavailable, or the server is missing configuration the request needs (`not-configured`) |
 
 `429` on budget is a refusal by design. A session that stops and says why is recoverable;
 one that quietly switches to a cheaper model produces bad evidence, and bad evidence

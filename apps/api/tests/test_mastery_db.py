@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from conftest import sign_in
 from fakes import FakeRunner
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
@@ -38,7 +39,7 @@ def _clear_overrides():
 
 def client_for(run: RunResult | None = None) -> TestClient:
     app.dependency_overrides[get_runner] = lambda: FakeRunner(run)
-    return TestClient(app)
+    return sign_in(TestClient(app))
 
 
 def run_session(

@@ -4,7 +4,7 @@ COMPOSE := docker compose -f infra/compose/docker-compose.yml
 
 .PHONY: help setup dev dev-api down check lint typecheck test fmt \
         corpus-validate seed test-sandbox test-e2e test-db cost-report secret-scan \
-        doc-links doc-check hygiene verify-solutions clean
+        doc-links doc-check hygiene verify-solutions login clean
 
 help: ## Show this help
 	@# [a-zA-Z0-9_-] not [a-z-]: the narrower class silently dropped `test-e2e`
@@ -67,6 +67,9 @@ secret-scan: ## Grep tracked files for common secret shapes (repo is public)
 
 verify-solutions: ## Run every coding item's reference solution against its own tests, in the sandbox
 	uv run python scripts/verify_reference_solutions.py --strict-stub-check --complexity
+
+login: ## Mint a session cookie for the local user (needs SESSION_SECRET and the database)
+	@uv run python -m api.mint_session
 
 seed: ## Load the corpus into the database
 	uv run python -m api.seed

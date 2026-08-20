@@ -80,6 +80,43 @@ def unprocessable(detail: str, **extra: Any) -> ProblemError:
     )
 
 
+def unauthenticated(detail: str) -> ProblemError:
+    """401 — no session cookie, or one this server did not sign, or an expired one.
+
+    All three say the same thing on the wire. Distinguishing them would tell an
+    unauthenticated caller which part of their forgery was wrong."""
+    return ProblemError(
+        status=401,
+        slug="unauthenticated",
+        title="Not signed in",
+        detail=detail,
+    )
+
+
+def forbidden(detail: str) -> ProblemError:
+    """403 — authenticated by GitHub, and not the account this deployment serves."""
+    return ProblemError(
+        status=403,
+        slug="forbidden-account",
+        title="Not this deployment's account",
+        detail=detail,
+    )
+
+
+def not_configured(detail: str) -> ProblemError:
+    """503 — the server is missing configuration the request needs.
+
+    Separate from `unavailable`: no dependency is down and no credential would help. It
+    names the variable to set, because a 401 for a missing `SESSION_SECRET` sends an
+    operator hunting for a login problem that does not exist."""
+    return ProblemError(
+        status=503,
+        slug="not-configured",
+        title="The server is not configured for this",
+        detail=detail,
+    )
+
+
 def unavailable(detail: str) -> ProblemError:
     """503 — a dependency this request needs is not answering."""
     return ProblemError(

@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+import pytest
+from conftest import sign_in
 from fastapi.testclient import TestClient
 
 from api.main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture
+def signed_in() -> TestClient:
+    """A client with a cookie for a user id that need not exist: `/api/v1/corpus/status`
+    reads the corpus off disk, and auth is decided by the signature alone (`api.auth`), so
+    nothing here touches the database."""
+    return sign_in(TestClient(app), "01TESTUSERTESTUSERTESTUSER")
 
 
 def test_health() -> None:
@@ -16,14 +26,14 @@ def test_health() -> None:
 
 
 def test_health_stays_at_the_root() -> None:
-    """It is what a load balancer polls, and the one route auth will exempt. Under the
-    `/api/v1` prefix that exemption becomes a special case inside the auth dependency;
-    outside it, the exemption is structural."""
+    """It is what a load balancer polls, and one of the two things auth exempts. Under the
+    `/api/v1` prefix that exemption would be a special case inside the auth dependency;
+    outside it, the exemption is structural — which is why it is pinned here."""
     assert client.get("/api/v1/health").status_code == 404
 
 
-def test_corpus_status_reports_the_shipped_taxonomy() -> None:
-    resp = client.get("/api/v1/corpus/status")
+def test_corpus_status_reports_the_shipped_taxonomy(signed_in) -> None:
+    resp = signed_in.get("/api/v1/corpus/status")
     assert resp.status_code == 200
     body = resp.json()
     assert body["concepts"] > 50
@@ -41,10 +51,14 @@ def test_the_unversioned_corpus_route_is_gone() -> None:
     assert client.get("/corpus/status").status_code == 404
 
 
-def test_a_malformed_body_is_problem_json() -> None:
+def test_a_malformed_body_is_problem_json(signed_in) -> None:
     """RFC 9457 for every refusal, not FastAPI's `{"detail": ...}` — a client should be
-    able to branch on `type` instead of matching on prose."""
-    resp = client.post("/api/v1/sessions", json={"mode": "nonsense"})
+    able to branch on `type` instead of matching on prose.
+
+    Signed in, because auth is decided before the body is: an unauthenticated caller with
+    a malformed body gets 401, and telling them their JSON was wrong would be answering a
+    question they had not earned."""
+    resp = signed_in.post("/api/v1/sessions", json={"mode": "nonsense"})
     assert resp.status_code == 400
     assert resp.headers["content-type"].startswith("application/problem+json")
     body = resp.json()
@@ -59,6 +73,10 @@ def test_a_malformed_body_is_problem_json() -> None:
 # promising something that 404s.
 SURFACE = {
     ("GET", "/health"),
+    ("GET", "/auth/login"),
+    ("GET", "/auth/callback"),
+    ("GET", "/auth/me"),
+    ("POST", "/auth/logout"),
     ("GET", "/api/v1/corpus/status"),
     ("GET", "/api/v1/mastery"),
     ("GET", "/api/v1/mastery/weaknesses"),

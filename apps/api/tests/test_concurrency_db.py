@@ -17,6 +17,7 @@ import time
 from typing import Any
 
 import pytest
+from conftest import sign_in
 from fakes import FakeRunner
 from fastapi.testclient import TestClient
 from sqlmodel import Session, col, delete, select
@@ -65,7 +66,7 @@ def test_two_gradings_committing_at_once_still_replay_to_the_same_table(
     lock this fails every time, which is the only reason to trust it passing.
     """
     app.dependency_overrides[get_runner] = lambda: FakeRunner()
-    client = TestClient(app)
+    client = sign_in(TestClient(app))
     session = client.post("/api/v1/sessions", json={"mode": "coding", "budget_minutes": 90}).json()
     created_sessions.append(session["id"])
 
@@ -152,7 +153,7 @@ def test_a_grading_that_crashes_outside_the_grader_still_records_a_failure(
     ended, never completed.
     """
     app.dependency_overrides[get_runner] = lambda: FakeRunner()
-    client = TestClient(app)
+    client = sign_in(TestClient(app))
     session = client.post("/api/v1/sessions", json={"mode": "coding", "budget_minutes": 20}).json()
     created_sessions.append(session["id"])
     item_id = session["plan"]["items"][0]["item_id"]

@@ -139,6 +139,19 @@ Visible by design; opaque adaptation is untrustworthy adaptation.
 growth curve against the item's target. Catches the accepted-but-quadratic solution that
 passes small tests.
 
+**Principal** — who a request is, as proved by its session cookie's signature: a user id
+and the GitHub id it belongs to, and nothing read from the database. Every `/api/v1` route
+takes one; services take the `user_id` out of it rather than resolving "the current user"
+themselves. → [API](API.md#auth)
+
+**Session cookie** — `ih_session`: a user id, a GitHub id and an expiry under HMAC-SHA256.
+Signed, not encrypted, and carrying nothing secret. Note the collision with **session**
+above, which is an interview — the cookie is a login, and it outlives many of them.
+
+**Allowed account** — `GITHUB_ALLOWED_ID`, the one GitHub account id this deployment
+serves. Anyone else completes OAuth successfully and is refused `403`: authentication says
+who you are, and this is the part that says who that has to be.
+
 **Score anchors** — concrete descriptions of what each score looks like on a rubric
 criterion. Without them an LLM grader scores on vibe and drifts between runs.
 

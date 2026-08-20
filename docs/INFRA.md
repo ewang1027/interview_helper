@@ -61,9 +61,12 @@ only in code.
 
 **RDS.** Managed Postgres — AWS handles backups, patching, and failover.
 
-**Secrets Manager.** Where the database password and API keys live. Containers receive
-them as environment variables injected at task start, so no secret is ever baked into an
-image or committed.
+**Secrets Manager.** Where the database password, API keys, `SESSION_SECRET` and
+`GITHUB_CLIENT_SECRET` live. Containers receive them as environment variables injected at
+task start, so no secret is ever baked into an image or committed. Two consequences for
+the API task: it must start with `SESSION_SECRET` set or every `/api/v1` route answers
+`503` ([API.md](API.md#auth)), and `GITHUB_REDIRECT_URI` must match the OAuth app's
+registered callback for the deployed hostname rather than localhost.
 
 **IAM (Identity and Access Management).** Who may do what. Each service gets a **task
 role** granting only what it needs. The API may call Bedrock and read one secret; the

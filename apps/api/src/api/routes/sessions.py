@@ -21,8 +21,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlmodel import Session
 
 from api import sessions as service
+from api.auth import CurrentPrincipal, Principal
 from api.db import get_session
 from api.executor_client import CodeRunner, ExecutorClient
+from api.models import InterviewSession
 from api.schemas import CreateSessionRequest, SubmissionRequest
 
 router = APIRouter(tags=["sessions"])
@@ -43,8 +45,16 @@ DbSession = Annotated[Session, Depends(get_session)]
 Runner = Annotated[CodeRunner, Depends(get_runner)]
 
 
+def _owned(db: Session, session_id: str, principal: Principal) -> InterviewSession:
+    """Every route that takes a session id goes through here, so scoping it to the caller
+    is one decision rather than five chances to forget."""
+    return service.get_session(db, session_id, user_id=principal.user_id)
+
+
 @router.post("/sessions", status_code=201)
-def create_session(body: CreateSessionRequest, db: DbSession) -> dict[str, Any]:
+def create_session(
+    body: CreateSessionRequest, db: DbSession, principal: CurrentPrincipal
+) -> dict[str, Any]:
     """Create a session and plan it.
 
     docs/API.md shows `"state": "planning"` in the response because planning is expected
@@ -55,6 +65,7 @@ def create_session(body: CreateSessionRequest, db: DbSession) -> dict[str, Any]:
     """
     session_row = service.create_session(
         db,
+        user_id=principal.user_id,
         mode=body.mode,
         budget_minutes=body.budget_minutes,
         focus_concepts=body.focus_concepts,
@@ -66,10 +77,11 @@ def create_session(body: CreateSessionRequest, db: DbSession) -> dict[str, Any]:
 @router.get("/sessions")
 def list_sessions(
     db: DbSession,
+    principal: CurrentPrincipal,
     cursor: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(gt=0, le=100)] = 20,
 ) -> dict[str, Any]:
-    rows = service.list_sessions(db, cursor=cursor, limit=limit)
+    rows = service.list_sessions(db, user_id=principal.user_id, cursor=cursor, limit=limit)
     return {
         "sessions": [
             {
@@ -88,8 +100,10 @@ def list_sessions(
 
 
 @router.get("/sessions/{session_id}")
-def get_session_detail(session_id: str, db: DbSession) -> dict[str, Any]:
-    return service.session_view(db, service.get_session(db, session_id))
+def get_session_detail(
+    session_id: str, db: DbSession, principal: CurrentPrincipal
+) -> dict[str, Any]:
+    return service.session_view(db, _owned(db, session_id, principal))
 
 
 @router.post("/sessions/{session_id}/submissions", status_code=202)
@@ -99,8 +113,9 @@ def create_submission(
     background: BackgroundTasks,
     db: DbSession,
     runner: Runner,
+    principal: CurrentPrincipal,
 ) -> dict[str, Any]:
-    session_row = service.get_session(db, session_id)
+    session_row = _owned(db, session_id, principal)
     artifact = service.record_submission(
         db,
         session_row,
@@ -120,11 +135,11 @@ def create_submission(
 
 
 @router.post("/sessions/{session_id}/end")
-def end_session(session_id: str, db: DbSession) -> dict[str, Any]:
-    session_row = service.end_session(db, service.get_session(db, session_id))
+def end_session(session_id: str, db: DbSession, principal: CurrentPrincipal) -> dict[str, Any]:
+    session_row = service.end_session(db, _owned(db, session_id, principal))
     return {"id": session_row.id, "state": session_row.status, "ended_at": session_row.ended_at}
 
 
 @router.get("/sessions/{session_id}/report")
-def get_report(session_id: str, db: DbSession) -> dict[str, Any]:
-    return service.build_report(db, service.get_session(db, session_id))
+def get_report(session_id: str, db: DbSession, principal: CurrentPrincipal) -> dict[str, Any]:
+    return service.build_report(db, _owned(db, session_id, principal))

@@ -67,7 +67,7 @@ breakdown, because adaptation you cannot inspect is adaptation you cannot trust.
 
 | Path | What it is |
 |---|---|
-| `apps/api/` | FastAPI — `/health`, and under `/api/v1` the **session layer** (plan → submit → grade → report) and `corpus/status`. The deterministic coding grader lives here too; the interviewer agent, its SSE stream, mastery and auth do not |
+| `apps/api/` | FastAPI — `/health` and `/auth/*` at the root, and behind a session cookie under `/api/v1` the **session layer** (plan → submit → grade → report), mastery and `corpus/status`. The deterministic coding grader and GitHub OAuth live here too; the interviewer agent and its SSE stream do not |
 | `apps/web/` | *Empty placeholder.* Next.js 15 app, Phase 5 |
 | `apps/executor/` | Sandboxed code runner (no network, non-root, resource-capped) — isolation, `POST /execute` and `POST /probe` (the complexity probe) are built |
 | `packages/corpus/` | Versioned question corpus + JSON Schema + validator (24 items today) |
@@ -113,6 +113,7 @@ make setup      # install dependencies and the pre-push gates (secret scan, docs
 make dev        # bring up Postgres and run migrations
 make seed       # load the corpus into the database
 make dev-api    # run the API against it (uvicorn --reload)
+make login      # mint a session cookie — every /api/v1 route needs one
 make check      # ruff + mypy + pytest + corpus validate + doc gates + secret scan, then hygiene
 make test-db    # schema and session tests against the live Postgres
 
@@ -124,6 +125,11 @@ make down             # tear down the local stack
 
 `make dev` currently brings up Postgres only — the `api`, `web` and `executor`
 containers land in Phase 6, when they have Dockerfiles.
+
+Set `SESSION_SECRET` in `.env` before the API is useful: without one, every `/api/v1`
+route answers `503` naming it rather than running open. `make login` then prints a cookie
+for `curl`; a browser logs in through GitHub, which additionally needs an OAuth app and
+`GITHUB_ALLOWED_ID` — see [`.env.example`](.env.example) and [API](docs/API.md#auth).
 
 ## Build status
 
@@ -142,8 +148,10 @@ for what actually exists and what each phase still owes.
 - [ ] **3 — Interview runtime (text) + API** — *DB schema, migrations, settings and
       model routing landed early (2026-08-16); the **session layer** landed 2026-08-20 —
       `/api/v1`, plan → submit → grade → report, writing real `concept_evidence`, verified
-      end to end against a live stack. The interviewer agent, the SSE stream, rubric
-      grading, auth and budget enforcement remain — no model call has been made yet*
+      end to end against a live stack. **Auth landed 2026-08-20**: GitHub OAuth, a signed
+      session cookie, and no route under `/api/v1` reachable without one. The interviewer
+      agent, the SSE stream, rubric grading and budget enforcement remain — no model call
+      has been made yet*
 - [x] **4 — Adaptive engine** — *Elo, FSRS, the replayable projection, the weakness
       priority and the planner landed 2026-08-20, verified against both gates in
       [ADAPTIVE](docs/ADAPTIVE.md). Weights are placeholders until real sessions calibrate

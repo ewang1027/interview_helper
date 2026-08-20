@@ -23,6 +23,7 @@ from typing import Any
 
 import httpx
 import pytest
+from conftest import sign_in
 from fastapi.testclient import TestClient
 
 from api.main import app
@@ -90,7 +91,9 @@ def executor_server() -> Any:
 
 
 def test_a_coding_session_runs_from_plan_to_report(executor_server, created_sessions) -> None:
-    client = TestClient(app)
+    # Signed in the way `make login` does it, which is the only way in that does not go
+    # through GitHub. Nothing else here is stubbed.
+    client = sign_in(TestClient(app))
 
     created = client.post("/api/v1/sessions", json={"mode": "coding", "budget_minutes": 45}).json()
     created_sessions.append(created["id"])
