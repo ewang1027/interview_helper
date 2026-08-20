@@ -7,7 +7,9 @@ COMPOSE := docker compose -f infra/compose/docker-compose.yml
         verify-solutions clean
 
 help: ## Show this help
-	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | sort | \
+	@# [a-zA-Z0-9_-] not [a-z-]: the narrower class silently dropped `test-e2e`
+	@# from this listing because of the digit, so a documented target was invisible.
+	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | sort | \
 	  awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 setup: ## Install Python (uv) and Node (pnpm) dependencies

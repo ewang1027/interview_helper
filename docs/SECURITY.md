@@ -1,9 +1,11 @@
 # Security
 
-> **Status:** Isolation layer **built and verified** (2026-08-18) — the six escape tests
-> pass against real Docker, and each was confirmed to fail against a deliberately
-> weakened sandbox. The execution/grading layer above it (`POST /execute`, the test
-> harness, the complexity probe) is **not** built. AWS-layer enforcement in **Phase 6**.
+> **Status:** Isolation layer built and verified (2026-08-18); `POST /execute`, the test
+> harness and the complexity probe built on top of it (2026-08-20). The six escape tests
+> pass against real Docker, and **three of the six** were confirmed load-bearing by
+> re-running them against a deliberately weakened sandbox — the PID, memory and
+> contamination tests have had no negative control, and that is owed. Not built: scoring,
+> `cpp`, `peak_rss_kb`. AWS-layer enforcement in **Phase 6**.
 > "Measured behaviour" below records where this document's original claims were wrong.
 > Related: [ARCHITECTURE](ARCHITECTURE.md) (service boundaries) · [INFRA](INFRA.md) (where these controls are configured) · [GRADING](GRADING.md) (what the executor is for)
 
@@ -40,9 +42,15 @@ more attention than sandbox exotica.
 ```
 
 The single most valuable property in the design: **the process that runs untrusted code
-and the process that holds the database password are never the same process.** The
-executor has no DB client, no model client, no secrets, and no outbound network. If it is
-fully compromised, the attacker has a container that can compute and nothing else.
+and the process that holds the database password are never the same process.**
+
+Two distinct claims live here and must not be run together. The **sandbox container** has
+no DB client, no model client, no secrets and no outbound network — fully compromised, the
+attacker has a box that can compute and nothing else. The **executor process** is weaker
+than that: locally it holds the Docker socket in order to launch containers, which is
+root-equivalent control of the host. That exposure is accepted, bounded, and explained in
+[ARCHITECTURE](ARCHITECTURE.md#where-the-sandbox-actually-lives) — and under Fargate it
+structurally cannot exist, because there is no socket to hold.
 
 This is why `apps/executor/pyproject.toml` lists FastAPI, uvicorn, and Pydantic and
 nothing else. Every dependency there is attack surface with no compensating benefit.
@@ -55,26 +63,29 @@ Six layers, each independently sufficient to prevent a class of harm:
 |---|---|---|
 | Network | No egress. Enforced by Docker network config locally and a security group with **no outbound rules** in AWS | Exfiltration, callbacks, dependency fetching |
 | Filesystem | Read-only root, **plus a read-only `/etc` overlay and a non-root uid** — read-only root alone does not deny *reads*; one writable `tmpfs` scratch dir per execution, destroyed after | Persistence, cross-execution contamination |
-| Identity | Runs as a non-root user with no shell | Privilege escalation |
+| Identity | Runs as uid/gid `65534`, with `/etc` overlaid empty so there is no passwd entry to escalate through. **A shell is present and runnable** — measured: `/bin/sh -c 'id'` succeeds and returns uid 65534 — because `python:3.12-slim` is used as-is and only `/scratch` is `noexec`. Shelling out is possible and inherits the same uid, dropped capabilities and empty network namespace | Privilege escalation |
 | Capabilities | All Linux capabilities dropped; `no-new-privileges` | Kernel-adjacent tricks |
 | Syscalls | Docker's default seccomp profile. The "plus explicit deny" this row used to promise is **not** implemented — see "Measured behaviour" for why adding it as written would have *weakened* the sandbox | Sandbox escape primitives |
-| Resources | Wall-clock timeout, memory cap, PID cap, CPU quota | Denial of service against the host |
+| Resources | Wall-clock timeout, memory cap, PID cap (64), CPU quota (0.5). **The first two are per-request overrides with a positive-integer floor and no ceiling** — a caller may ask for `wall_ms=3600000`; a server-side maximum is owed before the executor is reachable by anything but the API | Denial of service against the host |
+| Output | Captured stdout/stderr truncated at 64 KB | An unbounded stream filling the *caller's* memory — as effective a DoS as an allocation bomb inside the container. Note the grading consequence: if truncation eats the result marker, the run becomes a `harness_error`, so a very chatty correct solution fails |
 
 Isolation is at the **infrastructure** layer, not in code. "The sandbox has no network" is
 a security group with zero egress rules — not a Python check that can be bypassed by the
 code it is checking.
 
-## The five escape tests
+## The six escape tests
 
 Phase 2's gate. Each **must fail closed** — the attempt fails, the service survives, and
 the failure is reported as a grading failure rather than a crash. They live in
-`apps/executor/tests`, marked `sandbox`, and run in CI.
+`apps/executor/tests`, marked `sandbox`, and run in CI. A seventh `sandbox`-marked test,
+`test_sanity_a_normal_program_runs`, is a control rather than an escape: without it, a
+sandbox so broken it runs nothing would make all six pass.
 
 | # | Test | Attempt | Required outcome |
 |---|---|---|---|
-| 1 | `test_no_network_egress` | DNS resolve, raw socket connect, and an HTTP GET to a public address | All three fail; execution returns a normal failed result |
+| 1 | `test_no_network_egress` | DNS resolve and a raw TCP connect to a public address. Socket *creation* is deliberately not asserted — an `AF_INET` socket is still created successfully under `--network none`, so a test that only opens one proves nothing | Both fail; execution returns a normal failed result |
 | 2 | `test_no_filesystem_escape` | Read `/etc/passwd`, read outside the scratch dir, write outside the scratch dir, traverse with `../` | Reads outside scratch denied; writes outside denied |
-| 3 | `test_pid_exhaustion` | Fork bomb | Killed at the PID cap; the host survives. *Currently asserted as "the Docker daemon still answers" — there is no long-lived execute service to health-check yet; tighten to `/health` when `POST /execute` lands* |
+| 3 | `test_pid_exhaustion` | Fork bomb | Capped; the host survives. Asserted as `_docker_alive()` — the daemon still answers. `POST /execute` and its `/health` now exist, so this should be tightened to health-check the executor itself; it has not been, and that is open rather than blocked. Note the *result* can never say `pid_limit`: the container's own exit is not diagnostic (a recursive fork bomb was measured exiting **0** with empty output), so a capped run surfaces as `ok` or `harness_error` despite `pid_limit` being a declared outcome |
 | 4 | `test_memory_bomb` | Allocate past the memory cap | OOM-killed; service survives; result reports the limit that was hit |
 | 5 | `test_wall_clock_timeout` | Infinite loop | Killed at the timeout; result reports a timeout, not a hang |
 
@@ -146,13 +157,19 @@ silently mounts nothing locally".
 
 ### These tests were verified to fail
 
-A passing escape test proves nothing on its own. Each was re-run against a deliberately
-weakened sandbox to confirm it is load-bearing: removing `--network none` produced
-`tcp:REACHED`, removing the `/etc` overlay produced `READ_OK:/etc/passwd`, and removing
-the explicit `docker kill` left the container **still running after its own timeout**.
-All three would have failed the corresponding test. A `test_sanity_a_normal_program_runs`
-control guards the opposite failure — a sandbox so broken it runs nothing would otherwise
-make every escape test pass.
+A passing escape test proves nothing on its own, so tests were re-run against a
+deliberately weakened sandbox to confirm they are load-bearing: removing `--network none`
+produced `tcp:REACHED`, removing the `/etc` overlay produced `READ_OK:/etc/passwd`, and
+removing the explicit `docker kill` left the container **still running after its own
+timeout**. All three would have failed the corresponding test. A
+`test_sanity_a_normal_program_runs` control guards the opposite failure — a sandbox so
+broken it runs nothing would otherwise make every escape test pass.
+
+**Be precise about the coverage: that is three of the six.** Tests 3 (PID), 4 (memory) and
+6 (cross-execution contamination) have never been run against a weakened sandbox, so their
+load-bearingness is assumed rather than demonstrated. An earlier version of this banner
+claimed "each was confirmed", which was the same overclaim this section exists to warn
+about.
 
 ## Prompt injection
 
@@ -214,3 +231,10 @@ Named so their absence is a decision rather than an oversight:
   `uv.lock`; that is the proportionate control at this scale.
 - **Audit logging for compliance.** `llm_calls` and `concept_evidence` are append-only for
   *correctness* reasons, not compliance ones.
+- **Result forgery by the candidate.** A graded run's result travels on the same stdout the
+  candidate's code can write to. Taking the *last* `##LEARN-RESULT` marker and having the
+  driver `os._exit(0)` closes the easy cases — a forged line printed early is superseded,
+  and no `atexit` handler can print a later one — but a candidate who forges a marker and
+  then exits the process itself leaves their line as the only one. Unclosable without a
+  second channel, and out of scope: single user, no hostile population, and the only person
+  deceived is the one practising.

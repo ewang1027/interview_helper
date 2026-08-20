@@ -64,7 +64,11 @@ directly.
 
 ## REST endpoints
 
-Base path `/api/v1`. All responses `application/json` unless noted.
+Base path `/api/v1`, **for everything that does not exist yet**. The two routes that are
+live today are mounted at the **root** with no prefix — `/health` and `/corpus/status` —
+because no `APIRouter` exists. Moving them under `/api/v1` is owed when the router lands;
+until then, following the paths below will 404. All responses `application/json` unless
+noted.
 
 ### Sessions
 
@@ -133,7 +137,7 @@ correct the evidence and replay — never hand-patch the projection.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/corpus/status` | Counts by domain and kind — **exists today** |
+| `GET` | `/corpus/status` | Counts by domain and kind — **exists today, at `/corpus/status`, not under `/api/v1`** |
 | `GET` | `/corpus/items/{id}` | One item, statement redacted if unseen |
 | `GET` | `/costs` | Ledger rollups: per session, per day, per model |
 | `GET` | `/costs/budget` | Remaining session and daily token budget |
@@ -178,7 +182,7 @@ succeeding buys you very little.
 
 | Tool | Input | Returns | Notes |
 |---|---|---|---|
-| `run_code` | `{ language, source, test_selection }` | `{ passed, total, failures[], wall_ms, peak_rss }` | Proxied to the executor. The **only** way code runs |
+| `run_code` | `{ language, source, entrypoint, tests[], test_selection?, wall_ms?, memory_mb? }` | `{ outcome, passed, total, failures[], wall_ms, peak_rss_kb, detail }` | Proxied to the executor's `POST /execute`. The **only** way code runs. `outcome` is load-bearing — only `ok` yields scorable counts. Passes are a count; only *failures* are enumerated. `peak_rss_kb` is always 0, nothing measures it yet |
 | `check_answer` | `{ item_id, submitted }` | `{ correct, normalized, method }` | sympy equivalence, then numeric tolerance, then `accept_forms` |
 | `reveal_hint` | `{ item_id, level }` | `{ text, score_penalty }` | Monotonic — level N implies N−1 was given |
 | `record_observation` | `{ concept_id, signal, confidence, span }` | `{ ok }` | Mid-session evidence. `span` cites the transcript |
@@ -194,9 +198,12 @@ agent cannot point at is not evidence.
 
 ## Auth
 
+**None of this is implemented. Every route is open**, and the `users` table exists with a
+`github_id` column that nothing reads. The design, for when it lands:
+
 Single user. GitHub OAuth → signed session cookie, `HttpOnly`, `Secure`, `SameSite=Lax`.
-One allowed GitHub account id, in config. Everything under `/api/v1` requires it except
-`/health`.
+One allowed GitHub account id, in config. Everything under `/api/v1` will require it
+except `/health`.
 
 The Vapi shim authenticates differently — a shared secret header, since Vapi is a server
 calling us, not a browser. See [VOICE.md](VOICE.md#authentication).

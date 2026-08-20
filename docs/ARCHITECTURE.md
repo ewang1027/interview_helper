@@ -1,9 +1,11 @@
 # Architecture
 
 > **Status:** Design, partially built. Real today: the Postgres schema and migrations,
-> settings and `ModelRouter` (unused), the sandbox and `POST /execute`, and a 24-item
-> corpus. Not built: sessions, the agent loop, grading, mastery, auth, and the budget
-> middleware — so no model call has ever been made. `docs/BUILDLOG.md` is authoritative.
+> settings and `ModelRouter` (unused), the sandbox, `POST /execute`, the test harness and
+> the complexity probe, and a 24-item corpus. Not built: sessions, the agent loop,
+> **scoring and rubric grading** (the deterministic runners exist; nothing turns their
+> output into a score), mastery, auth, and the budget middleware — so no model call has
+> ever been made. `docs/BUILDLOG.md` is authoritative.
 > Related: [GLOSSARY](GLOSSARY.md) · [API](API.md) · [SECURITY](SECURITY.md) · [INFRA](INFRA.md) · [BUILDLOG](BUILDLOG.md) (what is actually built) · [PRACTICE_LOG](PRACTICE_LOG.md)
 
 ```
@@ -26,7 +28,7 @@
                           │  └──▶ Bedrock (Claude) via ModelRouter
                           │
                           └──▶ apps/executor  (sandboxed, no network)
-                                 Python 3.12 · C++20
+                                 Python 3.12 · C++20 [cpp not implemented]
 
   Vapi ──OpenAI-compatible /v1/chat/completions (SSE)──▶ same agent core   [phase 7]
 ```
@@ -53,7 +55,7 @@ than a rewrite.
 
 | Service | Responsibility | Trust |
 |---|---|---|
-| `apps/web` | UI only. Holds no secrets, talks only to the API. | Untrusted input |
+| `apps/web` | UI only. Holds no secrets, talks only to the API. **Not built — an empty directory until Phase 5.** | Untrusted input |
 | `apps/api` | Sessions, agent loop, grading, mastery, cost ledger. The only service with DB and model credentials. | Trusted |
 | `apps/executor` | Runs candidate code. No network, no DB, no credentials. | **Hostile by assumption** |
 
@@ -101,13 +103,17 @@ diagram." That was wrong, and the error is worth keeping:** it came from reasoni
 the trust boundary in the abstract without checking what the target platform permits. The
 platform constraint decided the design.
 
-## Data model (lands in Phase 3)
+## Data model — built (migration `6e1d353bc543`)
+
+Every table below exists and is migrated. All are empty except `concepts`, `items`,
+`concept_edges` and `item_concepts`, which `make seed` populates from the corpus.
 
 | Table | Purpose |
 |---|---|
 | `users` | One row today. Schema is multi-tenant-shaped so it never needs a rewrite. |
 | `concepts`, `concept_edges` | Seeded from the corpus; the DAG. |
 | `items` | Seeded from the corpus; carries the live Elo rating, which drifts from the seed. |
+| `item_concepts` | Join table for an item's full concept tuple. `items.primary_concept_id` covers the distinguished one; this covers all of them, including it. |
 | `sessions` | One mock interview: mode, plan, status, timings. |
 | `turns` | Every exchange, with the tool calls made. The grading input. |
 | `artifacts` | Code submissions, diagrams, transcripts. |
@@ -118,8 +124,11 @@ platform constraint decided the design.
 | `research_runs` | Provenance for corpus builds. |
 | `practice_problems`, `practice_solves` | Phase 9. External (LeetCode/Codeforces) problems logged manually, their classification against the corpus taxonomy, and their spaced re-solve schedule. See [PRACTICE_LOG](PRACTICE_LOG.md). |
 
-pgvector is used for semantic retrieval over corpus items and over your own past
-mistakes — "show me things I got wrong that resemble this" is a first-class query.
+pgvector **will be** used for semantic retrieval over corpus items and over your own past
+mistakes — "show me things I got wrong that resemble this" is intended as a first-class
+query. Today the Postgres image ships the extension and `pgvector` is a declared
+dependency, but **no migration runs `CREATE EXTENSION`**, no table has an embedding
+column, and nothing embeds anything. It lands with the code that needs it.
 
 ## Model routing
 
@@ -135,10 +144,12 @@ choice are config, not call-site decisions. [PRACTICE_LOG](PRACTICE_LOG.md)'s pr
 classification (Phase 9) uses the existing "Classification, extraction" row above — it
 does not need a new job type.
 
-Prompt construction is cache-shaped: the frozen per-mode system prompt and the item
-context sit above the `cache_control` breakpoint, volatile turn content below. A CI
-assertion checks that repeated identical-prefix requests report a non-zero
-`cache_read_input_tokens`, because silent cache invalidation is expensive and invisible.
+Prompt construction **will be** cache-shaped: the frozen per-mode system prompt and the
+item context above the `cache_control` breakpoint, volatile turn content below. **No
+prompt-construction code exists yet.** When it lands it owes a CI assertion that repeated
+identical-prefix requests report a non-zero `cache_read_input_tokens` — silent cache
+invalidation is expensive and invisible, and the `llm_calls.cache_read_tokens` column
+exists to make it visible. That assertion is not written.
 
 ## What is deliberately not here
 

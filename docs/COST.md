@@ -1,8 +1,10 @@
 # Cost governance
 
-> **Status:** Policy set, nothing enforced yet — no model call has been made. Budgets and
-> the ledger land in **Phase 3**; AWS alarms in **Phase 6**. The per-session cost table
-> below is empty because no session has run.
+> **Status:** Policy set. The `llm_calls` ledger table and `make cost-report` **exist and
+> work** — the table is empty because no model call has ever been made, and nothing writes
+> to it yet. Budget enforcement is **not built**: the limits are read into settings and
+> consumed by nothing. AWS alarms in **Phase 6**. The per-session cost table below is empty
+> because no session has run.
 > Related: [ARCHITECTURE](ARCHITECTURE.md#model-routing) · [OPERATIONS](OPERATIONS.md#monitoring) · [RESEARCH](RESEARCH.md#where-it-runs-and-why-that-matters) (why research is free) · [PRACTICE_LOG](PRACTICE_LOG.md) (uses the existing classification job)
 
 This is a designed-in subsystem, not a dashboard bolted on later. A previous project
@@ -32,12 +34,16 @@ Set in `.env`, resolved by `ModelRouter`; call sites never name a model.
 | Grading | Opus 5 | Errors compound into mastery |
 | Classification, extraction | Haiku 4.5 | Mechanical |
 
-`effort` is tuned per job rather than left at the default — grading runs high, utility
-classification runs low.
+`effort` **is intended to be** tuned per job rather than left at the default — grading
+high, utility classification low. Not implemented: `ModelRouter` resolves a model id and a
+provider client, and carries no per-job parameters.
 
-## Hard budgets
+## Hard budgets — designed, not yet enforced
 
-Two limits, enforced in middleware before the call is made:
+Two limits. They are read into `Settings` today as `max_tokens_per_session` and
+`max_tokens_per_day`, and **nothing consumes them** — no middleware exists, and no model
+call has ever been made, so there is nothing yet to refuse. The design, for when the agent
+loop lands:
 
 ```
 MAX_TOKENS_PER_SESSION=400000
@@ -61,11 +67,15 @@ Every model call appends to `llm_calls`:
 | `latency_ms` | Cost/latency tradeoffs need both numbers |
 | `session_id`, `job` | Per-session and per-job attribution |
 
-`make cost-report` reads it. `/costs` in the web app renders it.
+`make cost-report` reads it. A `/costs` view in the web app will render it — `apps/web` is
+an empty directory until Phase 5.
 
 [PRACTICE_LOG](PRACTICE_LOG.md)'s problem-classification calls (Phase 9) log here with
 `job="practice_log_classify"`, riding the existing "Classification, extraction" routing
 row above rather than adding a new one.
+
+The table and `make cost-report` are built and match column for column; **nothing writes a
+row**, because nothing calls a model.
 
 ## Prompt caching
 
@@ -73,11 +83,13 @@ The frozen per-mode system prompt and item context sit above the `cache_control`
 breakpoint; volatile turn content sits below. Opus 5's 512-token cache minimum means
 even short prefixes are cacheable.
 
-**A CI assertion checks that repeated identical-prefix requests report a non-zero
-`cache_read_input_tokens`.** Cache invalidation is silent — a timestamp interpolated
-into a system prompt, a tool list that reorders, a dict serialized without sorted keys
-— and the only symptom is the bill. Catching it in CI is much cheaper than catching it
-monthly.
+**When the agent loop lands, a CI assertion should check that repeated identical-prefix
+requests report a non-zero `cache_read_input_tokens`. That assertion does not exist —
+there is no prompt-construction code to assert against.** Cache invalidation is silent — a
+timestamp interpolated into a system prompt, a tool list that reorders, a dict serialized
+without sorted keys — and the only symptom is the bill. Catching it in CI is much cheaper
+than catching it monthly, which is why the `llm_calls.cache_read_tokens` column exists
+already.
 
 ## AWS-side guards
 
