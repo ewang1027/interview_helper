@@ -35,6 +35,7 @@ from api.executor_client import (
     Language,
 )
 from api.grading.coding import GRADER_VERSION, CodingGrade, grade_coding
+from api.mastery import apply_evidence
 from api.models import Artifact, ConceptEvidence, Grading, InterviewSession, Item
 from api.planner import build_plan, plan_item_ids
 from api.users import current_user
@@ -304,18 +305,31 @@ def _record_grade(db: Session, artifact: Artifact, grade: CodingGrade) -> None:
             grader_version=grade.grader_version,
         )
     )
-    for row in grade.evidence:
-        db.add(
-            ConceptEvidence(
-                concept_id=row.concept_id,
-                source="session_grading",
-                item_id=artifact.item_id,
-                session_id=artifact.session_id,
-                score=row.score,
-                confidence=row.confidence,
-                grader_version=row.grader_version,
-            )
+    evidence = [
+        ConceptEvidence(
+            concept_id=row.concept_id,
+            source="session_grading",
+            item_id=artifact.item_id,
+            session_id=artifact.session_id,
+            score=row.score,
+            confidence=row.confidence,
+            grader_version=row.grader_version,
         )
+        for row in grade.evidence
+    ]
+    for row in evidence:
+        db.add(row)
+    db.flush()
+
+    # The projection is advanced in the same transaction that writes the evidence, so the
+    # two can never disagree about what has been seen. It is still only a projection:
+    # `POST /mastery/recompute` rebuilds it from these rows alone, and a db test asserts
+    # the rebuild reproduces what this loop produced.
+    session_row = db.get(InterviewSession, artifact.session_id)
+    if session_row is not None:
+        for row in evidence:
+            apply_evidence(db, row, user_id=session_row.user_id)
+
     db.commit()
     _maybe_complete(db, artifact.session_id)
 

@@ -41,17 +41,22 @@ while live sessions run on Bedrock, funded by AWS credits.
 
 ## How it adapts
 
-**Designed, not yet built (Phase 4).** Evidence is real — a graded coding session writes
-it — but `mastery` is empty and no rating, scheduling or planning code exists. Today's
-session planner is a placeholder that marks every plan `"adaptive": false`.
+**Half built (Phase 4).** Ratings and scheduling run: a graded coding session writes
+evidence and updates `mastery` in the same transaction, and the whole projection —
+item ratings included — rebuilds from that evidence alone. What is missing is the part
+that *uses* it: the weakness priority and the planner. Today's session planner is still a
+placeholder that marks every plan `"adaptive": false`.
 
 Every graded artifact writes an immutable `concept_evidence` row — that part runs today.
 Mastery is *derived* from that evidence, never hand-written, so it can be recomputed from
 scratch at any time:
 
 - **`ability`** — an Elo rating per concept, updated against each item's own difficulty
-  rating. Answers *how hard should the next question be*.
-- **`stability` / `due_at`** — FSRS. Answers *when should I see this again*.
+  rating, and scaled by how much the evidence is trusted. Answers *how hard should the
+  next question be*.
+- **`stability` / `due_at`** — FSRS, from the `fsrs` package with interval fuzzing turned
+  off, because a jittered schedule cannot be rebuilt from its evidence. Answers *when
+  should I see this again*.
 
 The session planner draws from a weakness priority combining low ability, recent error
 rate, overdue review, and prerequisite blocking.
@@ -90,7 +95,7 @@ buildlog disagree about what exists, the buildlog is right.**
 | [GRADING](docs/GRADING.md) | The four graders and what they produce | 2 → 3 | ✅ Coding grader built; rubric graders are Phase 3 |
 | [API](docs/API.md) | Endpoints, session state machine, SSE events, agent tools | 3 | ✅ Sessions built; agent, SSE and auth are spec |
 | [COST](docs/COST.md) | Model routing, hard budgets, the ledger | 3 → 6 | Policy set |
-| [ADAPTIVE](docs/ADAPTIVE.md) | Elo + FSRS, evidence, weakness priority, planning | 4 | Spec |
+| [ADAPTIVE](docs/ADAPTIVE.md) | Elo + FSRS, evidence, weakness priority, planning | 4 | ✅ Ratings + replay built; priority and planner are spec |
 | [WEB](docs/WEB.md) | Routes, the four mode workspaces, dashboard | 5 | Spec |
 | [INFRA](docs/INFRA.md) | AWS from first principles — written to teach | 6 | Spec |
 | [VOICE](docs/VOICE.md) | Vapi adapter, latency budget, what changes for speech | 7 | Spec |
@@ -135,7 +140,9 @@ for what actually exists and what each phase still owes.
       `/api/v1`, plan → submit → grade → report, writing real `concept_evidence`, verified
       end to end against a live stack. The interviewer agent, the SSE stream, rubric
       grading, auth and budget enforcement remain — no model call has been made yet*
-- [ ] **4 — Adaptive engine**
+- [ ] **4 — Adaptive engine** — *Elo, FSRS and the replayable projection landed
+      2026-08-20; the weakness priority, the planner that uses it, and the
+      simulated-candidate gate remain*
 - [ ] **5 — Web app**
 - [ ] **6 — AWS deploy**
 - [ ] **7 — Voice via Vapi**

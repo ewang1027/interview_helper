@@ -1,8 +1,8 @@
 """The session lifecycle against a live Postgres. Marked `db` — run via `make test-db`.
 
-The executor is stubbed here, so these run without Docker and can produce outcomes real
-containers cannot be asked for on demand (a timeout, an unreachable service). The real
-sandbox path is `test_session_e2e.py`.
+The executor is stubbed (`fakes.FakeRunner`), so these run without Docker and can produce
+outcomes real containers cannot be asked for on demand — a timeout, an unreachable
+service. The real sandbox path is `test_session_e2e.py`.
 
 `TestClient` runs background tasks before returning the response, so a grade is already
 written by the time a submission call returns — no polling, and no sleep-based flakiness.
@@ -10,67 +10,22 @@ written by the time a submission call returns — no polling, and no sleep-based
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 from typing import Any
 
 import pytest
+from fakes import FakeRunner
 from fastapi.testclient import TestClient
-from sqlmodel import Session, col, delete, select
+from sqlmodel import Session, col, select
 
 from api.db import get_engine
 from api.executor_client import ProbeOutcome, RunResult
 from api.main import app
-from api.models import Artifact, ConceptEvidence, Grading, InterviewSession
+from api.models import ConceptEvidence, Grading
 from api.routes.sessions import get_runner
 
 pytestmark = pytest.mark.db
 
 REFERENCE = "def f(xs):\n    return xs\n"
-
-
-class FakeRunner:
-    """A `CodeRunner` whose answers the test chooses.
-
-    Deliberately separate from the one in `test_grading_coding.py`: that one exists to
-    exercise the grader's arithmetic, this one to drive the API. Both implement the same
-    Protocol, which is what keeps them from drifting into different contracts.
-    """
-
-    def __init__(self, run: RunResult, probe: ProbeOutcome | None = None) -> None:
-        self.run = run
-        self.probe_result = probe or ProbeOutcome(verdict="matches", slope=1.0)
-
-    def run_tests(
-        self,
-        *,
-        source: str,
-        entrypoint: str,
-        tests: Sequence[Mapping[str, Any]],
-        language: str = "python",
-        test_selection: Sequence[str] = (),
-        wall_ms: int | None = None,
-        memory_mb: int | None = None,
-    ) -> RunResult:
-        # `passed=0` in the canned result means "pass them all" — the fake does not know
-        # how many cases an item ships until it is handed them.
-        return self.run.model_copy(
-            update={"total": len(tests), "passed": self.run.passed or len(tests)}
-        )
-
-    def probe(
-        self,
-        *,
-        source: str,
-        entrypoint: str,
-        generator: str,
-        sizes: Sequence[int],
-        target: str | None,
-        language: str = "python",
-        repeats: int = 5,
-        wall_ms: int | None = None,
-        memory_mb: int | None = None,
-    ) -> ProbeOutcome:
-        return self.probe_result
 
 
 def make_client(run: RunResult | None = None, probe: ProbeOutcome | None = None) -> TestClient:
@@ -84,29 +39,6 @@ def make_client(run: RunResult | None = None, probe: ProbeOutcome | None = None)
 def _clear_overrides():
     yield
     app.dependency_overrides.clear()
-
-
-@pytest.fixture
-def created_sessions() -> list[str]:
-    """Ids to delete afterwards.
-
-    `concept_evidence` is append-only *in production* — the rule protects mastery from
-    being hand-patched. A test that leaves its rows behind would instead corrupt the dev
-    database's history with fabricated evidence, which is the same harm from the other
-    direction.
-    """
-    ids: list[str] = []
-    yield ids
-    with Session(get_engine()) as db:
-        artifact_ids = [
-            a.id for a in db.exec(select(Artifact).where(col(Artifact.session_id).in_(ids))).all()
-        ]
-        if artifact_ids:
-            db.exec(delete(Grading).where(col(Grading.artifact_id).in_(artifact_ids)))
-        db.exec(delete(ConceptEvidence).where(col(ConceptEvidence.session_id).in_(ids)))
-        db.exec(delete(Artifact).where(col(Artifact.session_id).in_(ids)))
-        db.exec(delete(InterviewSession).where(col(InterviewSession.id).in_(ids)))
-        db.commit()
 
 
 def start(client: TestClient, sessions: list[str], **body: Any) -> dict[str, Any]:

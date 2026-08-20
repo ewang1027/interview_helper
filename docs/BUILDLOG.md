@@ -23,7 +23,7 @@ detail behind it.
 | **1** Corpus v1 | thin slice | 24 items — 3 archetypes + 3 instances in each of four domains, verified | bulk authoring toward ~400/~150 |
 | **2** Executor + grading | deterministic half **done** | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` |
 | **3** Runtime + API | **half built** | schema + migrations, settings, `ModelRouter`, and the **session layer**: `/api/v1`, plan → submit → grade → report, writing `artifacts`, `gradings`, `concept_evidence` | interviewer agent, SSE stream, rubric graders, **auth**, budget middleware |
-| **4** Adaptive engine | not started | — | Elo, FSRS, evidence replay, planner. Its input exists now: a graded session writes real `concept_evidence` rows |
+| **4** Adaptive engine | **half built** | Elo `ability`, FSRS `stability`/`due_at`, and a projection that rebuilds from evidence alone — item ratings included | weakness priority, the planner that uses it, the simulated-candidate gate |
 | **5–8** Web, AWS, voice, hardening | not started | — | — |
 | **9** Practice log | **schema only** | `practice_problems`, `practice_solves`, and `concept_evidence`'s two-producer shape — all migrated, landed with the Phase 3 slice | classification, endpoints, scheduling; gated on 3 + 4 |
 
@@ -1012,3 +1012,98 @@ Auth, before anything else. It is the only thing between "writes user data" and
 fork is real: the **interviewer agent** (the first model call, which makes the cost ledger
 and the budget middleware live) or **Phase 4's mastery projection**, which finally has
 evidence to replay.
+
+---
+
+## Phase 4 (ratings and scheduling) — the projection, and the test that proved it wrong · 2026-08-20
+
+`mastery` is populated, and it is a *projection*: a graded session updates it in the same
+transaction that writes the evidence, and `POST /mastery/recompute` rebuilds the whole
+thing — item ratings included — from `concept_evidence` alone.
+
+```
+make check          110 passed, 56 deselected (hermetic; was 98)
+make test-db        27 passed (live Postgres)
+make test-e2e       1 passed (43s)
+```
+
+### The replay gate found a real bug on its first run
+
+docs/ADAPTIVE.md's gate: "recomputing `mastery` from `concept_evidence` alone must
+reproduce the live table exactly". It did not.
+
+A timestamp written as `datetime.timezone.utc` comes back from Postgres as
+`ZoneInfo("Etc/UTC")` — same instant, same offset, **different object** — and FSRS
+compares `tzinfo` against `timezone.utc` by equality:
+
+```
+ValueError: datetime must be timezone-aware and set to UTC
+```
+
+The incremental path never saw it: those rows had not left Python. Only the replay reads
+timestamps back from the database, so only the replay raised. Normalising at the boundary
+(`moment.astimezone(UTC)`) fixes it, and the comment there says what it is for, because it
+reads exactly like the no-op somebody deletes.
+
+Worth noting what this cost: the previous wave converted every column to `TIMESTAMPTZ`
+precisely so timestamps would carry their zone, and that fix was correct — this is a
+*second*, independent trap in the same area, and only an end-to-end property test could
+have found it.
+
+### An item's rating drifted four times too fast
+
+The bound in the item-rating test was `<= K_ITEM` (4 points from one attempt). Measured:
+**9.1**.
+
+One graded submission writes one evidence row *per concept the item names* — four, for
+the coding items on disk — and the item update ran on each of them. An item's rating was
+therefore drifting in proportion to how many concepts its author happened to list, which
+is a fact about the corpus file, not about the candidate.
+
+The item update is now tied to the *primary* concept's row: one attempt, one update, and
+still derivable from evidence alone, which is what replay needs. The test now asserts both
+halves — four evidence rows, one rating step — so the next person to "simplify" it sees
+what it was for.
+
+### Fuzzing off, and measured rather than assumed
+
+`fsrs` (the FSRS-6 package) is used instead of hand-rolled arithmetic: spaced-repetition
+parameters are *fitted*, and constants that merely look like FSRS would be a claim nothing
+could check. Two of its defaults had to go:
+
+| default | why it is wrong here | measured |
+|---|---|---|
+| `enable_fuzzing=True` | a jittered interval cannot be rebuilt from evidence | six identical reviews → **six different due dates** |
+| `learning_steps=(1m, 10m)` | a concept is not re-drilled sixty seconds later | a due date always in the past, so every concept reads as overdue |
+
+Both are pinned by tests, including a negative control that *demonstrates* the fuzzed
+scheduler disagreeing with itself — "fuzzing off" reads like a preference until you watch
+it produce five answers to one question.
+
+### Confidence is what makes one result count more than another
+
+The grader already distinguished a primary concept (confidence 0.9) from the ones an item
+merely touches (0.54). That distinction would have been thrown away one layer later if the
+rating moved the same distance for both, so `K` is scaled by confidence. A db test asserts
+the primary concept moves further than the secondary from the same submission — which is
+the whole reason the grader bothered to record two different numbers.
+
+### Deferred deliberately
+
+- **The weakness priority and the planner that uses it**, and therefore the other half of
+  the Phase 4 gate — the simulated candidate with an injected weakness. The session
+  planner remains the placeholder, and still says so in every plan.
+- **Cold-start calibration.** `calibrating` is reported (fewer than five observations) and
+  the K-decay already moves early estimates fast, but no separate calibration *plan*
+  exists, because there is no planner to write one.
+- **The weights** in the priority formula. Placeholders in a document, still.
+- **The db tests share the development database.** Teardown deletes only the rows a test
+  created, then replays the projection to restore the invariant — but the value assertions
+  assume the concepts they touch start unmeasured. The day that database holds real
+  practice history, these want a database of their own.
+
+### Next
+
+The planner. It is the last piece that turns all of this from a measurement into a
+*behaviour* — the point where a weak concept changes what the next session serves — and it
+is what the simulated-candidate gate exists to test. Auth is still owed before deployment.

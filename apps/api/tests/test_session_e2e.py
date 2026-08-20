@@ -24,11 +24,8 @@ from typing import Any
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session, col, delete, select
 
-from api.db import get_engine
 from api.main import app
-from api.models import Artifact, ConceptEvidence, Grading, InterviewSession
 from api.settings import get_settings
 from corpus.loader import load_items
 
@@ -92,27 +89,11 @@ def executor_server() -> Any:
     proc.wait(timeout=10)
 
 
-@pytest.fixture
-def session_ids() -> Any:
-    ids: list[str] = []
-    yield ids
-    with Session(get_engine()) as db:
-        artifacts = [
-            a.id for a in db.exec(select(Artifact).where(col(Artifact.session_id).in_(ids))).all()
-        ]
-        if artifacts:
-            db.exec(delete(Grading).where(col(Grading.artifact_id).in_(artifacts)))
-        db.exec(delete(ConceptEvidence).where(col(ConceptEvidence.session_id).in_(ids)))
-        db.exec(delete(Artifact).where(col(Artifact.session_id).in_(ids)))
-        db.exec(delete(InterviewSession).where(col(InterviewSession.id).in_(ids)))
-        db.commit()
-
-
-def test_a_coding_session_runs_from_plan_to_report(executor_server, session_ids) -> None:
+def test_a_coding_session_runs_from_plan_to_report(executor_server, created_sessions) -> None:
     client = TestClient(app)
 
     created = client.post("/api/v1/sessions", json={"mode": "coding", "budget_minutes": 45}).json()
-    session_ids.append(created["id"])
+    created_sessions.append(created["id"])
     planned = [entry["item_id"] for entry in created["plan"]["items"]]
     assert planned == ["i.code.0001", "i.code.0002"], planned
 

@@ -63,6 +63,10 @@ def _upsert_items(session: Session) -> None:
                 corpus_version=i.corpus_version,
             )
             session.add(item_row)
+        # `elo` is deliberately absent from this update block: it is the *live* rating,
+        # drifted by real outcomes (docs/ADAPTIVE.md), and re-seeding after a corpus
+        # refresh must not reset it to the author's prior. `difficulty_elo` is the prior
+        # and is refreshed.
         item_row.kind = i.kind
         item_row.domain = i.domain
         item_row.modality = i.modality

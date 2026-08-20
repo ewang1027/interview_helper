@@ -230,16 +230,25 @@ class ConceptEvidence(SQLModel, table=True):
 
 class Mastery(SQLModel, table=True):
     """Derived projection, rebuildable from `concept_evidence` alone. Never
-    hand-edited — recompute via `POST /mastery/recompute` (docs/API.md)."""
+    hand-edited — recompute via `POST /mastery/recompute` (docs/API.md).
+
+    `observations` is what decays the Elo K-factor: early evidence moves the estimate
+    fast, later evidence refines it. `fsrs_card` is the scheduler's own serialised state —
+    stored whole because advancing a schedule needs FSRS's difficulty, state and step, and
+    this table only exposes the two numbers worth querying. Keeping the library's own dict
+    means a library upgrade that changes the card's shape is recovered by replaying
+    evidence, not by a migration."""
 
     __tablename__ = "mastery"
 
     user_id: str = Field(foreign_key="users.id", primary_key=True)
     concept_id: str = Field(foreign_key="concepts.id", primary_key=True)
     ability: float = 1200.0
+    observations: int = 0
     stability: float | None = None
     due_at: datetime | None = Field(default=None, sa_column=_ts(nullable=True))
     last_seen: datetime | None = Field(default=None, sa_column=_ts(nullable=True))
+    fsrs_card: dict[str, Any] | None = Field(default=None, sa_column=Column(JSONB))
 
 
 # --- Cost governance -------------------------------------------------------------------

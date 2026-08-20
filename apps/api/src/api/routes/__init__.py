@@ -11,10 +11,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from api.routes import corpus, sessions
+from api.routes import corpus, mastery, sessions
 
 api_v1 = APIRouter(prefix="/api/v1")
 api_v1.include_router(corpus.router)
+api_v1.include_router(mastery.router)
 api_v1.include_router(sessions.router)
 
 __all__ = ["api_v1"]

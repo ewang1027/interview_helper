@@ -2,10 +2,12 @@
 
 > **Status:** Partly built (2026-08-20). **Live:** the `/api/v1` router, `POST /sessions`,
 > `GET /sessions`, `GET /sessions/{id}`, `POST /sessions/{id}/submissions`,
-> `POST /sessions/{id}/end`, `GET /sessions/{id}/report`, `GET /api/v1/corpus/status`, and
-> RFC 9457 errors on all of it. `/health` stays at the root deliberately — see below.
+> `POST /sessions/{id}/end`, `GET /sessions/{id}/report`, `GET /api/v1/corpus/status`,
+> `GET /mastery`, `GET /mastery/{concept_id}`, `POST /mastery/recompute`, and RFC 9457
+> errors on all of it. `/health` stays at the root deliberately — see below.
 > **Not built:** the SSE stream and every agent tool (there is no interviewer agent, so no
-> model call has ever been made), the mastery and cost routes, `GET /corpus/items/{id}`,
+> model call has ever been made), the weakness and planning routes, the cost routes,
+> `GET /corpus/items/{id}`,
 > `Idempotency-Key`, and **auth — every route is still open**, which was acceptable while
 > nothing wrote user data and is now overdue rather than merely absent. Vapi in **Phase 7**.
 > (The executor's `POST /execute` and `POST /probe` are built on their own contract — see
@@ -147,16 +149,17 @@ session. Iterating on a submission is the interviewer loop's job, and that does 
 
 ### Mastery and planning
 
-**None of this is built** — it is Phase 4, and there is no `mastery` projection to serve.
-The evidence it will read from is real now: a graded session writes `concept_evidence`.
+| Method | Path | Purpose | State |
+|---|---|---|---|
+| `GET` | `/mastery` | Every measured concept: ability, stability, due_at, observations | ✅ built |
+| `GET` | `/mastery/{concept_id}` | One concept, with the evidence rows behind it | ✅ built |
+| `GET` | `/mastery/weaknesses` | Ranked weakness list with the priority breakdown | ✗ needs the priority formula |
+| `GET` | `/plan/next` | What the planner would choose right now, without starting a session | ✗ needs the real planner |
+| `POST` | `/mastery/recompute` | Rebuild the projection from `concept_evidence` | ✅ built |
 
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/mastery` | Every concept: ability, stability, due_at, evidence count |
-| `GET` | `/mastery/{concept_id}` | One concept, with the evidence rows behind it |
-| `GET` | `/mastery/weaknesses` | Ranked weakness list with the priority breakdown |
-| `GET` | `/plan/next` | What the planner would choose right now, without starting a session |
-| `POST` | `/mastery/recompute` | Rebuild the projection from `concept_evidence` |
+`GET /mastery` reports `measured` and `calibrating` alongside the rows, because "four
+concepts, weakest first" reads very differently once you know the taxonomy has 159 and the
+rest have never been measured at all.
 
 `GET /mastery/{concept_id}` returning the underlying evidence is the feature that makes
 the adaptive engine auditable: every number traces to graded artifacts you can re-read.

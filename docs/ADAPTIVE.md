@@ -1,12 +1,15 @@
 # The adaptive engine
 
-> **Status:** Specification — not built. Lands in **Phase 4**. The weights in the
-> priority formula are placeholders to be calibrated against real sessions, not tuned
-> values. Its input is **real now**: a graded coding session writes `concept_evidence`
-> rows — concept, score, confidence, item, session — so the replay this design depends on
-> has something to replay. `mastery` is still empty and no rating, scheduling or planning
-> code exists; the session planner in use today is a placeholder that says so in every
-> plan it produces (`"adaptive": false`).
+> **Status:** Half built (2026-08-20). **Built:** `api.mastery` — Elo `ability` per
+> (user, concept), FSRS `stability`/`due_at` from the `fsrs` package, and
+> `POST /mastery/recompute`, which rebuilds the whole projection (item ratings included)
+> from `concept_evidence` alone. A graded session updates it in the same transaction that
+> writes the evidence, and a db test asserts the incremental result and a from-scratch
+> replay agree **exactly** — half of the verification gate at the end of this document.
+> **Not built:** the weakness priority, the planner that uses it, and the simulated-
+> candidate gate. The session planner in use today is still the placeholder that says so
+> in every plan it produces (`"adaptive": false`). The weights below remain placeholders
+> to be calibrated against real sessions.
 > Related: [CONCEPTS](CONCEPTS.md) (the DAG it plans over) · [GRADING](GRADING.md) (where evidence comes from) · [API](API.md#mastery-and-planning) (how it is exposed) · [GLOSSARY](GLOSSARY.md) · [PRACTICE_LOG](PRACTICE_LOG.md) (a second evidence source, and a lighter FSRS-inspired scheduler at problem granularity)
 
 How the system decides what to make you do next.
@@ -35,9 +38,20 @@ item_elo -= K_item * (score - expected)
 - `score` is in [0, 1] — a partial credit outcome, not a binary. A correct answer
   reached with two hints is not the same evidence as one reached with none.
 - `K` decays with the number of observations for that concept, so early sessions move
-  the estimate quickly and later ones refine it.
+  the estimate quickly and later ones refine it. As built: `K = max(10, 48 / (1 + n/8))`,
+  and it never reaches zero — skill decays, and an estimate that stops moving stops being
+  a measurement.
 - `K_item` is much smaller than `K`. Item ratings should move slowly; with one user,
-  they are mostly a prior.
+  they are mostly a prior. As built: `4`.
+- **Both updates are scaled by the evidence's `confidence`**, so a hidden-test pass moves
+  a rating further than a soft signal about the same concept would.
+- **An item's rating moves once per attempt, not once per concept.** One graded
+  submission writes one evidence row per concept the item names — four, for the coding
+  items on disk — so the item update is tied to the *primary* concept's row. Without that
+  tie, an item drifted four times faster for the crime of naming four concepts.
+
+A concept with fewer than five observations is flagged `calibrating`, and the API says so
+rather than presenting an estimate built on one data point as if it were settled.
 
 **Selection target:** pick items where expected score is around 0.6–0.75. Below that
 you learn little because you fail for uninformative reasons; above it the item confirms
@@ -45,9 +59,27 @@ what is already known.
 
 ### `stability` / `due_at` — FSRS
 
-Answers **when should I see this again**. Standard FSRS over the concept, driven by the
-same graded outcome. Fluency decays; a concept you nailed three months ago is not a
-concept you can perform under pressure today.
+Answers **when should I see this again**. FSRS over the concept, driven by the same
+graded outcome. Fluency decays; a concept you nailed three months ago is not a concept you
+can perform under pressure today.
+
+Built on the `fsrs` package (FSRS-6) rather than hand-rolled arithmetic — spaced
+repetition parameters are fitted, not derived, and inventing constants that *look* like
+FSRS would be a claim nothing could check. Two settings are load-bearing:
+
+- **Fuzzing off.** The library jitters each interval by default so schedules feel less
+  mechanical. Measured here: six identical reviews of an identical card produced six
+  different due dates. Under a design whose central claim is "the projection rebuilds from
+  the evidence", that is the difference between a replay test that means something and one
+  that cannot pass.
+- **No learning steps.** FSRS ships flashcard defaults that re-show a card after one
+  minute and ten minutes. A concept in a mock interview is not re-drilled sixty seconds
+  later; that interval would leave every concept permanently overdue.
+
+A score is continuous and FSRS takes one of four grades, so the mapping is stated rather
+than buried: `< 0.5` Again, `< 0.75` Hard, `< 0.95` Good, else Easy. Confidence does
+**not** scale the schedule — FSRS takes a grade, and a fractional review is arithmetic
+nobody could check.
 
 ## Evidence, not scores
 
@@ -66,6 +98,11 @@ near-certain evidence about `two-pointers`; an LLM rubric's read on
 gives three things: the engine can explain itself, the rating math can be swapped
 without data loss, and a grader bug can be corrected by re-running rather than by
 hand-patching state.
+
+**Item ratings are part of that projection.** `items.difficulty_elo` holds the author's
+prior and `items.elo` is what real outcomes made of it, so `recompute` resets the second
+to the first and replays. A rebuild that reset only half the state would produce a table
+no replay could reproduce.
 
 From Phase 9, [PRACTICE_LOG](PRACTICE_LOG.md) is a second producer of `concept_evidence`,
 for problems solved outside the app. Its own `practice_problems.due_at`/`stability_days`
@@ -112,5 +149,11 @@ threshold, not on a fixed session count.
 
 The Phase 4 gate is a simulated candidate with an injected weakness: a synthetic user
 who scores poorly on a chosen concept cluster and well elsewhere. Within five sessions,
-a majority of served items must target that cluster. Plus a replay test — recomputing
-`mastery` from `concept_evidence` alone must reproduce the live table exactly.
+a majority of served items must target that cluster. **Not built** — it needs the planner.
+
+Plus a replay test — recomputing `mastery` from `concept_evidence` alone must reproduce
+the live table exactly. **Built, and it earned its keep on its first run:** the
+incremental path and the replay disagreed, because a timestamp written as
+`timezone.utc` returns from Postgres as `ZoneInfo("Etc/UTC")` — the same instant, a
+different object — and FSRS compares `tzinfo` by equality. Only the replay path read
+timestamps back from the database, so only the replay path raised.
