@@ -1419,7 +1419,10 @@ commits. An unresolvable range is now a loud failure.
 
 Negative controls after the fix: one identical one-line code change is let through as
 `wip: checkpoint` and refused as `feat:`, and over the last six real commits the gate
-reproduces the one historical violation in range and clears the other five.
+reproduces the one historical violation in range and clears the other five. Then the hook
+itself, rather than the script it calls: a throwaway commit touching one script and no
+document was refused by `git push`, and this wave's own push — code and documents
+together — cleared both it and the secret scan.
 
 ### Every check in the doc gate was verified to fail
 
