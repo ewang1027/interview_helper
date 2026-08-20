@@ -117,7 +117,15 @@ def _inspect(name: str) -> tuple[int, bool]:
 def run_sandboxed(
     source: str, wall_ms: int | None = None, memory_mb: int | None = None
 ) -> ExecuteResponse:
-    """Run `source` under every limit above. Never raises, never hangs."""
+    """Run `source` under every limit above. Never raises, never hangs.
+
+    **This function is the swap point for Phase 6.** Fargate supports neither host bind
+    mounts (`sourcePath` is EC2/Managed-Instances only) nor `devices`, so there is no
+    Docker socket to reach and no sibling container to launch — there, the task *is* the
+    isolation boundary and this Docker path is replaced wholesale rather than adapted.
+    See docs/ARCHITECTURE.md, "Where the sandbox actually lives". Keep the signature
+    backend-agnostic: source in, `ExecuteResponse` out, no Docker types leaking to callers.
+    """
     wall_s = (wall_ms or DEFAULT_WALL_MS) / 1000.0
     name = f"exec-{uuid.uuid4().hex[:16]}"
     timed_out = False

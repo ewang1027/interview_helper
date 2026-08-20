@@ -58,6 +58,47 @@ than a rewrite.
 The executor is a separate service specifically so that "runs untrusted code" and "holds
 the database password" are never the same process.
 
+### Where the sandbox actually lives — resolved 2026-08-20
+
+Building the isolation layer raised a question the diagram above did not answer: launching
+a sandbox container requires the Docker socket, and **the Docker socket is root-equivalent
+control of the host** — whoever holds it can start a privileged container mounting `/`.
+Giving that to the service whose job is running LLM-generated code would invert the whole
+boundary.
+
+The resolution turns on a fact about Phase 6, checked against AWS's documentation rather
+than assumed: **Fargate cannot do this at all.** Host bind mounts (`sourcePath`) are
+supported "only when using tasks that are hosted on Amazon EC2 instances or Amazon ECS
+Managed Instances", `devices` is unsupported under Fargate, and every Fargate task "has its
+own isolation boundary and does not share the underlying kernel". There is no socket to
+mount and no sibling container to launch. **The docker-per-execution model is a local
+development strategy that does not survive to production.**
+
+That collapses the question rather than forcing a topology change:
+
+| | Local (now) | Fargate (Phase 6) |
+|---|---|---|
+| What isolates | a throwaway `docker run` container | the Fargate task itself — own microVM, own kernel |
+| Who launches it | the executor service, holding the Docker socket | ECS, from a task definition |
+| Runs untrusted code in-process | never | yes — but the task *is* the boundary |
+
+So the documented topology stands: `apps/executor` remains a service the API calls over
+`EXECUTOR_URL`. Locally it is a **launcher** that holds the Docker socket and no other
+credential and never evaluates candidate code in its own process; under Fargate it becomes
+the sandbox itself and needs no socket. `executor.sandbox.run_sandboxed` is the seam where
+that swap happens.
+
+The residual local risk is honest and bounded: compromising the executor process yields
+the Docker socket and therefore the host. It is accepted because the executor's attack
+surface is one endpoint over FastAPI/uvicorn/Pydantic and nothing else, it holds no DB or
+model credentials, and the exposure exists only on a single-user development machine —
+never in the deployed system, which structurally cannot have it.
+
+**An earlier draft of this note claimed the alternative "contradicts the documented service
+diagram." That was wrong, and the error is worth keeping:** it came from reasoning about
+the trust boundary in the abstract without checking what the target platform permits. The
+platform constraint decided the design.
+
 ## Data model (lands in Phase 3)
 
 | Table | Purpose |
