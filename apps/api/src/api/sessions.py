@@ -112,7 +112,10 @@ def create_session(
             mode=mode,
         )
 
+    user = current_user(db)
     plan = build_plan(
+        db,
+        user.id,
         mode,
         budget_minutes,
         focus_concepts=focus_concepts,
@@ -136,7 +139,7 @@ def create_session(
         )
 
     session_row = InterviewSession(
-        user_id=current_user(db).id,
+        user_id=user.id,
         mode=mode,
         budget_minutes=budget_minutes,
         status="briefing",

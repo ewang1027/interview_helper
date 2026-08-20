@@ -64,7 +64,8 @@ def test_a_session_returns_its_plan_up_front(created_sessions):
     created = start(client, created_sessions)
 
     assert created["state"] == "briefing"
-    assert created["plan"]["adaptive"] is False
+    assert created["plan"]["adaptive"] is True
+    assert created["plan"]["calibration"] is True  # no evidence yet, and it says so
     assert len(created["plan"]["items"]) == 3
 
 

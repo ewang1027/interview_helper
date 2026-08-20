@@ -41,11 +41,12 @@ while live sessions run on Bedrock, funded by AWS credits.
 
 ## How it adapts
 
-**Half built (Phase 4).** Ratings and scheduling run: a graded coding session writes
-evidence and updates `mastery` in the same transaction, and the whole projection —
-item ratings included — rebuilds from that evidence alone. What is missing is the part
-that *uses* it: the weakness priority and the planner. Today's session planner is still a
-placeholder that marks every plan `"adaptive": false`.
+**Built (Phase 4).** A graded session writes evidence, updates `mastery` in the same
+transaction, and the next session is planned from it: concepts ranked by weakness
+priority, then the item whose expected score lands closest to the band where an outcome
+teaches you something. The whole projection — item ratings included — rebuilds from
+evidence alone, and a simulated candidate with an injected weakness is being drilled on it
+within five sessions.
 
 Every graded artifact writes an immutable `concept_evidence` row — that part runs today.
 Mastery is *derived* from that evidence, never hand-written, so it can be recomputed from
@@ -59,7 +60,8 @@ scratch at any time:
   should I see this again*.
 
 The session planner draws from a weakness priority combining low ability, recent error
-rate, overdue review, and prerequisite blocking.
+rate, overdue review, prerequisite blocking and anti-repetition — and every plan shows the
+breakdown, because adaptation you cannot inspect is adaptation you cannot trust.
 
 ## Layout
 
@@ -95,7 +97,7 @@ buildlog disagree about what exists, the buildlog is right.**
 | [GRADING](docs/GRADING.md) | The four graders and what they produce | 2 → 3 | ✅ Coding grader built; rubric graders are Phase 3 |
 | [API](docs/API.md) | Endpoints, session state machine, SSE events, agent tools | 3 | ✅ Sessions built; agent, SSE and auth are spec |
 | [COST](docs/COST.md) | Model routing, hard budgets, the ledger | 3 → 6 | Policy set |
-| [ADAPTIVE](docs/ADAPTIVE.md) | Elo + FSRS, evidence, weakness priority, planning | 4 | ✅ Ratings + replay built; priority and planner are spec |
+| [ADAPTIVE](docs/ADAPTIVE.md) | Elo + FSRS, evidence, weakness priority, planning | 4 | ✅ Built |
 | [WEB](docs/WEB.md) | Routes, the four mode workspaces, dashboard | 5 | Spec |
 | [INFRA](docs/INFRA.md) | AWS from first principles — written to teach | 6 | Spec |
 | [VOICE](docs/VOICE.md) | Vapi adapter, latency budget, what changes for speech | 7 | Spec |
@@ -140,9 +142,10 @@ for what actually exists and what each phase still owes.
       `/api/v1`, plan → submit → grade → report, writing real `concept_evidence`, verified
       end to end against a live stack. The interviewer agent, the SSE stream, rubric
       grading, auth and budget enforcement remain — no model call has been made yet*
-- [ ] **4 — Adaptive engine** — *Elo, FSRS and the replayable projection landed
-      2026-08-20; the weakness priority, the planner that uses it, and the
-      simulated-candidate gate remain*
+- [x] **4 — Adaptive engine** — *Elo, FSRS, the replayable projection, the weakness
+      priority and the planner landed 2026-08-20, verified against both gates in
+      [ADAPTIVE](docs/ADAPTIVE.md). Weights are placeholders until real sessions calibrate
+      them*
 - [ ] **5 — Web app**
 - [ ] **6 — AWS deploy**
 - [ ] **7 — Voice via Vapi**

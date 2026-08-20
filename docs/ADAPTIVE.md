@@ -1,15 +1,16 @@
 # The adaptive engine
 
-> **Status:** Half built (2026-08-20). **Built:** `api.mastery` — Elo `ability` per
-> (user, concept), FSRS `stability`/`due_at` from the `fsrs` package, and
-> `POST /mastery/recompute`, which rebuilds the whole projection (item ratings included)
-> from `concept_evidence` alone. A graded session updates it in the same transaction that
-> writes the evidence, and a db test asserts the incremental result and a from-scratch
-> replay agree **exactly** — half of the verification gate at the end of this document.
-> **Not built:** the weakness priority, the planner that uses it, and the simulated-
-> candidate gate. The session planner in use today is still the placeholder that says so
-> in every plan it produces (`"adaptive": false`). The weights below remain placeholders
-> to be calibrated against real sessions.
+> **Status:** Built (2026-08-20), and verified against both gates at the end of this
+> document. `api.mastery` holds Elo `ability` and FSRS `stability`/`due_at`;
+> `api.priority` ranks concepts by the formula below; `api.planner` turns that ranking
+> into a session, and every plan carries the reasoning behind each item it chose.
+> `POST /mastery/recompute` rebuilds the whole projection — item ratings included — from
+> `concept_evidence` alone.
+> **The weights below are still placeholders**, to be calibrated against real sessions.
+> Two limits are structural at 24 items rather than defects: the prerequisite gate usually
+> has nowhere to send you (no item measures `stack-simulation`), and with one item per
+> concept the informative band cannot influence *which item* is served — only which
+> concept.
 > Related: [CONCEPTS](CONCEPTS.md) (the DAG it plans over) · [GRADING](GRADING.md) (where evidence comes from) · [API](API.md#mastery-and-planning) (how it is exposed) · [GLOSSARY](GLOSSARY.md) · [PRACTICE_LOG](PRACTICE_LOG.md) (a second evidence source, and a lighter FSRS-inspired scheduler at problem granularity)
 
 How the system decides what to make you do next.
@@ -56,6 +57,16 @@ rather than presenting an estimate built on one data point as if it were settled
 **Selection target:** pick items where expected score is around 0.6–0.75. Below that
 you learn little because you fail for uninformative reasons; above it the item confirms
 what is already known.
+
+**A new concept starts at 1550, not at 1200.** That is the median instance rating in the
+corpus, and starting at chess's 1200 was measured doing real damage: every item sat 300–600
+points above a new candidate, the expected score against a median item was 0.12, nothing
+was ever inside the band above — and a candidate who scored 0.2 had *beaten* a 0.09
+expectation, so **failing an item repeatedly raised their rating on it**. A simulated
+candidate who failed `monotonic-stack` five times finished rated higher on it than on the
+concepts they never got wrong. It is a fixed constant rather than a median computed at
+import, because a starting rating that moved with the corpus would change what a replay of
+old evidence produces.
 
 ### `stability` / `due_at` — FSRS
 
@@ -135,8 +146,18 @@ A session is a **budget** (minutes) and a **mode**. The planner:
 2. Selects items whose expected score lands in the informative band.
 3. Respects prerequisites — it will not serve `dp-knapsack` while `dp-1d` is weak; it
    serves `dp-1d`. This is the one place the DAG is a hard gate rather than a hint.
+   **As far as the corpus allows:** substituting toward a concept no item measures would
+   plan a session with nothing in it, so an unserveable prerequisite is reported in the
+   plan and the original concept is kept. At 24 items that is the common case.
 4. Keeps a minority of due-for-review items that you are *good* at, so fluency on
-   solved material does not rot.
+   solved material does not rot. At most one per session — a session is about what you
+   are bad at, and review is the seasoning.
+
+Ties in priority are broken by **distance from the informative band**, which is what makes
+a cold start sensible: with nothing measured, every concept scores identically, and
+without that tie-break the first session is decided by whichever concept id sorts first
+alphabetically. Measured: it served an item the candidate was expected to score 0.43 on
+while an item sitting on the band's edge went unserved.
 
 ## Cold start
 
@@ -149,7 +170,12 @@ threshold, not on a fixed session count.
 
 The Phase 4 gate is a simulated candidate with an injected weakness: a synthetic user
 who scores poorly on a chosen concept cluster and well elsewhere. Within five sessions,
-a majority of served items must target that cluster. **Not built** — it needs the planner.
+a majority of served items must target that cluster. **Built, and it needed strengthening
+before it meant anything.** The first version passed while proving nothing: for want of a
+tie-break the planner served that item in session one, before any evidence existed, so the
+majority was satisfied by a default rather than by adaptation. It now also requires that
+the *first* session not be the weak item, and that the engine end up rating that concept
+lowest of everything it measured — behaviour a default cannot fake.
 
 Plus a replay test — recomputing `mastery` from `concept_evidence` alone must reproduce
 the live table exactly. **Built, and it earned its keep on its first run:** the

@@ -39,9 +39,22 @@ from api.models import ConceptEvidence, Item, Mastery
 
 # --- Elo ------------------------------------------------------------------------------
 
-# The rating a concept starts at, matching `mastery.ability`'s column default and sitting
-# mid-way through the corpus's declared 600..2800 band.
-DEFAULT_ABILITY = 1200.0
+# The rating a concept starts at: the **median instance rating in the corpus**, not the
+# 1200 that chess ratings start from.
+#
+# Measured, with 1200: every corpus item sits 300-600 points above a new candidate, so the
+# expected score against a median item is 0.12. Nothing is ever inside the planner's
+# informative band (0.60-0.75), and — worse — a candidate who scores 0.2 on an item has
+# *beaten* a 0.09 expectation, so failing an item repeatedly **raised** their rating. A
+# simulated candidate who failed `monotonic-stack` five times ended up rated higher on it
+# than on the concepts they never got wrong.
+#
+# A fixed constant rather than a value computed from the corpus at import: a starting
+# rating that moved when the corpus gained an item would change what a replay of old
+# evidence produces, and the projection has to be reproducible. Worth revisiting if the
+# corpus's difficulty distribution moves; the value came from `statistics.median` over the
+# 12 instances on disk (min 1470, median 1550, max 1830).
+DEFAULT_ABILITY = 1550.0
 
 # K decays with the number of observations for that concept: early evidence should move
 # the estimate quickly, later evidence refine it. Chosen, not calibrated — five sessions of

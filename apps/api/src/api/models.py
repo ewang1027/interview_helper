@@ -243,7 +243,9 @@ class Mastery(SQLModel, table=True):
 
     user_id: str = Field(foreign_key="users.id", primary_key=True)
     concept_id: str = Field(foreign_key="concepts.id", primary_key=True)
-    ability: float = 1200.0
+    # Mirrors `api.mastery.DEFAULT_ABILITY`, which explains the value. Python-side only —
+    # the column has no server default, so the engine always states the rating it means.
+    ability: float = 1550.0
     observations: int = 0
     stability: float | None = None
     due_at: datetime | None = Field(default=None, sa_column=_ts(nullable=True))

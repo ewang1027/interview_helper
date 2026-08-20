@@ -6,8 +6,7 @@
 > `GET /mastery`, `GET /mastery/{concept_id}`, `POST /mastery/recompute`, and RFC 9457
 > errors on all of it. `/health` stays at the root deliberately — see below.
 > **Not built:** the SSE stream and every agent tool (there is no interviewer agent, so no
-> model call has ever been made), the weakness and planning routes, the cost routes,
-> `GET /corpus/items/{id}`,
+> model call has ever been made), the cost routes, `GET /corpus/items/{id}`,
 > `Idempotency-Key`, and **auth — every route is still open**, which was acceptable while
 > nothing wrote user data and is now overdue rather than merely absent. Vapi in **Phase 7**.
 > (The executor's `POST /execute` and `POST /probe` are built on their own contract — see
@@ -95,11 +94,12 @@ Only `coding` sessions can be created: creating a session in a mode nothing can 
 would produce an interview that can never complete, so it is refused with `422` naming the
 missing grader rather than allowed and dead-ended at the first submission.
 
-**Planning is not adaptive yet.** Every plan carries `"adaptive": false` and the strategy
-that produced it (`corpus-order-placeholder@1`): eligible items ordered by distance from a
-fixed difficulty target, filled to the time budget. [ADAPTIVE](ADAPTIVE.md)'s engine
-replaces it in Phase 4, and until it does, a plan that claimed to be adapted to you would
-be a lie the response format itself tells.
+**Planning is adaptive** ([ADAPTIVE](ADAPTIVE.md)): concepts ranked by weakness priority,
+then the item whose expected score lands closest to the informative band. Each plan carries
+its own reasoning — which concept an item was chosen for, what you were expected to score,
+the priority terms behind that concept's rank, and the concepts it weighed but did not
+serve. A plan with no evidence behind it says `"calibration": true` rather than implying it
+adapted to something.
 
 **`POST /sessions`**
 
@@ -153,8 +153,8 @@ session. Iterating on a submission is the interviewer loop's job, and that does 
 |---|---|---|---|
 | `GET` | `/mastery` | Every measured concept: ability, stability, due_at, observations | ✅ built |
 | `GET` | `/mastery/{concept_id}` | One concept, with the evidence rows behind it | ✅ built |
-| `GET` | `/mastery/weaknesses` | Ranked weakness list with the priority breakdown | ✗ needs the priority formula |
-| `GET` | `/plan/next` | What the planner would choose right now, without starting a session | ✗ needs the real planner |
+| `GET` | `/mastery/weaknesses` | Ranked weakness list with the priority breakdown | ✅ built |
+| `GET` | `/plan/next` | What the planner would choose right now, without starting a session | ✅ built |
 | `POST` | `/mastery/recompute` | Rebuild the projection from `concept_evidence` | ✅ built |
 
 `GET /mastery` reports `measured` and `calibrating` alongside the rows, because "four

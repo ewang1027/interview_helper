@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from api.executor_client import ProbeOutcome, RunResult
+from api.executor_client import ProbeOutcome, RunFailure, RunResult
 
 
 class FakeRunner:
@@ -51,3 +51,39 @@ class FakeRunner:
         memory_mb: int | None = None,
     ) -> ProbeOutcome:
         return self.probe_result
+
+
+class ScriptedRunner(FakeRunner):
+    """A runner that answers differently per item, for simulating a candidate.
+
+    Selection is by `entrypoint` because that is what identifies an item inside an
+    execution request — the executor holds no corpus and never learns an item id.
+    """
+
+    def __init__(self, weak_entrypoints: set[str], weak_fraction: float = 0.2) -> None:
+        super().__init__()
+        self.weak_entrypoints = weak_entrypoints
+        self.weak_fraction = weak_fraction
+        self.seen: list[str] = []
+
+    def run_tests(
+        self,
+        *,
+        source: str,
+        entrypoint: str,
+        tests: Sequence[Mapping[str, Any]],
+        language: str = "python",
+        test_selection: Sequence[str] = (),
+        wall_ms: int | None = None,
+        memory_mb: int | None = None,
+    ) -> RunResult:
+        self.seen.append(entrypoint)
+        total = len(tests)
+        if entrypoint in self.weak_entrypoints:
+            passed = max(0, int(total * self.weak_fraction))
+            failures = tuple(
+                RunFailure(name=str(case.get("name", "case")), kind="example", message="wrong")
+                for case in tests[passed:]
+            )
+            return RunResult(outcome="ok", passed=passed, total=total, failures=failures)
+        return RunResult(outcome="ok", passed=total, total=total)

@@ -58,3 +58,11 @@ def user_id() -> str:
         user = current_user(db)
         db.commit()
         return user.id
+
+
+@pytest.fixture
+def db_session() -> Iterator[Session]:
+    """A plain database session for tests that call service functions directly."""
+    with Session(get_engine()) as db:
+        yield db
+        db.rollback()

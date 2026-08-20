@@ -23,7 +23,7 @@ detail behind it.
 | **1** Corpus v1 | thin slice | 24 items — 3 archetypes + 3 instances in each of four domains, verified | bulk authoring toward ~400/~150 |
 | **2** Executor + grading | deterministic half **done** | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` |
 | **3** Runtime + API | **half built** | schema + migrations, settings, `ModelRouter`, and the **session layer**: `/api/v1`, plan → submit → grade → report, writing `artifacts`, `gradings`, `concept_evidence` | interviewer agent, SSE stream, rubric graders, **auth**, budget middleware |
-| **4** Adaptive engine | **half built** | Elo `ability`, FSRS `stability`/`due_at`, and a projection that rebuilds from evidence alone — item ratings included | weakness priority, the planner that uses it, the simulated-candidate gate |
+| **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within five sessions | weights are placeholders until real sessions calibrate them |
 | **5–8** Web, AWS, voice, hardening | not started | — | — |
 | **9** Practice log | **schema only** | `practice_problems`, `practice_solves`, and `concept_evidence`'s two-producer shape — all migrated, landed with the Phase 3 slice | classification, endpoints, scheduling; gated on 3 + 4 |
 
@@ -1107,3 +1107,117 @@ the whole reason the grader bothered to record two different numbers.
 The planner. It is the last piece that turns all of this from a measurement into a
 *behaviour* — the point where a weak concept changes what the next session serves — and it
 is what the simulated-candidate gate exists to test. Auth is still owed before deployment.
+
+---
+
+## Phase 4 (the planner) — a gate that passed for the wrong reason · 2026-08-20
+
+The engine chooses now: concepts ranked by weakness priority, then the item whose expected
+score lands closest to the band where an outcome teaches something. Every plan carries the
+reasoning — what each item targets, what you were expected to score, and the concepts it
+weighed but did not serve.
+
+```
+make check          108 passed, 65 deselected (hermetic)
+make test-db        36 passed (live Postgres)
+make test-e2e       1 passed (43s)
+```
+
+### The gate passed, and it was worthless
+
+docs/ADAPTIVE.md's Phase 4 gate: a simulated candidate who fails one concept and aces the
+rest, and within five sessions a majority of served items must target the weakness. It
+passed on the first run. It should not have counted:
+
+```
+session 1: served i.code.0002   <- the weak item, before any evidence existed
+session 2: served i.code.0002
+session 3: served i.code.0002
+...
+```
+
+With nothing measured, every concept has an identical priority, so the ranking fell through
+to its tie-break — sorting by concept id. `monotonic-stack` sorts before `sliding-window`.
+The planner served the weak item five times out of five **by alphabet**, and the assertion
+could not tell that apart from adaptation.
+
+A gate that a default can satisfy is not a gate. It now also requires that the *first*
+session not be the weak item, and that the engine finish rating that concept lowest of
+everything it measured — which no tie-break can fake.
+
+### Then the fixed gate failed, and found the real bug
+
+With the majority requirement made honest, the ranking test failed on a stranger note:
+after failing `monotonic-stack` five times, the candidate's *strongest* concept was
+`monotonic-stack`.
+
+The cause is one constant. `ability` started at **1200**, the number chess ratings start
+from, while the corpus's instances are rated 1470–1830 (median 1550). Consequences, all
+measured:
+
+| with `ability = 1200` | |
+|---|---|
+| expected score against a median item | **0.12** |
+| items inside the planner's 0.60–0.75 band | **none, ever** |
+| scoring 0.2 on a 1600-rated item | *beats* a 0.09 expectation, so ability **rises** |
+| five straight failures on one concept | rating goes **1200 → 1218** |
+
+Elo was working exactly as specified; the origin of the scale was wrong. A new concept now
+starts at **1550**, the median instance rating on disk. Same simulation afterwards:
+
+```
+session 1: served i.code.0001 (expected 0.599 — the item nearest the band)
+session 2: served i.code.0002 -> failed
+sessions 3-5: served i.code.0002
+
+final: monotonic-stack 1519  <- weakest, correctly
+       sliding-window  1567  <- strongest, correctly
+       i.code.0001 elo 1480 -> 1478.6 (easier than believed)
+       i.code.0002 elo 1600 -> 1603.0 (harder than believed)
+```
+
+It is a **fixed** constant, not a median computed from the corpus at import: a starting
+rating that moved when the corpus gained an item would change what a replay of old evidence
+produces, and the projection has to be reproducible.
+
+### The tie-break now does real work
+
+Concepts that tie on priority are ordered by how far their best item sits from the
+informative band. That is the cold-start case — everything ties when nothing is measured —
+and it is the difference between opening with an item you are expected to score 0.43 on and
+one sitting on the band's edge at 0.599.
+
+### Two limits that are the corpus's, not the planner's
+
+- **The prerequisite gate usually has nowhere to send you.** `monotonic-stack` is gated by
+  `stack-simulation`, and no item measures it. Substituting toward it would plan an empty
+  session, so the plan reports the prerequisite and keeps the concept. Both branches are
+  tested against the real DAG; only one is reachable with 24 items.
+- **The band cannot choose an item, only a concept.** Each concept has exactly one item, so
+  once a concept is picked, the item is forced. The mechanism is built and idle.
+
+Neither is worth "fixing" in code. Both are what a corpus of 24 items looks like from
+inside a planner built for 400.
+
+### A route that answered 404 for a route that exists
+
+`GET /mastery/weaknesses` returned a not-found problem document. FastAPI matches routes in
+registration order, and `/mastery/{concept_id}` was declared first, so `weaknesses` arrived
+as a concept id. Declaration order is now load-bearing and says so in a comment.
+
+### Deferred deliberately
+
+- **The weights.** `w1..w5` are the document's placeholders, moved into named constants so
+  calibrating them is an edit in one place. Nothing has been calibrated, because
+  calibrating them needs real sessions.
+- **Cold-start calibration as a distinct plan.** A plan with no evidence behind it is
+  marked `"calibration": true` and ordered by band distance, but there is no separate
+  spread-across-domains strategy — with three coding items, there is nothing to spread.
+- **Concept-level FSRS only.** `due_at` schedules a *concept*; nothing schedules an item.
+- **The db tests still share the development database**, unchanged from the last wave.
+
+### Next
+
+Auth, which has been owed since sessions started writing user data, and after that the
+interviewer agent — the first model call in the project's history, and the point where the
+cost ledger and the budget middleware stop being empty tables.
