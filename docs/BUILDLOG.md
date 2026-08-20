@@ -22,17 +22,19 @@ detail behind it.
 | **0** Foundations | **complete** | workspace, 159-concept taxonomy, corpus schema + validator, CI | — |
 | **1** Corpus v1 | thin slice | 24 items — 3 archetypes + 3 instances in each of four domains, verified | bulk authoring toward ~400/~150 |
 | **2** Executor + grading | deterministic half **done** | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` |
-| **3** Runtime + API | infra only | Postgres schema + migrations, settings, `ModelRouter` | sessions, agent loop, **persisting grades**, rubric graders, auth, budget middleware |
-| **4** Adaptive engine | not started | — | Elo, FSRS, evidence replay, planner. `concept_evidence` rows are now *produced* by grading and written by nothing |
+| **3** Runtime + API | **half built** | schema + migrations, settings, `ModelRouter`, and the **session layer**: `/api/v1`, plan → submit → grade → report, writing `artifacts`, `gradings`, `concept_evidence` | interviewer agent, SSE stream, rubric graders, **auth**, budget middleware |
+| **4** Adaptive engine | not started | — | Elo, FSRS, evidence replay, planner. Its input exists now: a graded session writes real `concept_evidence` rows |
 | **5–8** Web, AWS, voice, hardening | not started | — | — |
 | **9** Practice log | **schema only** | `practice_problems`, `practice_solves`, and `concept_evidence`'s two-producer shape — all migrated, landed with the Phase 3 slice | classification, endpoints, scheduling; gated on 3 + 4 |
 
 Two things worth knowing before reading anything else as further along than it is:
 **no model call has ever been made** — `ModelRouter` resolves config and builds a client,
 nothing calls it, and the token budgets in `.env.example` are read into settings but
-enforced nowhere — and **there is no auth**, so every endpoint is open. That is fine while
-they are `/health`, `/corpus/status` and `/execute` on a dev machine, and it is a hard
-gate before anything reads or writes user data.
+enforced nowhere — and **there is no auth**, so every endpoint is open. That was fine
+while the surface was `/health`, `/corpus/status` and `/execute` on a dev machine. As of
+the session layer it is not: those routes write user data, which this file called a hard
+gate. The gate is crossed knowingly, on a single-user machine, and closing it is the next
+thing owed.
 
 ---
 
@@ -883,3 +885,130 @@ and a mastery number: the `/api/v1` router, the session state machine, and
 `POST /sessions/{id}/submissions` turning a grade into rows in Postgres. It is also the
 first surface where auth stops being theoretical, since it is the first one that writes
 user data.
+
+---
+
+## Phase 3 (session layer) — evidence stops being a return value and becomes a row · 2026-08-20
+
+`/api/v1` exists, and with it the loop the whole project is for: plan a session, submit a
+solution, grade it in the sandbox, write what it proves. `concept_evidence` has rows in it
+for the first time.
+
+```
+make check          98 passed, 46 deselected (hermetic; was 87)
+make test-db        17 passed (live Postgres)
+make test-sandbox   28 passed (real Docker, 137s)
+make test-e2e       1 passed (44s) — the first e2e test in the project
+```
+
+### The first end-to-end run
+
+`make test-e2e` had been a Makefile target with nothing behind it since Phase 0. It now
+runs one scripted coding session with **nothing stubbed**: a real executor process on a
+real socket, real containers, real rows.
+
+| submission | tests | complexity | score |
+|---|---|---|---|
+| `i.code.0001`, the item's own reference | passed | matches | **1.00** |
+| `i.code.0002`, a naive backward scan | passed | slope 2.0, slower_than_target | **0.75** |
+
+Session `complete`, report written, **8 `concept_evidence` rows** — four concepts per
+item, primary at confidence 0.9, the rest at 0.54.
+
+The socket is the part that mattered. Every other test injects the executor app
+in-process, so the path a deployment actually uses — `EXECUTOR_URL` →
+`ExecutorClient()` → HTTP → another process — had never been exercised by anything.
+
+### The schema had nowhere to record a failed grading
+
+`gradings.score` was `NOT NULL`. GRADING.md requires that a grader crash, timeout or OOM
+kill be **recorded** as a failed grading, and with a non-null score the only options were
+a fabricated `0.0` or no row at all — one corrupts mastery, the other hides the failure.
+
+Migration `1408f9143d32` adds `status`, makes `score` nullable, and adds a CHECK:
+`(status = 'graded') = (score IS NOT NULL)`. "Failed but scored 0.0" cannot be written.
+This was specified in a document from Phase 0 and contradicted by a schema from Phase 3;
+nothing caught it until something tried to record one.
+
+### Timestamps had no timezone, and the lucky failure is what found it
+
+`GET /sessions/{id}` reports elapsed seconds. The first call raised:
+
+```
+TypeError: can't subtract offset-naive and offset-aware datetimes
+```
+
+Every datetime column was a naive `TIMESTAMP` — SQLModel's default — while the code
+writes aware UTC. So an aware value went in and a naive one came back.
+
+Fixed at the schema, not at the call site: migration `137646f0d9a1` converts all **21**
+timestamp columns to `TIMESTAMP WITH TIME ZONE`, with an explicit
+`USING <col> AT TIME ZONE 'UTC'` so the conversion states what the existing rows meant
+instead of inheriting it from whatever `TimeZone` the server happened to be set to.
+
+Worth stating plainly: here the defect raised. In Phase 4's FSRS scheduling it would
+**not** have — two naive datetimes subtract perfectly well and quietly mean whatever the
+server's clock was set to. A db test now asserts a round-tripped `ts` comes back aware,
+because the failure it guards against is silent.
+
+### A planner that says it is not one
+
+Real planning needs mastery, which needs evidence, which needed sessions — so this wave
+ships the simplest honest selection: eligible items ordered by distance from a fixed
+difficulty target, filled to the time budget. Every plan it produces carries
+`"adaptive": false`, the strategy id `corpus-order-placeholder@1`, and a `why` string
+saying no mastery data exists. It is deterministic, so the same request twice produces
+the same session — a shuffling planner makes any bug found in a session unreproducible.
+
+### Refusals that mean something
+
+Every error is RFC 9457 `problem+json` with a slug a client can branch on. The ones worth
+naming:
+
+- **422 for a mode with no grader.** A quant session would plan real items and then
+  dead-end at the first submission. Refusing at creation, naming the missing grader, beats
+  an interview that can never complete.
+- **409 for a second submission on one item.** Not `Idempotency-Key` support — a client
+  cannot tell a retry from a real second attempt — but it refuses the harmful half of it:
+  one item cannot write two sets of evidence into one session.
+- **503 with "run `make seed`"** when the plan names items the database has never been
+  told about. The corpus is the source of truth and `items` is a projection of it, so that
+  gap is possible; this one **fired on the first run** — the local database had been
+  seeded before any corpus item was authored — and it said so in a sentence instead of
+  surfacing as a foreign-key violation three calls later.
+
+### What ends a session
+
+`complete` when every planned item has reached a *terminal* grading — and a **failed**
+grading is terminal. Nothing can be resubmitted for that item, so waiting for it would
+leave the session open forever; such a session completes with less evidence than it has
+items, which is the honest outcome. `abandoned` keeps whatever was already graded, per
+API.md: a session you quit halfway through is real data about the half you did.
+
+`wrapping` and `grading` are in the spec's state machine and are **not** simulated. They
+are the agent's and the rubric graders' states; passing through them in microseconds,
+observed by nothing, would be theatre.
+
+### Deferred deliberately
+
+- **Auth — and it is now overdue, not merely absent.** Open routes that write user data
+  are exactly what this file called a hard gate. `api.users.current_user` is the single
+  seam it lands on.
+- **The interviewer agent, the SSE stream, `turns`, hints.** No model call has been made
+  by anything, so `llm_calls` is still empty and the budgets still enforce nothing.
+- **`Idempotency-Key`** on both `POST /sessions` and `/submissions`.
+- **Rubric and quant graders**, which is why only `coding` sessions can be created.
+- **Mastery and cost routes**, and `GET /corpus/items/{id}`'s statement redaction.
+- **Resubmission.** One artifact per item per session. Iterating on a solution is the
+  interviewer loop's job.
+- **Concurrency.** That one-per-item rule is a code check, not a unique index: two
+  simultaneous submissions could both pass it. Single user, so it is a real hole with no
+  realistic trigger — stated rather than closed.
+
+### Next
+
+Auth, before anything else. It is the only thing between "writes user data" and
+"deployable", and every later wave makes it more expensive to retrofit. After that the
+fork is real: the **interviewer agent** (the first model call, which makes the cost ledger
+and the budget middleware live) or **Phase 4's mastery projection**, which finally has
+evidence to replay.

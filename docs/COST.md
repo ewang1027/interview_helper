@@ -4,7 +4,7 @@
 > work** — the table is empty because no model call has ever been made, and nothing writes
 > to it yet. Budget enforcement is **not built**: the limits are read into settings and
 > consumed by nothing. AWS alarms in **Phase 6**. The per-session cost table below is empty
-> because no session has run.
+> because no session calls a model — sessions run, and grade, without one.
 > Related: [ARCHITECTURE](ARCHITECTURE.md#model-routing) · [OPERATIONS](OPERATIONS.md#monitoring) · [RESEARCH](RESEARCH.md#where-it-runs-and-why-that-matters) (why research is free) · [PRACTICE_LOG](PRACTICE_LOG.md) (uses the existing classification job)
 
 This is a designed-in subsystem, not a dashboard bolted on later. A previous project

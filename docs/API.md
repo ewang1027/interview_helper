@@ -1,11 +1,15 @@
 # API and session runtime
 
-> **Status:** Specification — of the surface below, only `/health` and `/corpus/status`
-> exist today, and there is **no auth on any of it**. The rest lands in **Phase 3**; the
-> Vapi shim in **Phase 7**. (The executor's `POST /execute` and `POST /probe` *are* built,
-> but that is a separate service on a separate contract — see [SECURITY](SECURITY.md).
-> `api.executor_client` now speaks to it, and the coding grader uses it; what does not
-> exist is the `run_code` **tool** below — there is no agent to invoke it.)
+> **Status:** Partly built (2026-08-20). **Live:** the `/api/v1` router, `POST /sessions`,
+> `GET /sessions`, `GET /sessions/{id}`, `POST /sessions/{id}/submissions`,
+> `POST /sessions/{id}/end`, `GET /sessions/{id}/report`, `GET /api/v1/corpus/status`, and
+> RFC 9457 errors on all of it. `/health` stays at the root deliberately — see below.
+> **Not built:** the SSE stream and every agent tool (there is no interviewer agent, so no
+> model call has ever been made), the mastery and cost routes, `GET /corpus/items/{id}`,
+> `Idempotency-Key`, and **auth — every route is still open**, which was acceptable while
+> nothing wrote user data and is now overdue rather than merely absent. Vapi in **Phase 7**.
+> (The executor's `POST /execute` and `POST /probe` are built on their own contract — see
+> [SECURITY](SECURITY.md) — and `api.executor_client` is what speaks to them.)
 > Related: [ARCHITECTURE](ARCHITECTURE.md) · [GRADING](GRADING.md) (what the graders do with submissions) · [ADAPTIVE](ADAPTIVE.md) (where the planner gets its input) · [VOICE](VOICE.md) (the second transport) · [WEB](WEB.md) (the first consumer)
 
 This is the contract two separate consumers build against — the web app and the Vapi
@@ -65,24 +69,35 @@ directly.
 
 ## REST endpoints
 
-Base path `/api/v1`, **for everything that does not exist yet**. The two routes that are
-live today are mounted at the **root** with no prefix — `/health` and `/corpus/status` —
-because no `APIRouter` exists. Moving them under `/api/v1` is owed when the router lands;
-until then, following the paths below will 404. All responses `application/json` unless
-noted.
+Base path `/api/v1`. The router exists, and `/corpus/status` moved under it as this
+document said was owed. **`/health` deliberately did not**: it is what a load balancer and
+an ECS task health check poll ([INFRA](INFRA.md)), and it is the one route the auth below
+exempts — keeping it outside the prefix makes that exemption structural instead of a
+special case inside an auth dependency. All responses `application/json` unless noted;
+errors are `application/problem+json`.
 
 ### Sessions
 
-| Method | Path | Purpose |
-|---|---|---|
-| `POST` | `/sessions` | Create and start planning |
-| `GET` | `/sessions/{id}` | Current state, plan, elapsed time, budget consumed |
-| `GET` | `/sessions/{id}/events` | **SSE stream** — the live channel (below) |
-| `POST` | `/sessions/{id}/turns` | Candidate says something |
-| `POST` | `/sessions/{id}/submissions` | Candidate submits code or an answer |
-| `POST` | `/sessions/{id}/end` | End early → `abandoned` |
-| `GET` | `/sessions/{id}/report` | Full report; 409 until `complete` or `abandoned` |
-| `GET` | `/sessions` | History, paginated |
+| Method | Path | Purpose | State |
+|---|---|---|---|
+| `POST` | `/sessions` | Create and plan | ✅ built |
+| `GET` | `/sessions/{id}` | Current state, plan, per-item grading status, elapsed time | ✅ built |
+| `GET` | `/sessions/{id}/events` | **SSE stream** — the live channel (below) | ✗ needs the agent loop |
+| `POST` | `/sessions/{id}/turns` | Candidate says something | ✗ needs the agent loop |
+| `POST` | `/sessions/{id}/submissions` | Candidate submits code or an answer | ✅ built |
+| `POST` | `/sessions/{id}/end` | End early → `abandoned` | ✅ built |
+| `GET` | `/sessions/{id}/report` | Full report; 409 until `complete` or `abandoned` | ✅ built |
+| `GET` | `/sessions` | History, paginated | ✅ built |
+
+Only `coding` sessions can be created: creating a session in a mode nothing can grade
+would produce an interview that can never complete, so it is refused with `422` naming the
+missing grader rather than allowed and dead-ended at the first submission.
+
+**Planning is not adaptive yet.** Every plan carries `"adaptive": false` and the strategy
+that produced it (`corpus-order-placeholder@1`): eligible items ordered by distance from a
+fixed difficulty target, filled to the time budget. [ADAPTIVE](ADAPTIVE.md)'s engine
+replaces it in Phase 4, and until it does, a plan that claimed to be adapted to you would
+be a lie the response format itself tells.
 
 **`POST /sessions`**
 
@@ -95,11 +110,15 @@ noted.
 }
 ```
 
-→ `201` with `{ "id": "...", "state": "planning", "plan": { ... } }`
+→ `201` with `{ "id": "...", "state": "...", "plan": { ... } }`
 
 The `plan` is returned up front deliberately — you should be able to see what it decided
 to drill you on, and why, before the session starts. Opaque adaptation is untrustworthy
 adaptation.
+
+The state in that response is `briefing`, not `planning`: planning is expected to take a
+model call, and the placeholder planner is synchronous, so it is already finished by the
+time the response is written.
 
 **`POST /sessions/{id}/submissions`**
 
@@ -113,11 +132,23 @@ adaptation.
 }
 ```
 
-→ `202 Accepted`. Grading is asynchronous; results arrive on the SSE stream. The endpoint
-returns immediately because a coding submission with a complexity probe can take tens of
-seconds, and a blocked HTTP request is a bad way to wait for that.
+→ `202 Accepted` with `{ artifact_id, item_id, state: "grading", poll }`. Grading is
+asynchronous because a coding submission with a complexity probe takes tens of seconds,
+and a blocked HTTP request is a bad way to wait for that.
+
+Results are specified to arrive on the SSE stream, which lands with the agent loop. Until
+then a client polls `GET /sessions/{id}`, where `items[].status` moves `grading` →
+`graded` | `failed` and carries the score and the grader's detail.
+
+**One submission per item per session**, enforced with `409`. That is not
+`Idempotency-Key` support — a client cannot tell a retry from a genuine second attempt —
+but it refuses the harmful half of it: one item cannot write two sets of evidence into one
+session. Iterating on a submission is the interviewer loop's job, and that does not exist.
 
 ### Mastery and planning
+
+**None of this is built** — it is Phase 4, and there is no `mastery` projection to serve.
+The evidence it will read from is real now: a graded session writes `concept_evidence`.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -138,7 +169,7 @@ correct the evidence and replay — never hand-patch the projection.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/corpus/status` | Counts by domain and kind — **exists today, at `/corpus/status`, not under `/api/v1`** |
+| `GET` | `/corpus/status` | Counts by domain and kind — **built**, now under `/api/v1` |
 | `GET` | `/corpus/items/{id}` | One item, statement redacted if unseen |
 | `GET` | `/costs` | Ledger rollups: per session, per day, per model |
 | `GET` | `/costs/budget` | Remaining session and daily token budget |
@@ -147,6 +178,10 @@ correct the evidence and replay — never hand-patch the projection.
 Reading ahead defeats the measurement.
 
 ## SSE event stream
+
+**Not built.** There is no agent to narrate and no stream to reconnect to; a client learns
+what happened by polling `GET /sessions/{id}`. Specified here because Phase 5 and Phase 7
+both build against it.
 
 `GET /sessions/{id}/events` — `text/event-stream`. Every event is JSON with a `type` and a
 monotonic `seq`.
@@ -199,8 +234,13 @@ agent cannot point at is not evidence.
 
 ## Auth
 
-**None of this is implemented. Every route is open**, and the `users` table exists with a
-`github_id` column that nothing reads. The design, for when it lands:
+**None of this is implemented. Every route is open** — and as of the session layer, open
+routes now read and write user data, which is the line docs/BUILDLOG.md called a hard gate.
+It is crossed, deliberately and on a single-user dev machine, and it is the next thing
+owed. `api.users.current_user` is the seam it lands on: one function resolves the single
+local user today, and nothing downstream has to learn that a user can be someone else.
+
+The design, for when it lands:
 
 Single user. GitHub OAuth → signed session cookie, `HttpOnly`, `Secure`, `SameSite=Lax`.
 One allowed GitHub account id, in config. Everything under `/api/v1` will require it
@@ -211,7 +251,8 @@ calling us, not a browser. See [VOICE.md](VOICE.md#authentication).
 
 ## Errors
 
-RFC 9457 `application/problem+json`:
+RFC 9457 `application/problem+json`, built and used by every route. `type` is a stable
+slug a client can branch on; matching on prose is how error handling rots:
 
 ```jsonc
 {
@@ -230,7 +271,7 @@ RFC 9457 `application/problem+json`:
 | `404` | Unknown session or item |
 | `409` | Wrong state — e.g. report requested before `complete` |
 | `422` | Well-formed but invalid, e.g. submission for an item not in the plan |
-| `429` | **Token budget exceeded** — refused, never silently downgraded ([COST.md](COST.md#hard-budgets)) |
+| `429` | **Token budget exceeded** — refused, never silently downgraded ([COST.md](COST.md#hard-budgets)). Not reachable: nothing meters tokens, because nothing calls a model |
 | `503` | Executor or model provider unavailable |
 
 `429` on budget is a refusal by design. A session that stops and says why is recoverable;
@@ -241,8 +282,10 @@ corrupts mastery.
 
 - **IDs** are ULIDs — sortable by creation time, which makes transcript ordering free.
 - **Timestamps** are RFC 3339 UTC with `Z`.
-- **Idempotency:** `POST /sessions` and `/submissions` accept `Idempotency-Key`. Retrying
-  a submission after a network blip must not double-grade and double-write evidence.
+- **Idempotency:** `POST /sessions` and `/submissions` are specified to accept
+  `Idempotency-Key`; **neither does yet**. `/submissions` is protected by the
+  one-per-item rule above rather than by a key, and `POST /sessions` retried twice creates
+  two sessions. Owed before the web app, which will retry on flaky networks.
 - **Pagination** is cursor-based (`?cursor=&limit=`). Offsets drift when rows are inserted
   under you.
 - **Versioning:** the path carries `v1`. Additive changes ship in place; breaking ones get

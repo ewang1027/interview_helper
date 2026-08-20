@@ -71,8 +71,8 @@ test-sandbox: ## Every test that needs real Docker: escape suite, /execute, /pro
 	@# skipped them silently — which is the failure mode this repo keeps finding.
 	uv run pytest -q -m sandbox
 
-test-e2e: ## One scripted session per mode against a live stack — NO e2e tests exist yet (Phase 3)
-	uv run pytest apps/api/tests -q -m e2e
+test-e2e: ## One scripted coding session against a live stack — needs Postgres AND Docker
+	uv run pytest -q -m e2e
 
 test-db: ## DB-backed tests against a live Postgres (make dev first)
 	uv run pytest apps/api/tests -q -m db

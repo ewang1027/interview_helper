@@ -8,11 +8,13 @@
 > quadratic submission that **passes every one of that item's tests** is caught by the
 > probe alone and scores 0.75, a do-nothing stub scores 0 *with* evidence, and an infinite
 > loop is a failed grading with **none**.
-> **Not built:** persistence — the grader is pure, and no session layer exists to write
-> its rows, so `concept_evidence` is still empty. Also not built: the quant answer check,
-> both rubric graders, the calibration harness, `cpp`, and `peak_rss_kb`. Hint penalties
-> are implemented but nothing *records* hints yet (`turns` has no hint column), so the
-> count is an argument the caller supplies. Rubric graders land in **Phase 3**.
+> The grader itself stays pure — it returns rows and writes nothing — and the **session
+> layer persists them**: a graded submission writes `artifacts`, `gradings` and
+> `concept_evidence`, and a failed one writes a `gradings` row with a NULL score and no
+> evidence at all.
+> **Not built:** the quant answer check, both rubric graders, the calibration harness,
+> `cpp`, and `peak_rss_kb`. Hint penalties are implemented but nothing *records* hints yet
+> (`turns` has no hint column), so the count is an argument the caller supplies.
 > Related: [SECURITY](SECURITY.md) (the sandbox code runs in) · [ADAPTIVE](ADAPTIVE.md) (what the evidence feeds) · [API](API.md) (how results reach the client) · [OPERATIONS](OPERATIONS.md) (calibration drift)
 
 Every graded artifact produces one thing: `concept_evidence` rows. Everything else —

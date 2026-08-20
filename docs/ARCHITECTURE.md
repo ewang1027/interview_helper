@@ -2,12 +2,11 @@
 
 > **Status:** Design, partially built. Real today: the Postgres schema and migrations,
 > settings and `ModelRouter` (unused), the sandbox, `POST /execute` and `POST /probe`, the
-> test harness, the complexity probe, the **deterministic coding grader** (`api.grading`
-> — scores a submission and returns the evidence rows it implies), and a 24-item corpus.
-> Not built: sessions, the agent loop, **persistence of grading results** (the grader is
-> pure; nothing writes its rows, so `concept_evidence` is still empty), rubric grading,
-> mastery, auth, and the budget middleware — so no model call has ever been made.
-> `docs/BUILDLOG.md` is authoritative.
+> test harness, the complexity probe, the **deterministic coding grader**, the
+> **session layer** (`/api/v1` — plan, submit, grade, report) which writes `artifacts`,
+> `gradings` and `concept_evidence`, and a 24-item corpus. Not built: the interviewer
+> agent and its SSE stream — so **no model call has ever been made** — rubric grading,
+> mastery, auth, and the budget middleware. `docs/BUILDLOG.md` is authoritative.
 > Related: [GLOSSARY](GLOSSARY.md) · [API](API.md) · [SECURITY](SECURITY.md) · [INFRA](INFRA.md) · [BUILDLOG](BUILDLOG.md) (what is actually built) · [PRACTICE_LOG](PRACTICE_LOG.md)
 
 ```
@@ -109,9 +108,16 @@ platform constraint decided the design.
 
 ## Data model
 
-**Built.** Every table below exists and is applied by migration `6e1d353bc543`. All are
-empty except `concepts`, `items`, `concept_edges` and `item_concepts`, which `make seed`
-populates from the corpus.
+**Built.** Every table below exists, applied by migrations `6e1d353bc543` (initial),
+`1408f9143d32` (gradings record failures) and `137646f0d9a1` (timestamps carry their
+timezone). `concepts`, `items`, `concept_edges` and `item_concepts` come from `make seed`;
+`users`, `sessions`, `artifacts`, `gradings` and `concept_evidence` are written by a real
+session. `turns`, `mastery`, `llm_calls`, `research_runs` and the practice-log tables are
+still empty — nothing produces their rows yet.
+
+Every timestamp column is `TIMESTAMP WITH TIME ZONE`. The naive default silently returns a
+value with no offset, which raises on the first comparison against an aware `now()` and,
+worse, would *not* raise inside Phase 4's date arithmetic.
 
 | Table | Purpose |
 |---|---|
@@ -122,7 +128,7 @@ populates from the corpus.
 | `sessions` | One mock interview: mode, plan, status, timings. |
 | `turns` | Every exchange, with the tool calls made. The grading input. |
 | `artifacts` | Code submissions, diagrams, transcripts. |
-| `gradings` | One row per graded artifact: score, per-criterion detail, grader version. |
+| `gradings` | One row per graded artifact: `status`, a **nullable** score, detail, grader version. A grader that crashed or timed out is recorded as `failed` with no score — a CHECK keeps "failed but scored 0.0" from existing. |
 | `concept_evidence` | **Immutable.** The source of truth for mastery. Written by graded sessions and, from Phase 9, by the practice log — `item_id`/`session_id` are nullable, and a `source` column plus `practice_problem_id` distinguish the two producers. |
 | `mastery` | Derived projection: ability, stability, due_at, last_seen. |
 | `llm_calls` | Cost ledger: model, tokens in/out/cache, computed $, latency, session. |

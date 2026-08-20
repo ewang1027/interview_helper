@@ -72,6 +72,12 @@ jobs:
       - name: Sandbox tests
         run: uv run pytest -q -m sandbox
 
+      # The only test with nothing stubbed: a real executor process on a socket, real
+      # containers, real rows. Needs the Postgres service and Docker, so it runs here,
+      # after both are known good.
+      - name: End-to-end session
+        run: uv run pytest -q -m e2e
+
       # docs/GRADING.md: reference solutions are verified, not trusted. Runs them
       # through the same sandbox a candidate's submission gets.
       # --complexity additionally asserts each reference solution actually meets the

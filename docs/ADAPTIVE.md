@@ -2,11 +2,11 @@
 
 > **Status:** Specification — not built. Lands in **Phase 4**. The weights in the
 > priority formula are placeholders to be calibrated against real sessions, not tuned
-> values. The **tables** it will write already exist: `concept_evidence` and `mastery` are
-> migrated and covered by DB tests (Phase 3 infra slice). The deterministic coding grader
-> now **produces** evidence rows — concept, score and confidence, per graded submission —
-> but nothing persists them, so both tables are still empty, and no rating, scheduling or
-> planning code exists.
+> values. Its input is **real now**: a graded coding session writes `concept_evidence`
+> rows — concept, score, confidence, item, session — so the replay this design depends on
+> has something to replay. `mastery` is still empty and no rating, scheduling or planning
+> code exists; the session planner in use today is a placeholder that says so in every
+> plan it produces (`"adaptive": false`).
 > Related: [CONCEPTS](CONCEPTS.md) (the DAG it plans over) · [GRADING](GRADING.md) (where evidence comes from) · [API](API.md#mastery-and-planning) (how it is exposed) · [GLOSSARY](GLOSSARY.md) · [PRACTICE_LOG](PRACTICE_LOG.md) (a second evidence source, and a lighter FSRS-inspired scheduler at problem granularity)
 
 How the system decides what to make you do next.

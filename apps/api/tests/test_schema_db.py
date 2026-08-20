@@ -5,6 +5,8 @@ These assert the two invariants the schema is actually responsible for enforcing
 everything else is column plumbing that a migration either applied or didn't.
 """
 
+from datetime import UTC, datetime
+
 import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
@@ -97,3 +99,29 @@ def test_evidence_rejects_both_sources_set(session, concept):
     with pytest.raises(IntegrityError):
         session.flush()
     session.rollback()
+
+
+def test_timestamps_come_back_with_their_timezone(session, concept):
+    """The negative control for the `TIMESTAMPTZ` migration.
+
+    These columns were naive `TIMESTAMP`: an aware UTC value went in and a naive one came
+    back, so the first subtraction against `datetime.now(UTC)` raised. Phase 4's FSRS
+    scheduling would not have raised — it would have subtracted two naive values cleanly
+    and meant whatever the server's clock was set to. Written as a test because the
+    failure it guards against is silent, not loud.
+    """
+    evidence = ConceptEvidence(
+        concept_id=concept.id,
+        source="session_grading",
+        item_id="i.code.0001",
+        score=1.0,
+        confidence=0.9,
+        grader_version="coding.deterministic@1",
+    )
+    session.add(evidence)
+    session.flush()
+    session.refresh(evidence)
+
+    assert evidence.ts.tzinfo is not None
+    # The comparison the API actually makes, and the one that used to raise.
+    assert (datetime.now(UTC) - evidence.ts).total_seconds() >= 0

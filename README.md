@@ -41,13 +41,13 @@ while live sessions run on Bedrock, funded by AWS credits.
 
 ## How it adapts
 
-**Designed, not yet built (Phase 4).** The tables exist and are empty; nothing
-*persists* evidence, and no rating or scheduling code exists.
+**Designed, not yet built (Phase 4).** Evidence is real — a graded coding session writes
+it — but `mastery` is empty and no rating, scheduling or planning code exists. Today's
+session planner is a placeholder that marks every plan `"adaptive": false`.
 
-Every graded artifact will write an immutable `concept_evidence` row. The coding grader
-already *produces* those rows — concept, score, confidence — and nothing writes them yet,
-because there is no session to write them against. Mastery is *derived* from that
-evidence, never hand-written, so it can be recomputed from scratch at any time:
+Every graded artifact writes an immutable `concept_evidence` row — that part runs today.
+Mastery is *derived* from that evidence, never hand-written, so it can be recomputed from
+scratch at any time:
 
 - **`ability`** — an Elo rating per concept, updated against each item's own difficulty
   rating. Answers *how hard should the next question be*.
@@ -60,7 +60,7 @@ rate, overdue review, and prerequisite blocking.
 
 | Path | What it is |
 |---|---|
-| `apps/api/` | FastAPI — `/health` and `/corpus/status` today, plus the **deterministic coding grader** (`api.grading.coding`) and the executor client it runs on; sessions, agent and mastery are Phase 3 |
+| `apps/api/` | FastAPI — `/health`, and under `/api/v1` the **session layer** (plan → submit → grade → report) and `corpus/status`. The deterministic coding grader lives here too; the interviewer agent, its SSE stream, mastery and auth do not |
 | `apps/web/` | *Empty placeholder.* Next.js 15 app, Phase 5 |
 | `apps/executor/` | Sandboxed code runner (no network, non-root, resource-capped) — isolation, `POST /execute` and `POST /probe` (the complexity probe) are built |
 | `packages/corpus/` | Versioned question corpus + JSON Schema + validator (24 items today) |
@@ -88,7 +88,7 @@ buildlog disagree about what exists, the buildlog is right.**
 | [RESEARCH](docs/RESEARCH.md) | How items get researched and authored | 1 | Spec |
 | [SECURITY](docs/SECURITY.md) | Threat model, sandbox isolation, the six escape tests | 2 | ✅ Isolation built |
 | [GRADING](docs/GRADING.md) | The four graders and what they produce | 2 → 3 | ✅ Coding grader built; rubric graders are Phase 3 |
-| [API](docs/API.md) | Endpoints, session state machine, SSE events, agent tools | 3 | Spec |
+| [API](docs/API.md) | Endpoints, session state machine, SSE events, agent tools | 3 | ✅ Sessions built; agent, SSE and auth are spec |
 | [COST](docs/COST.md) | Model routing, hard budgets, the ledger | 3 → 6 | Policy set |
 | [ADAPTIVE](docs/ADAPTIVE.md) | Elo + FSRS, evidence, weakness priority, planning | 4 | Spec |
 | [WEB](docs/WEB.md) | Routes, the four mode workspaces, dashboard | 5 | Spec |
@@ -105,9 +105,10 @@ make dev        # bring up Postgres and run migrations
 make seed       # load the corpus into the database
 make dev-api    # run the API against it (uvicorn --reload)
 make check      # ruff + mypy + pytest + corpus validate + secret scan
-make test-db    # schema tests against the live Postgres
+make test-db    # schema and session tests against the live Postgres
 
 make test-sandbox     # every test needing real Docker: escapes, /execute, /probe, grading
+make test-e2e         # one scripted coding session — needs Postgres AND Docker
 make verify-solutions # every reference solution through the same harness candidates get
 make down             # tear down the local stack
 ```
@@ -130,7 +131,10 @@ for what actually exists and what each phase still owes.
       submission that passes every one of an item's tests is caught by the probe and
       scores 0.75; `cpp` and `peak_rss_kb` remain, both deferred rather than owed*
 - [ ] **3 — Interview runtime (text) + API** — *DB schema, migrations, settings and
-      model routing landed early (2026-08-16); sessions, grading, auth and budgets remain*
+      model routing landed early (2026-08-16); the **session layer** landed 2026-08-20 —
+      `/api/v1`, plan → submit → grade → report, writing real `concept_evidence`, verified
+      end to end against a live stack. The interviewer agent, the SSE stream, rubric
+      grading, auth and budget enforcement remain — no model call has been made yet*
 - [ ] **4 — Adaptive engine**
 - [ ] **5 — Web app**
 - [ ] **6 — AWS deploy**
