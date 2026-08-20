@@ -20,12 +20,12 @@ detail behind it.
 | Phase | State | What exists | What it still owes |
 |---|---|---|---|
 | **0** Foundations | **complete** | workspace, 159-concept taxonomy, corpus schema + validator, CI | — |
-| **1** Corpus v1 | thin slice | 24 items — 3 archetypes + 3 instances in each of four domains, verified | bulk authoring toward ~400/~150 |
-| **2** Executor + grading | deterministic half **done** | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` |
-| **3** Runtime + API | **half built** | schema + migrations, settings, `ModelRouter`, and the **session layer**: `/api/v1`, plan → submit → grade → report, writing `artifacts`, `gradings`, `concept_evidence` | interviewer agent, SSE stream, rubric graders, **auth**, budget middleware |
+| **1** Corpus v1 | **partial** — thin slice | 24 items — 3 archetypes + 3 instances in each of four domains, verified | bulk authoring toward ~400/~150 |
+| **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
+| **3** Runtime + API | **partial** — half built | schema + migrations, settings, `ModelRouter`, and the **session layer**: `/api/v1`, plan → submit → grade → report, writing `artifacts`, `gradings`, `concept_evidence` | interviewer agent, SSE stream, rubric graders, **auth**, budget middleware |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within five sessions | weights are placeholders until real sessions calibrate them |
-| **5–8** Web, AWS, voice, hardening | not started | — | — |
-| **9** Practice log | **schema only** | `practice_problems`, `practice_solves`, and `concept_evidence`'s two-producer shape — all migrated, landed with the Phase 3 slice | classification, endpoints, scheduling. No longer gated on the engine: `apply_evidence` already handles an evidence row with no item, so a logged solve would feed mastery today. It is gated on a **model call**, which nothing in this project has ever made |
+| **5–8** Web, AWS, voice, hardening | **not started** | — | — |
+| **9** Practice log | **partial** — schema only | `practice_problems`, `practice_solves`, and `concept_evidence`'s two-producer shape — all migrated, landed with the Phase 3 slice | classification, endpoints, scheduling. No longer gated on the engine: `apply_evidence` already handles an evidence row with no item, so a logged solve would feed mastery today. It is gated on a **model call**, which nothing in this project has ever made |
 
 Two things worth knowing before reading anything else as further along than it is:
 **no model call has ever been made** — `ModelRouter` resolves config and builds a client,
@@ -1353,3 +1353,96 @@ actually runs. Worth remembering the next time a passing gate is offered as evid
 ### Next
 
 Auth, unchanged from the last entry, and then the interviewer agent.
+
+---
+
+## Repo discipline — two standing rules that had no gate · 2026-08-20
+
+Two rules had governed this repo since Phase 0 and were written down nowhere: a change
+documents itself in the **same commit**, and work is committed and pushed at every
+checkpoint rather than at the end of a session. Habit had held them — of the 24 commits so
+far that touched code, 20 changed documentation in the same breath. This wave writes both
+down in `CLAUDE.md` and gates the parts a script can judge.
+
+```
+make check   112 passed · corpus valid · doc links 18 files · doc consistency 16 docs
+```
+
+### What landed
+
+- **`CLAUDE.md`** — the working agreement: which document owes an update for which kind of
+  change, the rules that keep the set coherent, the commit cadence and prefixes, and an
+  explicit paragraph on what the scripts cannot check.
+- **`scripts/check_docs.py`** (`make doc-check`, and a CI step) — five comparisons between
+  claims that live in two places at once. `check_doc_links.py` proves a cross-reference
+  *resolves*; this proves both ends of it still agree.
+- **`scripts/docs_with_code.sh`** (pre-push) — refuses a push whose commits change code and
+  no `.md`. `wip:` is exempt, because a checkpoint is not a unit of work, and
+  `ALLOW_UNDOCUMENTED=1` is the deliberate exception, typed where it is visible.
+- **`scripts/commit_hygiene.sh`** (`make hygiene`, the tail of `make check`) — reports what
+  is uncommitted and what is unpushed. Never fails, and never runs in CI.
+
+### The four commits that skipped documentation were all gates
+
+Measured rather than assumed, and the pattern was not the one expected. Every commit in
+this history that changed code and no document changed a **gate**: the secret scan
+(`f707bb9`), reference-solution verification (`854da03`), the corpus validator's public
+suffix list (`7e74da0`), and the test pinning `Settings` against `.env.example`
+(`a952f80`). Nothing else slipped — not one feature.
+
+That is a coherent blind spot rather than four lapses. A gate is the one kind of code a
+reader of the documents never watches run, so it is the one kind whose behaviour they can
+only learn from prose. `scripts/`, `hooks/`, `.github/`, the `Makefile` and
+`pyproject.toml` are therefore all on the push gate's list of code.
+
+### The doc gate found something on its first run
+
+README's documentation table indexed `PRACTICE_LOG` as `Spec`, while that document's own
+status header has read "Schema built, behaviour not" since the Phase 3 slice migrated its
+two tables. Neither line is careless and nobody was going to catch it: they are in
+different files and each is true of something.
+
+Four phase rows also carried state cells no script could read — `thin slice`,
+`deterministic half **done**`, `half built`, `schema only`. The state column is now a
+controlled vocabulary (`complete` · `built` · `partial` · `not started`) with the nuance in
+prose after a dash, because the verdict has to sit somewhere a script can compare and the
+sentence after it is for a human. Phase 2 reads `**complete** — the deterministic half it
+was scoped to`, which is what README's checkbox had been claiming on its own.
+
+### The push gate's first draft passed vacuously
+
+`git rev-list` was called with `|| true`, so a range it could not resolve listed no
+commits, found no violations, and pronounced itself clean. What caught it was the test
+written to prove the `wip:` exemption: it printed "clean, 0 commit(s) inspected", the right
+answer for the wrong reason — the range was `HEAD~2..HEAD~1` in a repository with two
+commits. An unresolvable range is now a loud failure.
+
+Negative controls after the fix: one identical one-line code change is let through as
+`wip: checkpoint` and refused as `feat:`, and over the last six real commits the gate
+reproduces the one historical violation in range and clears the other five.
+
+### Every check in the doc gate was verified to fail
+
+Against a copy of `docs/`, one perturbation at a time: a status header deleted, a doc
+nobody indexed, a README checkbox flipped against the buildlog, a state cell written as
+prose, and a wave entry dated after the "Where things stand" heading. All five were
+reported, and the copy passed clean before and after each. Emptying README's table tripped
+the vacuity guard instead of reporting perfect agreement — the failure a consistency gate
+has to be protected from first, since a parser that matches nothing finds every set
+difference empty.
+
+### Deferred deliberately
+
+- **Truth is not checkable.** Every gate here compares two documents to each other. A claim
+  both files make and neither has verified passes cleanly. `CLAUDE.md` says so in the file.
+- **No check that a unit of work leaves a buildlog entry.** The push gate accepts any `.md`
+  change, a typo fix included. Requiring a `docs/BUILDLOG.md` diff was rejected as the kind
+  of rule that gets routed around rather than followed.
+- **`docs_with_code` does not run in CI.** It judges a range of commits, and a CI job on a
+  squashed pull request cannot see one. The hook is the enforcement point and `git push
+  --no-verify` walks past it: this is discipline with a backstop, not a control.
+
+### Next
+
+Unchanged by any of this: auth, owed since sessions started writing user data, and then the
+interviewer agent.

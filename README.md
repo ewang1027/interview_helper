@@ -72,16 +72,18 @@ breakdown, because adaptation you cannot inspect is adaptation you cannot trust.
 | `apps/executor/` | Sandboxed code runner (no network, non-root, resource-capped) — isolation, `POST /execute` and `POST /probe` (the complexity probe) are built |
 | `packages/corpus/` | Versioned question corpus + JSON Schema + validator (24 items today) |
 | `research/` | *Empty placeholder.* Corpus ingestion pipeline, Phase 1 — the 24 items were hand-authored, not pipeline-produced |
-| `scripts/` | `secret_scan.sh` and `verify_reference_solutions.py` — both CI gates |
-| `hooks/` | `pre-push` secret scan, installed by `make setup` |
+| `scripts/` | The gates: secret scan, doc links, doc consistency, reference-solution verification — all four run in CI — plus the local push and hygiene checks |
+| `hooks/` | `pre-push`: secret scan and the docs-with-code check, installed by `make setup` |
 | `infra/compose/` | Local Postgres today; the rest of the stack lands in Phase 6 with the Dockerfiles |
 | `infra/terraform/` | *Empty placeholder.* AWS: VPC, ALB, ECS Fargate, RDS, observability — Phase 6 |
 | `docs/` | Design and specification — see the map below |
+| `CLAUDE.md` | How to work here: docs travel with the code, commit and push at every checkpoint |
 
 ## Documentation
 
 New here? Read [GLOSSARY](docs/GLOSSARY.md) → [ARCHITECTURE](docs/ARCHITECTURE.md) →
-[BUILDLOG](docs/BUILDLOG.md). The glossary defines the vocabulary the others assume, and
+[BUILDLOG](docs/BUILDLOG.md). Changing anything? Read [CLAUDE.md](CLAUDE.md) first — it is
+the working agreement between the code and these documents, and parts of it are gates. The glossary defines the vocabulary the others assume, and
 the buildlog is the only document that always describes reality — **if any doc and the
 buildlog disagree about what exists, the buildlog is right.**
 
@@ -102,16 +104,16 @@ buildlog disagree about what exists, the buildlog is right.**
 | [INFRA](docs/INFRA.md) | AWS from first principles — written to teach | 6 | Spec |
 | [VOICE](docs/VOICE.md) | Vapi adapter, latency budget, what changes for speech | 7 | Spec |
 | [OPERATIONS](docs/OPERATIONS.md) | Backups, deploys, alarms, runbook | 8 | Spec |
-| [PRACTICE_LOG](docs/PRACTICE_LOG.md) | External problem tracker: LLM classification, spaced re-solve queue | 9 (needs 3+4) | Spec |
+| [PRACTICE_LOG](docs/PRACTICE_LOG.md) | External problem tracker: LLM classification, spaced re-solve queue | 9 (needs 3+4) | Schema built; behaviour is spec |
 
 ## Quick start
 
 ```sh
-make setup      # install dependencies and the pre-push secret-scan hook
+make setup      # install dependencies and the pre-push gates (secret scan, docs-with-code)
 make dev        # bring up Postgres and run migrations
 make seed       # load the corpus into the database
 make dev-api    # run the API against it (uvicorn --reload)
-make check      # ruff + mypy + pytest + corpus validate + secret scan
+make check      # ruff + mypy + pytest + corpus validate + doc gates + secret scan, then hygiene
 make test-db    # schema and session tests against the live Postgres
 
 make test-sandbox     # every test needing real Docker: escapes, /execute, /probe, grading

@@ -4,7 +4,7 @@ COMPOSE := docker compose -f infra/compose/docker-compose.yml
 
 .PHONY: help setup dev dev-api down check lint typecheck test fmt \
         corpus-validate seed test-sandbox test-e2e test-db cost-report secret-scan \
-        doc-links verify-solutions clean
+        doc-links doc-check hygiene verify-solutions clean
 
 help: ## Show this help
 	@# [a-zA-Z0-9_-] not [a-z-]: the narrower class silently dropped `test-e2e`
@@ -12,7 +12,7 @@ help: ## Show this help
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | sort | \
 	  awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-setup: ## Install Python deps and the pre-push secret-scan hook
+setup: ## Install Python deps and the pre-push hooks (secret scan, docs-with-code)
 	uv sync --all-packages
 	@# apps/web is an empty Phase 5 placeholder with no package.json, so an unguarded
 	@# `pnpm install` exits 1 and aborts setup BEFORE the hook is installed — meaning a
@@ -34,7 +34,7 @@ dev-api: ## Run the API against the compose Postgres (uvicorn --reload)
 down: ## Tear down the local stack
 	$(COMPOSE) down
 
-check: lint typecheck test corpus-validate doc-links secret-scan ## Everything CI runs
+check: lint typecheck test corpus-validate doc-links doc-check secret-scan hygiene ## Everything CI runs, then a commit-hygiene report
 
 lint: ## Ruff (ESLint joins in Phase 5, with apps/web)
 	uv run ruff check .
@@ -55,6 +55,12 @@ corpus-validate: ## Validate the corpus against its schema, provenance and origi
 
 doc-links: ## Verify every internal doc link resolves — file and heading anchor
 	@uv run python scripts/check_doc_links.py
+
+doc-check: ## Verify the docs agree with each other: status headers, the index, the phase tables
+	@uv run python scripts/check_docs.py
+
+hygiene: ## Report uncommitted and unpushed work (informational — never fails)
+	@bash scripts/commit_hygiene.sh
 
 secret-scan: ## Grep tracked files for common secret shapes (repo is public)
 	@bash scripts/secret_scan.sh

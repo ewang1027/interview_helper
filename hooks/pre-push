@@ -1,5 +1,34 @@
 #!/usr/bin/env bash
-# Installed via: git config core.hooksPath hooks
+# Installed via: git config core.hooksPath hooks (make setup)
+#
+# Two gates, both cheap, both guarding rules that are otherwise upheld by memory alone:
+# nothing secret leaves the machine (docs/SECURITY.md — the repo is public), and nothing
+# undocumented lands on the remote (CLAUDE.md — docs travel with the code).
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
+
 bash scripts/secret_scan.sh
+
+# git feeds a pre-push hook one line per ref on stdin:
+#   <local ref> <local sha> <remote ref> <remote sha>
+# A sha of all zeros means "does not exist": on the local side the ref is being deleted,
+# on the remote side the branch is new and every local commit is about to be published.
+remote=${1:-origin}
+ranges=()
+while read -r local_ref local_sha _remote_ref remote_sha; do
+  if [[ -z ${local_ref:-} || $local_ref != refs/heads/* ]]; then
+    continue  # tags and notes carry no work of their own
+  fi
+  if [[ $local_sha =~ ^0+$ ]]; then
+    continue  # deleting a branch
+  fi
+  if [[ $remote_sha =~ ^0+$ ]]; then
+    ranges+=("$local_sha --not --remotes=$remote")
+  else
+    ranges+=("$remote_sha..$local_sha")
+  fi
+done
+
+if [[ ${#ranges[@]} -gt 0 ]]; then
+  bash scripts/docs_with_code.sh "${ranges[@]}"
+fi

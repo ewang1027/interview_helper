@@ -37,7 +37,7 @@ def anchors_in(text: str) -> set[str]:
 
 def main() -> int:
     root = pathlib.Path(__file__).resolve().parents[1]
-    paths = [*sorted(root.glob("docs/*.md")), root / "README.md"]
+    paths = [*sorted(root.glob("docs/*.md")), root / "README.md", root / "CLAUDE.md"]
     text_of = {p: p.read_text(encoding="utf-8") for p in paths}
     anchor_of = {p: anchors_in(t) for p, t in text_of.items()}
 

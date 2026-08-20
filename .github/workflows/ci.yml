@@ -103,6 +103,12 @@ jobs:
       - name: Doc links
         run: uv run python scripts/check_doc_links.py
 
+      # Links prove a cross-reference resolves; this proves the claims on both ends of
+      # it still agree — a doc indexed as a spec after its schema landed, or a phase the
+      # README calls done and the buildlog calls half built. See CLAUDE.md.
+      - name: Doc consistency
+        run: uv run python scripts/check_docs.py
+
       # Backstop for GitHub's own secret scanning (push protection only sees a
       # push after it lands). This repo is public: see docs/SECURITY.md.
       - name: Secret scan
