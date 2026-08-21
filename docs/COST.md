@@ -3,8 +3,9 @@
 > **Status:** Built (2026-08-20), except the measurements. `api.llm` is the one path to a
 > model: it checks the budget, makes the call, and writes the `llm_calls` row — so the
 > ledger has a producer and the hard budgets have teeth (`429`, refused, never downgraded).
-> `GET /costs` and `GET /costs/budget` are live, and the **interviewer agent calls it** —
-> `job="interviewing"` is a real row. The per-session cost table below is still empty
+> `GET /costs` and `GET /costs/budget` are live, and two callers use it: the interviewer
+> (`job="interviewing"`) and the rubric grader (`job="grading"`). The per-session cost
+> table below is still empty
 > because no full session has been run against a live provider: this account's Bedrock
 > access is gated behind a use-case form (below). AWS alarms in **Phase 6**.
 > Related: [ARCHITECTURE](ARCHITECTURE.md#model-routing) · [OPERATIONS](OPERATIONS.md#monitoring) · [RESEARCH](RESEARCH.md#where-it-runs-and-why-that-matters) (why research is free) · [PRACTICE_LOG](PRACTICE_LOG.md) (uses the existing classification job)

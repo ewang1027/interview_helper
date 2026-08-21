@@ -156,8 +156,9 @@ for what actually exists and what each phase still owes.
       ids shipped since Phase 3 were never callable. **The interviewer agent landed
       2026-08-20**: a system prompt per mode, a turn loop with three tools, and `turns`
       finally getting rows, narrating itself on **the SSE stream** — also landed
-      2026-08-20, carrying the interviewer's text as the model generates it. Rubric
-      grading remains*
+      2026-08-20, carrying the interviewer's text as the model generates it. **Rubric
+      grading landed 2026-08-20** too, so `design` and `behavioral` sessions can be
+      created and graded — `quant` still cannot, and says why*
 - [x] **4 — Adaptive engine** — *Elo, FSRS, the replayable projection, the weakness
       priority and the planner landed 2026-08-20, verified against both gates in
       [ADAPTIVE](docs/ADAPTIVE.md). Weights are placeholders until real sessions calibrate

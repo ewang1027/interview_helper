@@ -158,6 +158,11 @@ criterion. Without them an LLM grader scores on vibe and drifts between runs.
 **Grader version** — stamped on every grading, so evidence stays interpretable after a
 rubric or prompt changes.
 
+**Not demonstrated** — a rubric criterion the candidate never addressed, or one whose
+citation is not in what they wrote. Scores zero and writes **no evidence**: you cannot be
+credited for what you did not do, and silence says nothing about ability. Distinct from
+failing a criterion, which is evidence. → [GRADING](GRADING.md#system-design-and-behavioral)
+
 **Abandoned vs failed** — an abandoned session still writes evidence for what was actually
 graded; a failed one writes none. A grader crash must never produce a fabricated score.
 

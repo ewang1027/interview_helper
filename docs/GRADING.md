@@ -1,6 +1,9 @@
 # Grading
 
-> **Status:** The **coding grader is built and verified end to end** (2026-08-20).
+> **Status:** The **coding grader and the rubric grader are both built** (2026-08-20), so
+> `coding`, `design` and `behavioral` sessions can be created and graded; `quant` cannot,
+> because its deterministic answer check needs a dependency this workspace does not have.
+> On the coding grader:
 > `api.grading.coding` joins an item to its own tests, sends them to the executor's
 > `POST /execute`, measures growth through `POST /probe`, folds the two into a score, and
 > returns the `concept_evidence` rows that score implies. Verified against real containers
@@ -111,6 +114,11 @@ workspace** and is not importable in the project venv. The three `exact` strings
 (`39`, `149/20`, `16/3`) are trivially parseable, so no content is at risk, but the
 grader's first commit has to add the dependency.
 
+This is why `quant` is still the one mode `POST /sessions` refuses (2026-08-20). The rubric
+half of quant grading would work today — it is the same grader system design uses — but
+half a grader is not a grader, and a quant session that scored the reasoning and ignored
+the answer would produce evidence nobody should trust.
+
 But **a correct number with wrong reasoning is not a pass in a quant interview**, so
 the derivation is graded against a `reasoning_rubric` too. The two produce separate
 evidence: the answer writes evidence against the primary concept, the reasoning
@@ -118,21 +126,34 @@ criteria write against whichever concepts they name.
 
 ## System design and behavioral
 
-Rubric grading with structured outputs (`output_config.format`), so the result is a
-validated object rather than prose to be parsed.
+*Built 2026-08-20.* `api.grading.rubric` grades an artifact against its item's rubric with
+structured outputs (`output_config.format`), so the result is a validated object rather
+than prose to be parsed — the response schema even enumerates the item's own criterion ids,
+so a judgement of something not on the rubric cannot be expressed.
 
-Two requirements on every criterion:
+Two requirements on every criterion, both now enforced rather than hoped for:
 
 - **Score anchors.** Each criterion should carry `levels` describing what each score looks
-  like concretely. Without anchors the grader scores on vibe and drifts between runs.
-  **The validator warns rather than errors on a missing `levels`, and the schema does not
-  require it** — all nine rubric items on disk carry anchors by author discipline, not by
-  enforcement.
-- **Citation.** Each judgement must quote the transcript span it is based on. A
-  criterion the grader cannot cite is scored as not-demonstrated, not as failed —
-  those are different, and only one of them is evidence. **Nothing enforces this yet: no
-  rubric grader exists.** It is a requirement on the grader that lands in Phase 3, not a
-  property of anything running today.
+  like concretely. Without anchors the grader scores on vibe and drifts between runs. The
+  anchors are sent **verbatim** in the request rather than summarised into it, and a test
+  asserts that. **The validator still warns rather than errors on a missing `levels`**, so
+  the grader copes: an unanchored criterion is sent with an instruction to judge
+  conservatively, and it says so rather than pretending anchors were there.
+- **Citation.** Each judgement must quote the span it is based on — **and the quote is
+  checked against the artifact.** Whitespace and case are forgiven, because a model that
+  reflows a quotation has still quoted it; anything else is not. A citation that is not in
+  what the candidate wrote is a fabrication, and the criterion is demoted. This is the one
+  control separating "the model read the answer" from "the model wrote a plausible review
+  of an answer".
+
+**Not-demonstrated is not failure.** A criterion nobody addressed scores zero — you cannot
+be credited for what you did not do — and writes **no evidence at all**, because silence
+says nothing about ability. Recording it as failure would tell the adaptive engine you are
+weak at something it never observed, and that is a lie that compounds.
+
+Rubric evidence carries a confidence of **0.5** against a deterministic result's 1.0. A
+model's read of prose is real evidence and a weaker claim than a hidden test passing, and
+docs/ADAPTIVE.md's Elo update is weighted by exactly that number.
 
 Weights sum to 1.0; the validator enforces it.
 

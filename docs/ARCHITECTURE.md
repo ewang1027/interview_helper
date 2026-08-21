@@ -11,7 +11,8 @@
 > `/costs/budget` over it, the **interviewer agent** (`POST /sessions/{id}/turns`, a system
 > prompt per mode, three tools, turns persisted), the **SSE stream** (`GET
 > /sessions/{id}/events`, with the interviewer's text streamed as it is generated), and a
-> 24-item corpus. Not built: rubric grading, and two of the five agent tools.
+> 24-item corpus, and **rubric grading** — so `design` and `behavioral` sessions grade as
+> well as `coding` ones. Not built: quant's answer check, and two of the five agent tools.
 > `docs/BUILDLOG.md` is authoritative.
 > Related: [GLOSSARY](GLOSSARY.md) · [API](API.md) · [SECURITY](SECURITY.md) · [INFRA](INFRA.md) · [BUILDLOG](BUILDLOG.md) (what is actually built) · [PRACTICE_LOG](PRACTICE_LOG.md)
 

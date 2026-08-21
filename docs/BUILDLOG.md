@@ -22,7 +22,7 @@ detail behind it.
 | **0** Foundations | **complete** | workspace, 159-concept taxonomy, corpus schema + validator, CI | — |
 | **1** Corpus v1 | **partial** — thin slice | 24 items — 3 archetypes + 3 instances in each of four domains, verified | bulk authoring toward ~400/~150 |
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
-| **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, three tools, `turns` written), and the **SSE stream** (deltas included) | rubric graders, two agent tools, a full session against a live provider |
+| **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, three tools, `turns` written), the **SSE stream** (deltas included), and **rubric grading** — `design` and `behavioral` sessions grade | quant's answer check, two agent tools, a full session against a live provider |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within five sessions | weights are placeholders until real sessions calibrate them |
 | **5–8** Web, AWS, voice, hardening | **not started** | — | — |
 | **9** Practice log | **partial** — schema only | `practice_problems`, `practice_solves`, and `concept_evidence`'s two-producer shape — all migrated, landed with the Phase 3 slice | classification, endpoints, scheduling. No longer gated on the engine: `apply_evidence` already handles an evidence row with no item, so a logged solve would feed mastery today. It is gated on a **model call**, which nothing in this project has ever made |
@@ -1991,3 +1991,85 @@ relearning about gates: verify the thing happened, do not assume it did.
 Rubric grading, which is what turns `quant`, `design` and `behavioral` from planned modes
 into sessions that can be created — `create_session` refuses them today because nothing can
 grade them.
+
+---
+
+## Phase 3 (rubric grading) — a citation that is checked · 2026-08-20
+
+`api.grading.rubric` judges an artifact against its item's rubric with structured outputs,
+and `POST /sessions` stopped refusing `design` and `behavioral`. Three of the four modes
+now run end to end.
+
+```
+make check       183 passed (hermetic)
+make test-db     103 passed (live Postgres; was 79)
+```
+
+### The control that makes a rubric grade worth anything
+
+docs/GRADING.md has asked since Phase 0 that every judgement quote the span it is based on.
+Asking a model to cite is easy; the useful part is **checking the quote against the
+artifact**. Whitespace and case are forgiven — a model that reflows a quotation has still
+quoted it — and anything else is not. A citation that is not in what the candidate wrote is
+a fabrication, and the criterion is demoted to not-demonstrated with the reason recorded.
+
+Quotes shorter than twelve characters are rejected outright: `"the"` is a substring of
+every answer and evidence of nothing.
+
+### Not-demonstrated and failed are different, and the difference is the evidence
+
+A criterion nobody addressed **scores zero** — you cannot be credited for what you did not
+do — and writes **no `concept_evidence` row at all**. Recording silence as failure would
+tell the adaptive engine you are weak at something it never observed, and mastery is
+derived from evidence, so that lie would compound through every later plan.
+
+The same rule catches the model skipping a criterion: nothing said about it is the same
+conclusion as the candidate not addressing it, and it is the honest one.
+
+### The response schema enumerates the item's own criteria
+
+`output_config.format` with an `enum` of this item's criterion ids, so a judgement of
+something not on the rubric cannot be expressed rather than having to be filtered out
+afterwards. The anchors go into the request verbatim rather than summarised, because
+summarising them is the same drift the anchors exist to prevent, just slower.
+
+### Which grader runs is the item's decision, not the mode's
+
+`grading.type` is what the corpus schema makes authoritative; a mode is only the set of
+items it draws from. So `_grade` dispatches on the item, and an item whose type nothing
+implements is a **failed grading with a reason** rather than a zero. Same for a provider
+that will not answer: a test drives the grader into an unreachable model and asserts the
+item reports `failed`, the score is NULL, and no evidence is written.
+
+### A "hermetic" test suite that needed Postgres and left rows behind
+
+The rubric tests started life unmarked, and passed — because Postgres happens to be running
+on this machine. Every one of them wrote an `llm_calls` row, and eleven orphans were sitting
+in the development database before the count was checked.
+
+That is right, not a bug in the ledger: `api.llm` records every call, and a grader whose
+cost became invisible when it was faked would be invisible in exactly the runs that
+exercise it most. The tests are marked `db` now, clean up the rows they cause, and the
+module docstring says why a test of a pure function needs a database.
+
+### `quant` is still refused, and says why
+
+Its answer check is deterministic — sympy equivalence, so `1/3`, `0.333…` and `2/6` all
+pass — and sympy is not a dependency of this workspace. The rubric half would work today,
+which is the temptation: a quant session that graded the reasoning and ignored the answer
+would produce evidence nobody should trust. Half a grader is not a grader.
+
+### Deferred deliberately
+
+- **Quant**, above.
+- **No transcript grading.** A rubric grades the submitted artifact, not the conversation
+  around it. `record_observation` is what would make the transcript evidence, and it is
+  still unbuilt for the reason it always was.
+- **Confidence is a constant.** Rubric evidence is 0.5 against a deterministic result's
+  1.0. Whether a cited, anchored judgement deserves more than an uncited one is a real
+  question and needs real sessions to answer.
+
+### Next
+
+Quant, which is the last mode and the smallest remaining grader: a dependency, an
+equivalence check, and the reasoning rubric it already shares with system design.

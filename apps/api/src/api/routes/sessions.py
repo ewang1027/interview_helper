@@ -144,6 +144,7 @@ def create_submission(
     background: BackgroundTasks,
     db: DbSession,
     runner: Runner,
+    model: ModelClient,
     principal: CurrentPrincipal,
 ) -> dict[str, Any]:
     session_row = _owned(db, session_id, principal)
@@ -156,7 +157,9 @@ def create_submission(
         language=body.language,
         elapsed_seconds=body.elapsed_seconds,
     )
-    background.add_task(service.grade_artifact, artifact.id, runner)
+    # The model client goes with the runner: a rubric-graded item needs one, and a test
+    # that stubs the executor but not the model would reach a provider from a `db` test.
+    background.add_task(service.grade_artifact, artifact.id, runner, model)
     return {
         "artifact_id": artifact.id,
         "item_id": artifact.item_id,

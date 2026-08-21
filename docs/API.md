@@ -100,9 +100,12 @@ errors are `application/problem+json`.
 | `GET` | `/sessions/{id}/report` | Full report; 409 until `complete` or `abandoned` | ✅ built |
 | `GET` | `/sessions` | History, paginated | ✅ built |
 
-Only `coding` sessions can be created: creating a session in a mode nothing can grade
-would produce an interview that can never complete, so it is refused with `422` naming the
-missing grader rather than allowed and dead-ended at the first submission.
+`coding`, `design` and `behavioral` sessions can be created; **`quant` is refused with
+`422`** naming the missing grader, because creating a session in a mode nothing can grade
+would produce an interview that can never complete. Quant's answer check is deterministic
+and needs a dependency this workspace does not have yet
+([GRADING.md](GRADING.md#quant)) — the rubric half alone would score the reasoning and
+ignore the answer.
 
 **Planning is adaptive** ([ADAPTIVE](ADAPTIVE.md)): concepts ranked by weakness priority,
 then the item whose expected score lands closest to the informative band. Each plan carries

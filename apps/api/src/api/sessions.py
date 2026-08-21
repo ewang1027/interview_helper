@@ -35,7 +35,7 @@ from sqlmodel import Session, col, select
 from api import events as event_bus
 from api.agent import loop as agent_loop
 from api.db import get_engine
-from api.errors import not_found, unavailable, unprocessable, wrong_state
+from api.errors import ProblemError, not_found, unavailable, unprocessable, wrong_state
 from api.executor_client import (
     CodeRunner,
     ExecutorProtocolError,
@@ -43,6 +43,7 @@ from api.executor_client import (
     Language,
 )
 from api.grading.coding import GRADER_VERSION, CodingGrade, grade_coding
+from api.grading.rubric import RubricGrade, grade_rubric
 from api.mastery import apply_evidence, lock_projection
 from api.models import Artifact, ConceptEvidence, Grading, InterviewSession, Item, Turn
 from api.planner import build_plan, eligible_items, plan_item_ids
@@ -77,8 +78,12 @@ REPORTABLE_STATES = frozenset({"complete", "abandoned"})
 
 # Modes with a grader that exists. Creating a session in a mode nothing can grade would
 # produce an interview that can never complete, so it is refused with the reason rather
-# than allowed and then dead-ended at submission time. Widens as graders land.
-GRADEABLE_MODES = frozenset({"coding"})
+# than allowed and then dead-ended at submission time.
+#
+# `design` and `behavioral` joined when the rubric grader landed; `quant` has not, because
+# its answer check is deterministic (sympy equivalence) and sympy is not a dependency of
+# this workspace yet — half of that grader existing is not the same as it existing.
+GRADEABLE_MODES = frozenset({"coding", "design", "behavioral"})
 
 # The languages the executor will accept, as a narrowing table: `artifacts.language` is
 # a free string in the database, and handing an unknown one straight to the grader would
@@ -368,7 +373,7 @@ def record_submission(
 # --- Grading --------------------------------------------------------------------------
 
 
-def grade_artifact(artifact_id: str, runner: CodeRunner | None = None) -> None:
+def grade_artifact(artifact_id: str, runner: CodeRunner | None = None, client: Any = None) -> None:
     """Grade one stored submission and write what it implies.
 
     Runs *outside* the request (a coding grade with a complexity probe takes tens of
@@ -384,13 +389,13 @@ def grade_artifact(artifact_id: str, runner: CodeRunner | None = None) -> None:
     409 because the artifact already existed. The client had its 202 and never found out.
     """
     try:
-        _grade(artifact_id, runner)
+        _grade(artifact_id, runner, client)
     except Exception as exc:
         LOGGER.exception("grading %s failed outside the grader", artifact_id)
         _record_crash(artifact_id, f"{type(exc).__name__}: {exc}")
 
 
-def _grade(artifact_id: str, runner: CodeRunner | None) -> None:
+def _grade(artifact_id: str, runner: CodeRunner | None, client: Any = None) -> None:
     with Session(get_engine()) as db:
         artifact = db.get(Artifact, artifact_id)
         if artifact is None:  # pragma: no cover - only reachable if the row was deleted
@@ -400,30 +405,53 @@ def _grade(artifact_id: str, runner: CodeRunner | None) -> None:
             _record_failure(db, artifact, f"{artifact.item_id} is not in this build's corpus")
             return
 
-        language = LANGUAGES.get(artifact.language or "python")
-        if language is None:
-            _record_failure(
-                db, artifact, f"{artifact.language!r} is not a language the executor runs"
-            )
-            return
-
         # Hints taken during the interview cost score (docs/GRADING.md), counted from the
-        # turn record. Zero when the session never used the agent, which is every session
-        # this project has run so far.
+        # turn record. Zero when the session never used the agent.
         hints = agent_loop.hints_revealed(db, artifact.session_id, artifact.item_id)
         event_bus.bus().publish(artifact.session_id, "grading.started", item_id=artifact.item_id)
+
+        # Which grader runs is the *item's* decision, not the mode's: `grading.type` is what
+        # the corpus schema makes authoritative, and a mode is just the set of items it
+        # draws from. An item whose type nothing implements is a failed grading with a
+        # reason, never a zero.
+        grading_type = (item.grading or {}).get("type")
         try:
-            grade = grade_coding(
-                item,
-                artifact.content,
-                runner=runner,
-                language=language,
-                hints_revealed=hints,
-            )
+            if grading_type == "tests":
+                language = LANGUAGES.get(artifact.language or "python")
+                if language is None:
+                    _record_failure(
+                        db, artifact, f"{artifact.language!r} is not a language the executor runs"
+                    )
+                    return
+                grade: CodingGrade | RubricGrade = grade_coding(
+                    item,
+                    artifact.content,
+                    runner=runner,
+                    language=language,
+                    hints_revealed=hints,
+                )
+            elif grading_type == "rubric":
+                grade = grade_rubric(
+                    item,
+                    artifact.content,
+                    hints_revealed=hints,
+                    session_id=artifact.session_id,
+                    client=client,
+                )
+            else:
+                _record_failure(
+                    db, artifact, f"no grader for {item.id} (grading.type={grading_type!r})"
+                )
+                return
         except ExecutorUnavailableError as exc:
             # The submission is not at fault and must not be scored for it. The artifact
             # stays on disk, so re-running the grader later is all it takes.
             _record_failure(db, artifact, f"executor unavailable: {exc}")
+            return
+        except ProblemError as exc:
+            # The rubric grader's provider was refused or unavailable, or the budget was
+            # spent. Same reasoning as above: not the candidate's fault, so not their score.
+            _record_failure(db, artifact, f"grader could not reach a model: {exc.detail}")
             return
         except (ExecutorProtocolError, ValueError) as exc:
             _record_failure(db, artifact, f"grader refused this submission: {exc}")
@@ -475,7 +503,7 @@ def _record_failure(db: Session, artifact: Artifact, detail: str) -> None:
     _maybe_complete(db, artifact.session_id)
 
 
-def _record_grade(db: Session, artifact: Artifact, grade: CodingGrade) -> None:
+def _record_grade(db: Session, artifact: Artifact, grade: CodingGrade | RubricGrade) -> None:
     # Before the evidence rows exist, so their `ts` values are stamped inside the critical
     # section and a replay sees them in the order they were applied.
     lock_projection(db)

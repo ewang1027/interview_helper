@@ -212,6 +212,7 @@ def _request(
     system: str | list[dict[str, Any]] | None,
     tools: list[dict[str, Any]] | None,
     effort: str | None,
+    output_schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The request body, built the same way for a streamed and an unstreamed call.
 
@@ -223,8 +224,16 @@ def _request(
         request["system"] = cached_system(system) if isinstance(system, str) else system
     if tools:
         request["tools"] = tools
+    output_config: dict[str, Any] = {}
     if effort is not None:
-        request["output_config"] = {"effort": effort}
+        output_config["effort"] = effort
+    if output_schema is not None:
+        # A validated object instead of prose to be parsed (docs/GRADING.md). The first text
+        # block of the response is then guaranteed to be JSON matching the schema, which is
+        # the difference between a grader and a regex over an essay.
+        output_config["format"] = {"type": "json_schema", "schema": output_schema}
+    if output_config:
+        request["output_config"] = output_config
     return request
 
 
@@ -236,6 +245,7 @@ def complete(
     tools: list[dict[str, Any]] | None = None,
     session_id: str | None = None,
     max_tokens: int = DEFAULT_MAX_TOKENS,
+    output_schema: dict[str, Any] | None = None,
     client: MessagesClient | None = None,
     settings: Settings | None = None,
     router: ModelRouter | None = None,
@@ -255,6 +265,7 @@ def complete(
         system=system,
         tools=tools,
         effort=routing.effort_for(job),
+        output_schema=output_schema,
     )
     started = time.monotonic()
     try:
