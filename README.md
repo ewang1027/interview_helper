@@ -104,7 +104,7 @@ buildlog disagree about what exists, the buildlog is right.**
 | [INFRA](docs/INFRA.md) | AWS from first principles — written to teach | 6 | Spec |
 | [VOICE](docs/VOICE.md) | Vapi adapter, latency budget, what changes for speech | 7 | Spec |
 | [OPERATIONS](docs/OPERATIONS.md) | Backups, deploys, alarms, runbook | 8 | Spec |
-| [PRACTICE_LOG](docs/PRACTICE_LOG.md) | External problem tracker: LLM classification, spaced re-solve queue | 9 (needs 3+4) | Schema built; behaviour is spec |
+| [PRACTICE_LOG](docs/PRACTICE_LOG.md) | External problem tracker: LLM classification, spaced re-solve queue | 9 (needs 3+4) | ✅ Built |
 
 ## Quick start
 
@@ -134,9 +134,11 @@ for `curl`; a browser logs in through GitHub, which additionally needs an OAuth 
 
 ## Build status
 
-**Phases 0 and 2 complete for what they were scoped to. Phases 1 and 3 partially
-landed**, deliberately out of order — each was taken far enough to unblock the next. See [`docs/BUILDLOG.md`](docs/BUILDLOG.md)
-for what actually exists and what each phase still owes.
+**Phases 0 and 2 complete for what they were scoped to; 4 and 9 built; 1 and 3 partially
+landed**, deliberately out of order — each was taken far enough to unblock the next. Phase
+3 now owes one thing and it is not code: a full session against a live provider. See
+[`docs/BUILDLOG.md`](docs/BUILDLOG.md) for what actually exists and what each phase still
+owes.
 
 - [x] **0 — Foundations:** repo, schema, taxonomy, corpus contract, CI
 - [ ] **1 — Corpus v1:** researched, evidence-ranked, original statements — *thin slice
@@ -172,4 +174,7 @@ for what actually exists and what each phase still owes.
 - [ ] **6 — AWS deploy**
 - [ ] **7 — Voice via Vapi**
 - [ ] **8 — Hardening**
-- [ ] **9 — Practice log:** external problem tracking, classification, spaced re-solve queue
+- [x] **9 — Practice log** — *external problem tracking, classification behind a
+      confidence gate, and the spaced re-solve queue, landed 2026-08-21. A logged solve
+      writes real `concept_evidence` and moves the same mastery a graded submission does.
+      The classifier is uncalibrated — no gold set, and no real model has run it*

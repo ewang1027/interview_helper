@@ -195,6 +195,35 @@ the adaptive engine auditable: every number traces to graded artifacts you can r
 ([ADAPTIVE.md](ADAPTIVE.md#evidence-not-scores)). If a grader bug is found and fixed,
 correct the evidence and replay — never hand-patch the projection.
 
+### Practice log
+
+*Built 2026-08-21.* Problems you solved elsewhere, folded into the same mastery —
+[PRACTICE_LOG](PRACTICE_LOG.md) is the design.
+
+| Method | Path | Purpose | State |
+|---|---|---|---|
+| `POST` | `/practice/problems` | Log a solved problem; classifies it synchronously | ✅ built |
+| `GET` | `/practice/problems` | List, cursor-paginated, filterable by `concept_id` and `status` | ✅ built |
+| `GET` | `/practice/problems/{id}` | Detail, solve history, and the evidence those solves produced | ✅ built |
+| `PATCH` | `/practice/problems/{id}/classification` | Confirm or correct the tag; writes the held evidence | ✅ built |
+| `POST` | `/practice/problems/{id}/reviews` | Record a re-solve; `409` unless the problem is `active` | ✅ built |
+| `GET` | `/practice/review-queue` | What is due, most overdue first | ✅ built |
+
+**`POST /practice/problems` is synchronous and answers `201`**, unlike a submission's
+`202`. A submission may involve a sandbox and a complexity probe; this is one small
+structured-output call with nothing to wait on, and returning the classification already
+resolved is the difference between logging a problem and logging one and then polling.
+
+**A classification below `0.75` confidence writes no evidence.** The problem lands
+`pending_classification` — recorded, listed, out of the review queue, feeding nothing —
+until `PATCH .../classification` confirms or corrects it. `concept_evidence` is immutable,
+so this is what stops a guess becoming a permanent fact about your mastery. Resolving a
+classification that was already acted on is a `409` that says so.
+
+**A provider that is down does not lose the entry.** Classification failure lands the
+problem in the same pending state, which a human already resolves — so an outage costs a
+confirmation rather than the record of something you actually solved.
+
 ### Corpus and cost
 
 | Method | Path | Purpose |

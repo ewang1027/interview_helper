@@ -168,9 +168,16 @@ anthropic.claude-sonnet-4-6`, gives `$3.00/M` in, `$15.00/M` out, `$0.30/M` cach
 one-hour cache write at 2x input rather than 1.25x, which is why this system asks for the
 five-minute default and nothing offers to change it.
 
-[PRACTICE_LOG](PRACTICE_LOG.md)'s problem-classification calls (Phase 9) log here with
-`job="practice_log_classify"`, riding the existing "Classification, extraction" routing
-row above rather than adding a new one.
+[PRACTICE_LOG](PRACTICE_LOG.md)'s problem-classification calls log here with
+`job="practice_log_classify"` (built 2026-08-21). They ride the same *model* as
+"Classification, extraction" above, through a router entry of their own — this document
+used to say no new entry was needed, which conflated the two. The ledger records the job
+the router was asked for, so granularity here and shared routing above are the same
+decision, not a trade between them.
+
+These are also the only calls in the system with **no `session_id`**: a problem you solved
+elsewhere belongs to no interview, so they land against the daily budget and appear in
+`/costs` under their own job rather than under any session's spend.
 
 `api.llm.record_call` writes the row, **in its own transaction**, before the caller sees the
 completion. The spend happened whatever the caller does next, and a caller that raises

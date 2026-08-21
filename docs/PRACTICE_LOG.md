@@ -1,10 +1,17 @@
 # The practice log
 
-> **Status:** Schema built, behaviour not. The two tables below and the `concept_evidence`
-> extension exist and are migrated (they landed with the Phase 3 slice, 2026-08-16); the
-> classification call, the REST surface and the scheduling rule are **not** built. Lands
-> in **Phase 9**, still gated on the rest of Phase 3 (API, a live `ModelRouter`) and
-> Phase 4 (mastery) existing first.
+> **Status:** **Built (2026-08-21).** The two tables landed with the Phase 3 slice
+> (2026-08-16); the classification call, the scheduling rule and all six endpoints are now
+> built and verified against a scripted classifier — a logged solve writes real
+> `concept_evidence` and moves the same `mastery` projection a graded submission does, and
+> a session carrying practice evidence replays exactly. Its gates — Phase 3's API and a
+> live `ModelRouter`, and Phase 4's mastery — were all met by 2026-08-20.
+> **Not built:** the hand-labeled gold set the open questions below ask for, and no real
+> model has classified anything yet: like every other model path here, that waits on
+> Bedrock access ([COST](COST.md)).
+> Two deviations from what follows are recorded in the buildlog wave: the confidence for a
+> *successful* solve (0.7) was unspecified here, and a classification failure lands a
+> problem pending rather than failing the request.
 > Related: [ARCHITECTURE](ARCHITECTURE.md#data-model) ·
 > [ADAPTIVE](ADAPTIVE.md) (the evidence/scheduling machinery this reuses) ·
 > [CORPUS](CORPUS.md) (why this is manual-entry-only) ·

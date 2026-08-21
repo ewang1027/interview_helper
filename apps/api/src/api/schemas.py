@@ -8,6 +8,7 @@ Pydantic models here would either lie about that or duplicate every grader's sch
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -41,3 +42,45 @@ class SubmissionRequest(BaseModel):
     language: str | None = None
     content: str = Field(min_length=1)
     elapsed_seconds: int = Field(default=0, ge=0)
+
+
+# --- Practice log (docs/PRACTICE_LOG.md) ----------------------------------------------
+
+
+SourceSite = Literal["leetcode", "codeforces", "other"]
+
+
+class LogProblemRequest(BaseModel):
+    """A problem you solved elsewhere.
+
+    `url` is a pointer and is never fetched — docs/PRACTICE_LOG.md's manual-entry-only
+    rule, which is what keeps someone else's problem text out of this repo. `notes` is
+    your own writing for the same reason, and it is the field most likely to be pasted
+    into, so it is capped rather than trusted.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=300)
+    url: str = Field(min_length=1, max_length=2000)
+    source_site: SourceSite = "other"
+    notes: str | None = Field(default=None, max_length=4000)
+    difficulty_label: str | None = Field(default=None, max_length=64)
+    solved_at: datetime | None = None
+
+
+class ClassificationRequest(BaseModel):
+    """Confirming or correcting what the classifier proposed."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    primary_concept_id: str = Field(min_length=1)
+    secondary_concept_ids: tuple[str, ...] = ()
+
+
+class ReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    is_success: bool
+    notes: str | None = Field(default=None, max_length=4000)
+    attempted_at: datetime | None = None

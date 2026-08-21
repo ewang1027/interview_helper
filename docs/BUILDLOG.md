@@ -25,7 +25,7 @@ detail behind it.
 | **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | a full session against a live provider — gated on Bedrock access, not on code |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within five sessions | weights are placeholders until real sessions calibrate them |
 | **5–8** Web, AWS, voice, hardening | **not started** | — | — |
-| **9** Practice log | **partial** — schema only | `practice_problems`, `practice_solves`, and `concept_evidence`'s two-producer shape — all migrated, landed with the Phase 3 slice | classification, endpoints, scheduling. No longer gated on the engine: `apply_evidence` already handles an evidence row with no item, so a logged solve would feed mastery today. It is gated on a **model call**, which nothing in this project has ever made |
+| **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
 
 One thing worth knowing before reading anything else as further along than it is:
 **no full session has run against a live model.** The interviewer exists and is exercised
@@ -2686,3 +2686,101 @@ Phase 3 owes exactly one thing now, and it is not code: **a full session against
 provider**, gated on the Bedrock use-case form in docs/COST.md. The phase stays `partial`
 rather than being promoted, because this repo's rule is that built means something that ran
 proved it, and that one has not run.
+
+---
+
+## Phase 9 (practice log) — solved elsewhere, counted here · 2026-08-21
+
+Classification, scheduling and six endpoints. A problem you solved on LeetCode now writes
+real `concept_evidence` and moves the same `mastery` projection a graded submission does.
+
+```
+make check       248 passed (hermetic; was 238 — the schedule and the request shape)
+make test-db     138 passed (live Postgres; was 123 — the flows, the gate, the replay)
+```
+
+### The gate that stops a guess becoming permanent
+
+`concept_evidence` is immutable. That is the whole design, and it is exactly what makes a
+classification call dangerous: a row written against a tag the model guessed wrong could
+never be retracted without an amendment mechanism nothing else here needs.
+
+So nothing is written against a guess. Below `0.75` confidence the problem lands
+`pending_classification` — recorded, listed, **out of the review queue**, feeding nothing —
+until a human confirms or corrects it, which is what writes the evidence that waited. The
+proposal is still shown, because correcting one beats retyping it.
+
+A pending problem also carries **no schedule**. That was not in the spec and it follows from
+the same reasoning: a due date on something that feeds nothing is a prompt to re-solve a
+problem the system could not record you having re-solved.
+
+### A provider that is down must not cost you the entry
+
+`classify` never raises. A logged solve is something a person actually did, and losing the
+record because a provider hiccuped would be the expensive failure; landing it in the pending
+state a human already resolves costs a confirmation.
+
+The first version of that was wrong in a way a test caught immediately: it caught
+`ProblemError`, the class `api.llm` maps provider failures to, and nothing else. A raw
+provider or wiring error — the test used a client that simply raises — went straight through
+a function whose docstring says it never raises. It now catches broadly and logs a
+traceback, so a bug in there is visible rather than quietly becoming a pending problem
+forever.
+
+### Two departures from the spec, both recorded rather than smoothed over
+
+- **docs/PRACTICE_LOG.md gave a confidence for a failed re-solve (0.5) and none for a
+  successful one.** A self-reported solve is now `0.7`: above a rubric judgement's 0.5,
+  because it is a fact about a real solve rather than a model's read of prose — and well
+  below a hidden test's 0.9, because nothing checked it. Secondary concepts take the same
+  fraction of that the coding grader uses, rather than a second opinion about the same
+  question.
+- **Both ARCHITECTURE.md and COST.md said the classification needed no new job type.** It
+  needed no new *model*, which is not the same thing: the ledger records whatever job the
+  router was asked for, so logging under a name the router did not know would have been a
+  label free to drift from what was actually called. `practice_log_classify` is its own
+  router entry pointing at the same model, which gives shared routing and a distinguishable
+  bill at once. Both documents are corrected.
+
+### The one mutation in an append-only table, stated out loud
+
+`practice_solves.concept_evidence_id` is filled in later for a solve logged before its
+classification resolved. It is a pointer, not the record: what the row says happened — a
+solve, at this time, successfully — is never rewritten. Worth naming because "append-only"
+is a claim this project makes about several tables and an unremarked exception is how such a
+claim stops being true.
+
+### Found by running it: the teardown that could not run
+
+Eleven tests errored in teardown on a foreign key, because `practice_solves` points *into*
+`concept_evidence` and the fixture deleted evidence first. The tests themselves passed, so
+the suite read as almost-green while leaving rows behind — and those rows then failed four
+*unrelated* tests in the next full run, which is how it was noticed: a concept with 34
+observations where the test expected 1.
+
+Two things worth keeping. A cleanup that fails is worse than one that does not exist,
+because it fails quietly and the damage lands somewhere else. And this development database
+is shared by every `db` test, so anything that writes to the shared projection has to clean
+up in dependency order and then replay — the same rule conftest already follows, which is
+where the ordering should have been copied from.
+
+### Deferred deliberately
+
+- **The classifier is uncalibrated.** No gold set, and no real model has classified
+  anything — the same Bedrock gate every model path here waits on. `0.75` is a threshold
+  chosen against a scripted classifier, which is to say against nothing.
+- **Concept ids are not domain-checked.** An observation about a quant concept on a coding
+  problem is probably a mis-tag, but the corpus validator treats the same situation as a
+  warning on an item, because it is occasionally legitimate. Being stricter here than the
+  corpus is about itself would be a rule with no reasoning behind it.
+- **No `Idempotency-Key` handling.** The spec asks for it on creates; nothing in this
+  project implements it yet, and logging the same problem twice is a duplicate row rather
+  than a corruption. It belongs with the convention, not with this feature.
+
+### Next
+
+Phase 1's corpus is now the binding constraint on everything else. Twenty-four items is
+enough to prove four graders and an adaptive engine work and not enough to be trained by:
+docs/ADAPTIVE.md's two "structural at 24 items" limitations — the prerequisite gate with
+nowhere to send you, and an informative band that cannot choose between items because there
+is only ever one — are both statements about the corpus, not the engine.

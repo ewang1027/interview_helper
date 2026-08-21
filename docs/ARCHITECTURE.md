@@ -166,8 +166,11 @@ granted. The substitution is configuration, not code —
 
 All calls go through `ModelRouter`, so provider (Bedrock vs Anthropic direct) and model
 choice are config, not call-site decisions. [PRACTICE_LOG](PRACTICE_LOG.md)'s problem
-classification (Phase 9) uses the existing "Classification, extraction" row above — it
-does not need a new job type.
+classification points at the same model as "Classification, extraction" above, through a
+job of its own — `practice_log_classify`. Both documents used to say it needed no new job
+type; it needed no new *model*, and the distinction turned out to matter, because the
+ledger records whatever job the router was asked for. Logging under a name the router did
+not know would have been a label free to drift from what was actually called.
 
 Prompt construction is cache-shaped: `api.llm.cached_system` puts the frozen system prompt
 in a block carrying the `cache_control` breakpoint, and everything volatile goes in

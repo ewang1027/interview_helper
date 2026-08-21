@@ -28,7 +28,9 @@ from anthropic import Anthropic, AnthropicBedrock
 from api.pricing import normalise
 from api.settings import Settings, get_settings
 
-Job = Literal["session_planning", "interviewing", "grading", "classification"]
+Job = Literal[
+    "session_planning", "interviewing", "grading", "classification", "practice_log_classify"
+]
 
 # docs/COST.md: effort is tuned per job — "grading high, utility classification low".
 # Interviewing sits between: it is the hot loop, and its output is dialogue rather than a
@@ -38,6 +40,7 @@ EFFORT_FOR_JOB: dict[Job, str] = {
     "interviewing": "medium",
     "grading": "high",
     "classification": "low",
+    "practice_log_classify": "low",
 }
 
 # `output_config.effort` is rejected by models older than the 4.6 family. Model ids are
@@ -69,6 +72,12 @@ class ModelRouter:
             "interviewing": s.model_interviewer,
             "grading": s.model_grader,
             "classification": s.model_utility,
+            # Its own job rather than a reuse of `classification`, and pointed at the same
+            # model. docs/PRACTICE_LOG.md asked for the routing to be shared and the ledger
+            # to tell them apart; one entry gives both, where logging under a name the
+            # router does not know would have been a label that could quietly drift from
+            # what was actually called.
+            "practice_log_classify": s.model_utility,
         }[job]
 
     def effort_for(self, job: Job) -> str | None:
