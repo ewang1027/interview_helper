@@ -29,6 +29,7 @@ from typing import Any
 
 from sqlmodel import Session, col, select
 
+from api import events as event_bus
 from api import llm
 from api.agent import prompts, tools
 from api.executor_client import CodeRunner
@@ -135,6 +136,7 @@ def run_turn(
     runner: CodeRunner | None = None,
     settings: Settings | None = None,
     client: Any = None,
+    bus: event_bus.EventBus | None = None,
 ) -> TurnResult:
     """Take one candidate message and produce one interviewer reply.
 
@@ -143,9 +145,21 @@ def run_turn(
     candidate's message and any tool results already recorded, which is what makes the
     session readable afterwards instead of appearing never to have happened.
     """
+    channel = bus or event_bus.bus()
     seq = next_seq(db, session_row.id)
     _write(db, session_row.id, seq, "candidate", candidate_text)
     seq += 1
+    if seq == 2:
+        # The first turn is where an item comes into play, and a client that joined the
+        # stream before it started has no other way to learn which problem it is watching.
+        channel.publish(
+            session_row.id,
+            "item.presented",
+            item_id=item.id,
+            title=item.title,
+            statement_md=item.statement_md,
+            expected_minutes=item.expected_minutes,
+        )
 
     context = tools.ToolContext(
         item=item,
@@ -180,6 +194,15 @@ def run_turn(
         written += 1
 
         if not uses:
+            # docs/API.md: `agent.message.done` is authoritative over any deltas. It is
+            # published for a text-only turn and after the last tool round alike, so a
+            # client always has exactly one authoritative message per turn.
+            channel.publish(
+                session_row.id,
+                "agent.message.done",
+                message_id=str(seq - 1),
+                text=completion.text,
+            )
             return TurnResult(
                 text=completion.text,
                 turns_written=written,
@@ -193,7 +216,33 @@ def run_turn(
 
         for use in uses:
             arguments = use.input if isinstance(use.input, dict) else {}
+            channel.publish(
+                session_row.id,
+                "agent.tool_use",
+                tool=use.name,
+                input=arguments,
+                tool_use_id=getattr(use, "id", None),
+            )
             outcome = tools.dispatch(use.name, arguments, context)
+            channel.publish(
+                session_row.id,
+                "tool.result",
+                tool=use.name,
+                tool_use_id=getattr(use, "id", None),
+                output=outcome.output,
+                is_error=outcome.is_error,
+            )
+            if use.name == "reveal_hint" and not outcome.is_error:
+                # Carried explicitly, with its price: you should see what a hint cost at
+                # the moment you take it, not discover it in the report (docs/API.md).
+                channel.publish(
+                    session_row.id,
+                    "hint.revealed",
+                    item_id=item.id,
+                    level=outcome.output["level"],
+                    text=outcome.output["text"],
+                    score_penalty=outcome.output["score_penalty"],
+                )
             record: dict[str, Any] = {
                 "tool": use.name,
                 "item_id": item.id,
@@ -218,6 +267,7 @@ def run_turn(
     # rather than returning an empty reply the candidate cannot interpret.
     message = "I need a moment — let me stop there and come back to it. What have you got so far?"
     _write(db, session_row.id, seq, "interviewer", message, {"truncated": True})
+    channel.publish(session_row.id, "agent.message.done", message_id=str(seq), text=message)
     return TurnResult(
         text=message,
         turns_written=written + 1,

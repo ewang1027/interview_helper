@@ -33,6 +33,7 @@ from typing import Any, Protocol
 import anthropic
 from sqlmodel import Session, col, func, select
 
+from api import events as event_bus
 from api.db import get_engine
 from api.errors import budget_exceeded, provider_rate_limited, unavailable
 from api.model_router import Job, ModelRouter
@@ -265,6 +266,8 @@ def complete(
         latency_ms=latency_ms,
         session_id=session_id,
     )
+    if session_id:
+        _warn_if_close_to_a_ceiling(session_id, config)
     return Completion(
         text=text_of(response),
         stop_reason=getattr(response, "stop_reason", None),
@@ -275,6 +278,33 @@ def complete(
         latency_ms=latency_ms,
         call_id=call_id,
     )
+
+
+# Warn while there is still room to do something about it. A warning at 99% is a
+# notification that the next call will fail, which the refusal already says.
+WARN_AT_FRACTION_REMAINING = 0.2
+
+
+def _warn_if_close_to_a_ceiling(session_id: str, settings: Settings) -> None:
+    """Publish `budget.warning` when a ceiling is in sight (docs/API.md's event list).
+
+    Never raises: a failure to warn must not turn a completed call into an error the caller
+    sees, having already paid for it."""
+    try:
+        with Session(get_engine()) as db:
+            status = budget_status(db, session_id=session_id, settings=settings)
+        for scope in ("session", "day"):
+            limit = status[scope]["limit"]
+            if limit and status[scope]["remaining"] / limit <= WARN_AT_FRACTION_REMAINING:
+                event_bus.bus().publish(
+                    session_id,
+                    "budget.warning",
+                    scope=scope,
+                    consumed=status[scope]["spent"],
+                    limit=limit,
+                )
+    except Exception:  # pragma: no cover - the guard, not a path
+        logger.exception("could not evaluate the budget warning for session %s", session_id)
 
 
 def record_call(

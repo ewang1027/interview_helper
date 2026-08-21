@@ -9,8 +9,10 @@
 > OAuth and a signed session cookie every `/api/v1` route requires), the **model-call path**
 > (`api.llm` — budget checked, call made, `llm_calls` row written) with `/costs` and
 > `/costs/budget` over it, the **interviewer agent** (`POST /sessions/{id}/turns`, a system
-> prompt per mode, three tools, turns persisted), and a 24-item corpus. Not built: the SSE
-> stream, rubric grading, and two of the five agent tools.
+> prompt per mode, three tools, turns persisted), the **SSE stream** (`GET
+> /sessions/{id}/events`, every specified event but `agent.message.delta`), and a 24-item
+> corpus. Not built: streamed model output, rubric grading, and two of the five agent
+> tools.
 > `docs/BUILDLOG.md` is authoritative.
 > Related: [GLOSSARY](GLOSSARY.md) · [API](API.md) · [SECURITY](SECURITY.md) · [INFRA](INFRA.md) · [BUILDLOG](BUILDLOG.md) (what is actually built) · [PRACTICE_LOG](PRACTICE_LOG.md)
 
@@ -63,7 +65,7 @@ session row, an item and a string, and knows nothing about HTTP.
 | Service | Responsibility | Trust |
 |---|---|---|
 | `apps/web` | UI only. Holds no secrets, talks only to the API. **Not built — an empty directory until Phase 5.** | Untrusted input |
-| `apps/api` | Sessions, agent loop, grading, mastery, cost ledger, and the only door in — GitHub OAuth and the cookie it issues. The only service with DB and model credentials. | Trusted |
+| `apps/api` | Sessions, agent loop, grading, mastery, cost ledger, the live event stream, and the only door in — GitHub OAuth and the cookie it issues. The only service with DB and model credentials. **Stateful in one place:** the event bus is in-process memory, which is what makes running two tasks a Phase 6 decision rather than a config change. | Trusted |
 | `apps/executor` | Runs candidate code. No network, no DB, no credentials. | **Hostile by assumption** |
 
 The executor is a separate service specifically so that "runs untrusted code" and "holds

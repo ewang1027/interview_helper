@@ -296,3 +296,54 @@ def test_a_model_that_will_not_stop_asking_for_tools_is_capped(created_sessions)
     assert result.stop_reason == "tool_round_cap"
     assert len(model.requests) == loop.MAX_TOOL_ROUNDS
     assert transcript(session_id)[-1].role == "interviewer"
+
+
+def test_a_turn_narrates_itself_on_the_event_stream(created_sessions):
+    """What a client watching the stream sees while one turn runs. The order matters: a
+    tool result before its own `agent.tool_use` would be unreadable, and the authoritative
+    message has to come last."""
+    from api.events import EventBus
+
+    _, session_id = start_session(created_sessions)
+    channel = EventBus()
+    model = ScriptedModel(
+        model_response(tool_block("reveal_hint", {"level": 1})),
+        model_response(
+            tool_block("run_code", {"language": "python", "source": "def f(): pass"}, "tu_2")
+        ),
+        model_response(text_block("Now tell me the complexity.")),
+    )
+
+    with Session(get_engine()) as db:
+        session_row = db.get(InterviewSession, session_id)
+        assert session_row is not None
+        item = service.current_item(db, session_row)
+        assert item is not None
+        loop.run_turn(
+            db,
+            session_row,
+            item,
+            "I'm stuck.",
+            runner=FakeRunner(),
+            settings=llm_settings(),
+            client=model,
+            bus=channel,
+        )
+
+    published = channel.since(session_id, 0)
+    assert [event.type for event in published] == [
+        "item.presented",
+        "agent.tool_use",
+        "tool.result",
+        "hint.revealed",
+        "agent.tool_use",
+        "tool.result",
+        "agent.message.done",
+    ]
+    assert [event.seq for event in published] == list(range(1, 8))
+
+    hint = next(event for event in published if event.type == "hint.revealed")
+    # The price is on the event, not discovered in the report afterwards (docs/API.md).
+    assert hint.data["score_penalty"] == pytest.approx(0.05)
+    assert hint.data["text"] == ITEMS[FIRST_ITEM].hints[0]
+    assert published[-1].data["text"] == "Now tell me the complexity."

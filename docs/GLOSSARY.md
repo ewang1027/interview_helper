@@ -218,6 +218,12 @@ counts toward it, cache reads included, and the daily ceiling resets at UTC midn
 `stability` and `due_at`.
 
 **SSE** — Server-Sent Events, the one-way streaming channel carrying live session events.
+Built 2026-08-20; `api.events.EventBus` assigns the sequence numbers and holds a bounded
+per-session buffer, in this process's memory.
+
+**`stream.gap`** — what the stream sends a client that reconnects from before the buffer
+starts: what it asked for, what is still available, and the instruction to refetch. A
+client that cannot tell it lost events is worse off than one handed an error.
 
 **Vapi** — the voice platform that owns STT, TTS, and turn-taking, calling our
 OpenAI-compatible shim as a "custom LLM". → [VOICE](VOICE.md)

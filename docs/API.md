@@ -10,8 +10,9 @@
 > **Not built:** the SSE stream and every agent tool (there is no interviewer agent, so no
 > model call has ever been made), the cost routes, `GET /corpus/items/{id}`,
 > `Idempotency-Key`, and rate limiting. The cost routes and the model-call path are built
-> (2026-08-20), and so is **the interviewer**: `POST /sessions/{id}/turns` runs a real turn
-> with three of the five tools. Vapi in **Phase 7**.
+> (2026-08-20), and so are **the interviewer** (`POST /sessions/{id}/turns`, three of the
+> five tools) and **the SSE stream** — every event below except `agent.message.delta`, which
+> needs a streamed model call. Vapi in **Phase 7**.
 > (The executor's `POST /execute` and `POST /probe` are built on their own contract — see
 > [SECURITY](SECURITY.md) — and `api.executor_client` is what speaks to them.)
 > Related: [ARCHITECTURE](ARCHITECTURE.md) · [GRADING](GRADING.md) (what the graders do with submissions) · [ADAPTIVE](ADAPTIVE.md) (where the planner gets its input) · [VOICE](VOICE.md) (the second transport) · [WEB](WEB.md) (the first consumer)
@@ -92,7 +93,7 @@ errors are `application/problem+json`.
 |---|---|---|---|
 | `POST` | `/sessions` | Create and plan | ✅ built |
 | `GET` | `/sessions/{id}` | Current state, plan, per-item grading status, elapsed time | ✅ built |
-| `GET` | `/sessions/{id}/events` | **SSE stream** — the live channel (below) | ✗ needs the agent loop |
+| `GET` | `/sessions/{id}/events` | **SSE stream** — the live channel (below) | ✅ built |
 | `POST` | `/sessions/{id}/turns` | Candidate says something | ✅ built |
 | `POST` | `/sessions/{id}/submissions` | Candidate submits code or an answer | ✅ built |
 | `POST` | `/sessions/{id}/end` | End early → `abandoned` | ✅ built |
@@ -162,9 +163,9 @@ is a cost control and is reported rather than silently swallowed.
 asynchronous because a coding submission with a complexity probe takes tens of seconds,
 and a blocked HTTP request is a bad way to wait for that.
 
-Results are specified to arrive on the SSE stream, which lands with the agent loop. Until
-then a client polls `GET /sessions/{id}`, where `items[].status` moves `grading` →
-`graded` | `failed` and carries the score and the grader's detail.
+Results arrive on the SSE stream as `grading.started` and then `grading.result` — including
+for a *failed* grading, which is the outcome somebody most needs telling about. Polling
+`GET /sessions/{id}` still works and reports the same thing.
 
 **One submission per item per session**, enforced with `409`. That is not
 `Idempotency-Key` support — a client cannot tell a retry from a genuine second attempt —
@@ -210,23 +211,19 @@ scoped by the session cookie like everything else under `/api/v1`.
 
 ## SSE event stream
 
-**Not built.** There is no agent to narrate and no stream to reconnect to; a client learns
-what happened by polling `GET /sessions/{id}`. Specified here because Phase 5 and Phase 7
-both build against it.
-
-`GET /sessions/{id}/events` — `text/event-stream`. Every event is JSON with a `type` and a
-monotonic `seq`.
+**Built (2026-08-20), except `agent.message.delta`.** `GET /sessions/{id}/events` —
+`text/event-stream`. Every event is JSON with a `type` and a monotonic `seq`.
 
 | `type` | Payload | Meaning |
 |---|---|---|
 | `session.state` | `{ state, reason? }` | State machine transition |
 | `item.presented` | `{ item_id, title, statement_md, expected_minutes }` | A problem is now in play |
-| `agent.message.delta` | `{ text }` | Streaming interviewer text |
+| `agent.message.delta` | `{ text }` | Streaming interviewer text — **not built**: the model call is not streamed yet, so a turn's text arrives once, on `done` |
 | `agent.message.done` | `{ message_id, text }` | Complete turn; authoritative over deltas |
 | `agent.tool_use` | `{ tool, input, tool_use_id }` | Interviewer invoked a tool |
 | `tool.result` | `{ tool_use_id, output, is_error }` | What came back |
 | `hint.revealed` | `{ item_id, level, text, score_penalty }` | A hint was given — **and what it cost**. `score_penalty` is the schedule in [GRADING.md](GRADING.md#hints-cost-score) — a fraction of the score still on the table, not absolute points |
-| `observation.recorded` | `{ concept_id, signal }` | Mid-session evidence captured |
+| `observation.recorded` | `{ concept_id, signal }` | Mid-session evidence captured — **not built**, with `record_observation` |
 | `grading.started` | `{ item_id }` | Grading began |
 | `grading.result` | `{ item_id, score, criteria[], evidence_written[] }` | Grading finished |
 | `budget.warning` | `{ consumed, limit, scope }` | Approaching a token budget |
@@ -239,7 +236,20 @@ Three deliberate choices:
 - **`hint.revealed` carries `score_penalty` explicitly.** You should see the cost of a
   hint at the moment you take it, not discover it in the report.
 - **`seq` is monotonic and gap-free**, so a reconnecting client can detect loss.
-  Reconnect with `Last-Event-ID`; the server replays from the last acknowledged `seq`.
+  Reconnect with `Last-Event-ID` (or `?after=`); the server replays from the last
+  acknowledged `seq`. History is a bounded buffer, so a client resuming from before it
+  gets a **`stream.gap`** event naming what it asked for and what is still available —
+  being told beats a plausible stream with a hole in it.
+
+Two properties of the implementation that a client should know about:
+
+- **The stream ends when the session does.** On `complete` or `abandoned` no further event
+  can arrive, so the connection closes rather than being held open. A `ping` comment frame
+  every 15s keeps it alive while a turn is thinking.
+- **The bus is in-process.** One uvicorn process is what this runs on; under Fargate with
+  two tasks a client could hold a stream against a task that is not running its turn.
+  `api.events.EventBus` is the seam where a shared broker goes in Phase 6, and this is
+  written down rather than left to be discovered.
 
 ## Interviewer agent tools
 

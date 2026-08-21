@@ -32,6 +32,7 @@ from typing import Any, Literal
 
 from sqlmodel import Session, col, select
 
+from api import events as event_bus
 from api.agent import loop as agent_loop
 from api.db import get_engine
 from api.errors import not_found, unavailable, unprocessable, wrong_state
@@ -67,6 +68,11 @@ SessionState = Literal[
 ]
 
 OPEN_STATES = frozenset({"briefing", "interviewing"})
+# States a session can still finish from. `wrapping` is included and that is not cosmetic:
+# the interviewer ending the last round moves a session there, and grading of an already
+# submitted item lands afterwards — without this, such a session waits for a completion
+# that can never happen. Turns and submissions are still refused while wrapping.
+COMPLETABLE_STATES = OPEN_STATES | {"wrapping"}
 REPORTABLE_STATES = frozenset({"complete", "abandoned"})
 
 # Modes with a grader that exists. Creating a session in a mode nothing can grade would
@@ -258,6 +264,9 @@ def take_turn(
         session_row.status = "interviewing"
         db.add(session_row)
         db.commit()
+        event_bus.bus().publish(
+            session_row.id, "session.state", state="interviewing", reason="first turn"
+        )
 
     result = agent_loop.run_turn(db, session_row, item, content, runner=runner, client=client)
 
@@ -268,6 +277,9 @@ def take_turn(
         session_row.status = "wrapping"
         db.add(session_row)
         db.commit()
+        event_bus.bus().publish(
+            session_row.id, "session.state", state="wrapping", reason=result.end_reason
+        )
 
     return {
         "item_id": item.id,
@@ -399,6 +411,7 @@ def _grade(artifact_id: str, runner: CodeRunner | None) -> None:
         # turn record. Zero when the session never used the agent, which is every session
         # this project has run so far.
         hints = agent_loop.hints_revealed(db, artifact.session_id, artifact.item_id)
+        event_bus.bus().publish(artifact.session_id, "grading.started", item_id=artifact.item_id)
         try:
             grade = grade_coding(
                 item,
@@ -447,6 +460,18 @@ def _record_failure(db: Session, artifact: Artifact, detail: str) -> None:
         )
     )
     db.commit()
+    # A failure is a result too, and the client is waiting on the same event either way.
+    # Reporting only successes would leave a stream that goes quiet on the one outcome
+    # somebody needs to be told about.
+    event_bus.bus().publish(
+        artifact.session_id,
+        "grading.result",
+        item_id=artifact.item_id,
+        status="failed",
+        score=None,
+        detail={"status": "failed", "detail": detail},
+        evidence_written=[],
+    )
     _maybe_complete(db, artifact.session_id)
 
 
@@ -489,6 +514,17 @@ def _record_grade(db: Session, artifact: Artifact, grade: CodingGrade) -> None:
             apply_evidence(db, row, user_id=session_row.user_id)
 
     db.commit()
+    # After the commit, not before: an event announcing a score that a rollback then
+    # discards is worse than a late one, and a client cannot un-see it.
+    event_bus.bus().publish(
+        artifact.session_id,
+        "grading.result",
+        item_id=artifact.item_id,
+        status=grade.status,
+        score=grade.score,
+        detail=grade.as_detail(),
+        evidence_written=[row.concept_id for row in evidence],
+    )
     _maybe_complete(db, artifact.session_id)
 
 
@@ -500,7 +536,7 @@ def _maybe_complete(db: Session, session_id: str) -> None:
     less evidence than it has items, which is the honest outcome.
     """
     session_row = db.get(InterviewSession, session_id)
-    if session_row is None or session_row.status not in OPEN_STATES:
+    if session_row is None or session_row.status not in COMPLETABLE_STATES:
         return
     outcomes = _item_outcomes(db, session_row)
     if all(entry["status"] in {"graded", "failed"} for entry in outcomes):
@@ -508,6 +544,9 @@ def _maybe_complete(db: Session, session_id: str) -> None:
         session_row.ended_at = _now()
         db.add(session_row)
         db.commit()
+        event_bus.bus().publish(
+            session_id, "session.state", state="complete", reason="every item is graded"
+        )
 
 
 # --- Ending, viewing, reporting -------------------------------------------------------

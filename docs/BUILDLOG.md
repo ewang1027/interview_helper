@@ -22,7 +22,7 @@ detail behind it.
 | **0** Foundations | **complete** | workspace, 159-concept taxonomy, corpus schema + validator, CI | — |
 | **1** Corpus v1 | **partial** — thin slice | 24 items — 3 archetypes + 3 instances in each of four domains, verified | bulk authoring toward ~400/~150 |
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
-| **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), and the **interviewer** — `POST /sessions/{id}/turns`, three tools, `turns` written | SSE stream, rubric graders, two agent tools, a full session against a live provider |
+| **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, three tools, `turns` written), and the **SSE stream** | streamed model output (`agent.message.delta`), rubric graders, two agent tools, a full session against a live provider |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within five sessions | weights are placeholders until real sessions calibrate them |
 | **5–8** Web, AWS, voice, hardening | **not started** | — | — |
 | **9** Practice log | **partial** — schema only | `practice_problems`, `practice_solves`, and `concept_evidence`'s two-producer shape — all migrated, landed with the Phase 3 slice | classification, endpoints, scheduling. No longer gated on the engine: `apply_evidence` already handles an evidence row with no item, so a logged solve would feed mastery today. It is gated on a **model call**, which nothing in this project has ever made |
@@ -1852,3 +1852,91 @@ reason to keep asking for the five-minute default.
 The SSE stream, so a turn arrives as it is generated rather than all at once — and with it
 `agent.message.delta`, `hint.revealed` carrying its price, and `grading.result`. After
 that, rubric grading, which is what unlocks the other three modes.
+
+---
+
+## Phase 3 (the live channel) — a stream that admits when it lost something · 2026-08-20
+
+`GET /sessions/{id}/events`. Every event docs/API.md specifies except
+`agent.message.delta`, which needs a streamed model call and is the next wave.
+
+```
+make check       183 passed, 109 deselected (hermetic; was 174)
+make test-db      76 passed (live Postgres; was 70)
+```
+
+### The gap event is the point
+
+A stream whose `seq` is monotonic and gap-free lets a client tell **loss** from **silence**.
+That only holds if the server is honest when it cannot deliver: the buffer is 256 events,
+and a client reconnecting from before it gets a `stream.gap` naming what it asked for, what
+is still available, and the instruction to refetch. Handing it a plausible stream starting
+wherever the buffer happens to begin would produce a client that believes it is up to date
+and is not — which is precisely the failure `seq` exists to prevent.
+
+Sequence numbers are assigned in one place, under a lock, because two publishers to one
+session genuinely overlap: turns run in a threadpool and grading runs in a background task.
+A test runs eight threads publishing 200 events and asserts no number is reused.
+
+### Subscribers poll, deliberately
+
+Turns are sync and the stream is async, so an `asyncio.Queue` means cross-thread event-loop
+plumbing — `call_soon_threadsafe`, a loop reference captured at the right moment, and a
+class of bug whose symptom is a stream that silently stops. A 50 ms poll costs nothing
+against a model call that takes seconds, cannot deadlock, and is four lines. It goes when
+the bus does.
+
+**The bus is in-process, and that is the honest limitation.** Under Fargate with two tasks,
+a client could hold a stream against a task that is not running its turn: it would see
+nothing and be told nothing was wrong. `EventBus.publish`/`.subscribe` is the seam where a
+shared broker goes in Phase 6. Written down now rather than discovered then.
+
+### `sse_starlette` calls `str()` on whatever you hand it
+
+A dict passed as `data` goes out as a Python repr — single quotes, `None` for `null` — and
+no JSON parser takes it. The first test to read the stream failed with
+`Expecting property name enclosed in double quotes`, which is a good error to get from a
+test and a terrible one to get from a browser. There is now one serialiser, `sse_frame`,
+and both the bus and the route use it; `default=str` because a stream that dies on one
+unserialisable field takes the session's whole channel with it.
+
+### A session could reach `wrapping` and never complete
+
+Found by writing the state test, not by it failing. `_maybe_complete` only ran on
+`briefing` and `interviewing` — which was correct until this project's previous wave added
+a `wrapping` transition when the interviewer ends the last round. A session that submitted
+everything and then had its rounds ended would sit in `wrapping` forever, because grading
+lands *after* the transition and the completion check declined to look. `COMPLETABLE_STATES`
+now includes it; turns and submissions are still refused there.
+
+### What publishes what
+
+| Event | Published by |
+|---|---|
+| `item.presented` | the first turn on an item |
+| `agent.tool_use`, `tool.result` | each tool call, before and after |
+| `hint.revealed` | `reveal_hint`, carrying `score_penalty` — the price at the moment it is paid |
+| `agent.message.done` | the end of a turn, including the tool-round cap's fallback message |
+| `session.state` | `briefing → interviewing`, `→ wrapping`, `→ complete` |
+| `grading.started`, `grading.result` | the grader, after the commit — and for a *failed* grading too, which is the outcome somebody most needs telling about |
+| `budget.warning` | a call that leaves under 20% of either ceiling |
+
+`grading.result` is published after the commit rather than before: an event announcing a
+score that a rollback then discards is worse than a late one, because a client cannot
+un-see it.
+
+### Deferred deliberately
+
+- **`agent.message.delta`.** The model call is not streamed, so a turn's text arrives once,
+  on `done`. `done` is authoritative anyway, so a client written against this stream today
+  keeps working when deltas start arriving.
+- **`observation.recorded`**, with the tool that would produce it.
+- **No replay from the database.** History is the in-memory buffer; a client that has been
+  away longer than 256 events refetches the session. Persisting events would be a second
+  transcript to keep consistent with `turns`.
+
+### Next
+
+Streamed model output, which turns `agent.message.delta` on and makes the stream worth
+watching rather than worth polling. Then rubric grading, which unlocks the other three
+modes.
