@@ -22,7 +22,7 @@ detail behind it.
 | **0** Foundations | **complete** | workspace, 159-concept taxonomy, corpus schema + validator, CI | — |
 | **1** Corpus v1 | **partial** — thin slice | 24 items — 3 archetypes + 3 instances in each of four domains, verified | bulk authoring toward ~400/~150 |
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
-| **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, four of five tools, `turns` written), the **SSE stream** (deltas included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | `record_observation`, a full session against a live provider |
+| **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | a full session against a live provider — gated on Bedrock access, not on code |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within five sessions | weights are placeholders until real sessions calibrate them |
 | **5–8** Web, AWS, voice, hardening | **not started** | — | — |
 | **9** Practice log | **partial** — schema only | `practice_problems`, `practice_solves`, and `concept_evidence`'s two-producer shape — all migrated, landed with the Phase 3 slice | classification, endpoints, scheduling. No longer gated on the engine: `apply_evidence` already handles an evidence row with no item, so a logged solve would feed mastery today. It is gated on a **model call**, which nothing in this project has ever made |
@@ -2587,3 +2587,102 @@ oversight. Chasing this one down meant reading the archetype, the instance and t
 against each other, and what turned up was not a mis-tag at all — it was a question the item
 asks in its statement and never grades. **The cheap fix would have silenced the warning and
 kept the defect.**
+
+---
+
+## Phase 3 (`record_observation`) — the conversation becomes evidence · 2026-08-21
+
+The fifth and last interviewer tool, and the first thing in this project to write
+`concept_evidence` from something other than a graded artifact. Phase 3's tool surface is
+closed.
+
+```
+make check       238 passed (hermetic; was 226 — twelve tool tests)
+make test-db     123 passed (live Postgres; was 119 — the row, the ration, the replay)
+```
+
+### Why it was deferred, and what changed
+
+The reason on record since the interviewer landed was that `concept_evidence` would gain a
+second producer, and "a concept an item already measures could be counted twice from one
+round". That is still true and is not fully solvable — an interviewer's read of a round and
+a grader's read of the artifact from that same round are **not independent readings**. What
+changed is that the projection now has an opinion about repeated rows: an item's rating moves
+once per attempt whatever writes them, so the remaining exposure is on `ability` alone, and
+it can be bounded rather than argued away.
+
+So it is bounded, four ways, and none of the four is a new idea — each is a control this
+project already applies somewhere else:
+
+| Control | Value | Borrowed from |
+|---|---|---|
+| A quoted span, checked | must appear in **the candidate's** turns | the rubric grader's citation check |
+| Signals | `strong` / `shaky` / `wrong` — no "never mentioned it" | "silence is not evidence" |
+| Confidence | model's own number **× 0.25**, the lowest here | the rubric grader's level clamp |
+| Ration | 3 per item, counted from the turn record | `check_answer`, and hints before it |
+
+Three observations at the ceiling carry about 0.75 of one coding grading's confidence. That
+is the intended order: what was said matters, and it matters less than what was submitted.
+
+### The span is checked against the candidate, not against the transcript
+
+docs/API.md asked for "a `span` citing the transcript". Implemented literally, that lets the
+interviewer quote **its own leading question** back as evidence — "Would a monotonic stack
+keep this linear?" is in the transcript, and an observation citing it records the model's
+idea as the candidate's demonstration. It is the same fabrication the rubric grader's
+citation check was written to catch, one layer up. So the span is matched against the
+candidate's turns only, and the doc now says so.
+
+The signal set falls out of the same rule. There is no `missing` signal, because "they never
+mentioned X" has nothing to quote — and recording silence as weakness is the exact lie the
+rubric grader refuses to tell.
+
+### The tool does not write, and that is the point
+
+`api.agent.tools`'s own docstring has said since the interviewer landed that a tool which
+cannot reach a database cannot write evidence. Building the tool that produces evidence was
+the moment to either keep that or quietly drop it. It is kept: `record_observation`
+validates the observation and hands it back on the context, and the turn loop — which holds
+the session and owns the transcript the span was checked against — writes the row and folds
+it into the projection under the projection lock.
+
+### A test that passed for the wrong reason, caught the same way as last time
+
+The first version of "an observation does not move the item's rating" passed **with the guard
+removed**. The observation named `two-pointers`, a secondary concept of `i.code.0001`, and
+the item-rating branch only ever fires on the *primary* concept's row — so the test exercised
+nothing. Pointed at `sliding-window` it fails properly without the guard: the rating drifts
+0.099 points off its seed from a remark in conversation.
+
+Third time this repo has found a green test that was green for the wrong reason. The habit
+that catches it is cheap and is now just the routine: after writing a test for a fix, break
+the fix and watch the test fail.
+
+### The replay still reproduces, which is the whole claim
+
+A session carrying **both** producers — an observation mid-round, a grading afterwards — is
+replayed by `POST /mastery/recompute` to the same `mastery` rows, the same observation
+counts, the same FSRS stability and the same item ratings. The order matters and is
+preserved: the rows are not independent, and applying them the other way round computes a
+different expectation for the second. An observation is an ordinary evidence row in every
+respect except its `source` and its confidence, which is exactly what makes the rebuild work
+without the projection having to be taught about it.
+
+### Deferred deliberately
+
+- **No domain check on the concept.** An observation about a quant concept during a coding
+  interview is probably a mis-tag, but the corpus validator treats the same situation as a
+  *warning* on an item, because it is occasionally legitimate. Refusing it here would be
+  stricter than the corpus is about itself.
+- **The ceiling and the ration are chosen, not calibrated**, like every other constant in
+  this system until real sessions exist to calibrate against.
+- **Nothing reads observations back yet.** They move mastery, and mastery drives the
+  planner, so they already do their job — but no report distinguishes "you were drilled this
+  because of what you wrote" from "because of what you said". That is a Phase 5 question.
+
+### Next
+
+Phase 3 owes exactly one thing now, and it is not code: **a full session against a live
+provider**, gated on the Bedrock use-case form in docs/COST.md. The phase stays `partial`
+rather than being promoted, because this repo's rule is that built means something that ran
+proved it, and that one has not run.

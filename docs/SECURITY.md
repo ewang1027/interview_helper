@@ -239,8 +239,11 @@ Mitigations:
   ahead). `check_answer` joined on 2026-08-21 and is **rationed to three successful checks
   per item**, counted from the turn record: it is the only tool that is an oracle, and
   without a limit "is it 1? is it 2? is it 3?" reads the answer straight off the grader. The
-  worst outcome of a successful injection is a bad interview session, which is
-  recoverable.
+  `record_observation` is the one tool that writes anything durable, and it is fenced on
+  all four sides: a quoted span checked against **the candidate's** words and not the
+  model's own, three signals with no way to record an absence, a confidence ceiling the
+  model cannot argue past, and three per problem. The worst outcome of a successful
+  injection is a bad interview session, which is recoverable.
 
 That last point matters more than the first two. **Design the tool surface so injection
 is not worth much**, rather than trying to prevent every injection.

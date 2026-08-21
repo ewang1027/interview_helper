@@ -221,13 +221,24 @@ def apply_evidence(db: Session, evidence: ConceptEvidence, *, user_id: str) -> M
     # the test above, so the rating moved three times per attempt: the same drift, by a
     # different route. The row that moves it is the attempt's first, in the `(ts, id)` order
     # `recompute` replays in, so the live path and a rebuild agree by construction.
-    if item is not None and evidence.concept_id == item.primary_concept_id:
+    #
+    # **And only evidence from an attempt.** An interviewer's observation is a reading of the
+    # conversation, not an outcome of trying the problem, so it says nothing about how hard
+    # the problem is. Without this it would say plenty: an observation is written *during*
+    # the round and a grading afterwards, so the observation would be the attempt's first row
+    # and would take the rating move that belongs to the result.
+    if (
+        item is not None
+        and evidence.source == "session_grading"
+        and evidence.concept_id == item.primary_concept_id
+    ):
         first = db.exec(
             select(col(ConceptEvidence.id))
             .where(
                 col(ConceptEvidence.session_id) == evidence.session_id,
                 col(ConceptEvidence.item_id) == evidence.item_id,
                 col(ConceptEvidence.concept_id) == evidence.concept_id,
+                col(ConceptEvidence.source) == "session_grading",
             )
             .order_by(col(ConceptEvidence.ts), col(ConceptEvidence.id))
         ).first()

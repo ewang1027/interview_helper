@@ -45,11 +45,12 @@ containment of the evidence note's 8-grams, is an error.
 
 **Concept evidence** — an immutable row written by every graded artifact: concept, item,
 session, score, confidence, timestamp, grader version. **The source of truth.** Never
-updated, never deleted. Since the Phase 3 slice it has **two producers**, distinguished by
-`source`: session grading (`item_id` + `session_id` set) and the practice log
+updated, never deleted. It has **three producers**, distinguished by `source`: session
+grading (`item_id` + `session_id` set), the interviewer's mid-session observations
+(`interviewer_observation`, same columns, lowest confidence), and the practice log
 (`practice_problem_id` set). `item_id`/`session_id` are nullable and a CHECK constraint
-requires exactly one of `item_id`/`practice_problem_id`. The table is empty — nothing has
-ever written a row. → [ADAPTIVE](ADAPTIVE.md#evidence-not-scores)
+requires exactly one of `item_id`/`practice_problem_id`. Only a grading moves an item's
+rating; the other two are not attempts at it. → [ADAPTIVE](ADAPTIVE.md#evidence-not-scores)
 
 **Mastery** — a *derived projection* over evidence, recomputable from scratch. Never
 hand-edited. When it looks wrong, the evidence is wrong.

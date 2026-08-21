@@ -138,8 +138,12 @@ prior and `items.elo` is what real outcomes made of it, so `recompute` resets th
 to the first and replays. A rebuild that reset only half the state would produce a table
 no replay could reproduce.
 
-From Phase 9, [PRACTICE_LOG](PRACTICE_LOG.md) is a second producer of `concept_evidence`,
-for problems solved outside the app. Its own `practice_problems.due_at`/`stability_days`
+`concept_evidence` has **three producers**. Session grading is the first. The interviewer's
+`record_observation` is the second (2026-08-21): what the conversation showed, cited to the
+candidate's own words, carrying the lowest confidence here — 0.25 against a rubric's 0.5 —
+and never moving an item's rating, because a reading of a conversation is not an attempt at
+the problem. From Phase 9, [PRACTICE_LOG](PRACTICE_LOG.md) is the third, for problems solved
+outside the app. Its own `practice_problems.due_at`/`stability_days`
 track a *problem's* re-solve schedule (capped at 3 solves, then graduated) and are
 distinct from this concept-level `mastery.due_at`/`stability` despite the shared
 vocabulary — the practice log feeds evidence into this engine, it does not replace it.

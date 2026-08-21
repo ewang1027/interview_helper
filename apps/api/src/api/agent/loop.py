@@ -36,7 +36,8 @@ from api import events as event_bus
 from api import llm
 from api.agent import prompts, tools
 from api.executor_client import CodeRunner
-from api.models import InterviewSession, Turn
+from api.mastery import apply_evidence, lock_projection
+from api.models import ConceptEvidence, InterviewSession, Turn
 from api.settings import Settings
 from corpus.models import Item
 
@@ -46,6 +47,16 @@ logger = logging.getLogger(__name__)
 # six times is a loop, and each iteration is a paid call against a budget the candidate is
 # waiting on. The cap is a cost control, not a correctness one — it is reported, not hidden.
 MAX_TOOL_ROUNDS = 5
+
+# `concept_evidence.source` for a row the interviewer wrote from the conversation, and the
+# third producer of that table after session grading and the practice log. A distinct value
+# because these rows are the softest evidence in the system and the first that could ever
+# need excluding from a replay wholesale — which is only possible if they can be told apart.
+OBSERVATION_SOURCE = "interviewer_observation"
+
+# Bumped if what an observation means changes, exactly as a grader version is, so old rows
+# stay interpretable.
+OBSERVATION_VERSION = "interviewer.observation@1"
 
 
 @dataclass(frozen=True)
@@ -92,24 +103,44 @@ def hints_revealed(db: Session, session_id: str, item_id: str) -> int:
     return max(levels, default=0)
 
 
+def _tool_calls(db: Session, session_id: str, item_id: str, tool: str) -> list[dict[str, Any]]:
+    """Every successful call of one tool against one item, in order.
+
+    Rations are counted from the turn record rather than held in memory: `ToolContext` is
+    rebuilt every turn, so a counter on it resets with each thing the candidate says — no cap
+    at all against a model that simply asks again next turn. Errored calls do not count; a
+    refused call did nothing, and charging for it would spend the ration on the model's own
+    mistakes."""
+    return [
+        row.tool_calls
+        for row in transcript(db, session_id)
+        if row.tool_calls
+        and row.tool_calls.get("tool") == tool
+        and row.tool_calls.get("item_id") == item_id
+        and not row.tool_calls.get("is_error")
+    ]
+
+
+def observations_recorded(db: Session, session_id: str, item_id: str) -> int:
+    """How many observations this session has already recorded about this item."""
+    return len(_tool_calls(db, session_id, item_id, "record_observation"))
+
+
+def candidate_said(db: Session, session_id: str) -> str:
+    """Everything the candidate has said this session, for checking a quoted span against.
+
+    Their turns only. An observation citing the *interviewer's* words would be the model
+    quoting its own leading question back as evidence, which is precisely the fabrication the
+    citation check exists to catch."""
+    return "\n".join(row.content for row in transcript(db, session_id) if row.role == "candidate")
+
+
 def answer_checks(db: Session, session_id: str, item_id: str) -> int:
     """How many answers this session has already checked against this item.
 
-    Counted from the turn record for the same reason hints are, and for one more:
-    `ToolContext` is rebuilt every turn, so a cap held only in memory would reset with each
-    thing the candidate says — which is no cap at all against a model that asks again.
-
-    Errored calls do not count. A refused check told the model nothing about the answer,
-    and charging for it would spend the ration on the model's own mistakes.
+    Counted from the turn record for the same reason hints are — see `_tool_calls`.
     """
-    return sum(
-        1
-        for row in transcript(db, session_id)
-        if row.tool_calls
-        and row.tool_calls.get("tool") == "check_answer"
-        and row.tool_calls.get("item_id") == item_id
-        and not row.tool_calls.get("is_error")
-    )
+    return len(_tool_calls(db, session_id, item_id, "check_answer"))
 
 
 def as_messages(rows: list[Turn]) -> list[dict[str, Any]]:
@@ -164,6 +195,36 @@ def _write(
     return row
 
 
+def _write_observation(
+    db: Session, session_row: InterviewSession, item: Item, observation: tools.Observation
+) -> None:
+    """One observation, as an immutable evidence row folded into the projection.
+
+    Written here rather than in the tool because a tool that could reach a database is a
+    tool that could write evidence without the loop knowing, and the loop owns the
+    transcript the observation was cited against.
+
+    The row is an ordinary `concept_evidence` row in every respect except its `source` and
+    its confidence, which is the point: mastery is derived by replaying evidence, and a
+    reading the projection had to be taught about specially would be a reading a replay
+    could get wrong.
+    """
+    lock_projection(db)
+    row = ConceptEvidence(
+        concept_id=observation.concept_id,
+        source=OBSERVATION_SOURCE,
+        item_id=item.id,
+        session_id=session_row.id,
+        score=observation.score,
+        confidence=observation.confidence,
+        grader_version=OBSERVATION_VERSION,
+    )
+    db.add(row)
+    db.flush()
+    apply_evidence(db, row, user_id=session_row.user_id)
+    db.commit()
+
+
 def run_turn(
     db: Session,
     session_row: InterviewSession,
@@ -203,6 +264,10 @@ def run_turn(
         runner=runner,
         hints_revealed=hints_revealed(db, session_row.id, item.id),
         answer_checks=answer_checks(db, session_row.id, item.id),
+        observations_recorded=observations_recorded(db, session_row.id, item.id),
+        # Built after the candidate's message for this turn is already written, so a span
+        # quoting what they just said checks out.
+        candidate_said=candidate_said(db, session_row.id),
     )
     system = prompts.system_prompt(session_row.mode, item)
     written = 1
@@ -282,6 +347,15 @@ def run_turn(
                     text=outcome.output["text"],
                     score_penalty=outcome.output["score_penalty"],
                 )
+            if use.name == "record_observation" and not outcome.is_error:
+                observation = context.observations[-1]
+                _write_observation(db, session_row, item, observation)
+                channel.publish(
+                    session_row.id,
+                    "observation.recorded",
+                    concept_id=observation.concept_id,
+                    signal=observation.signal,
+                )
             record: dict[str, Any] = {
                 "tool": use.name,
                 "item_id": item.id,
@@ -289,6 +363,9 @@ def run_turn(
             }
             if use.name == "reveal_hint" and not outcome.is_error:
                 record["level"] = outcome.output["level"]
+            if use.name == "record_observation" and not outcome.is_error:
+                record["concept_id"] = context.observations[-1].concept_id
+                record["signal"] = context.observations[-1].signal
             _write(db, session_row.id, seq, "tool", outcome.as_text(), record)
             seq += 1
             written += 1

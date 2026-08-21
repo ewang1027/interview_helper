@@ -97,7 +97,7 @@ buildlog disagree about what exists, the buildlog is right.**
 | [RESEARCH](docs/RESEARCH.md) | How items get researched and authored | 1 | Spec |
 | [SECURITY](docs/SECURITY.md) | Threat model, sandbox isolation, the six escape tests, the answer parser | 2 | ✅ Isolation built |
 | [GRADING](docs/GRADING.md) | The four graders and what they produce | 2 → 3 | ✅ All four graders built |
-| [API](docs/API.md) | Endpoints, session state machine, SSE events, agent tools | 3 | ✅ Sessions, agent, SSE and auth built; four of five tools |
+| [API](docs/API.md) | Endpoints, session state machine, SSE events, agent tools | 3 | ✅ Sessions, agent, SSE, auth and all five tools built |
 | [COST](docs/COST.md) | Model routing, hard budgets, the ledger | 3 → 6 | Policy set |
 | [ADAPTIVE](docs/ADAPTIVE.md) | Elo + FSRS, evidence, weakness priority, planning | 4 | ✅ Built |
 | [WEB](docs/WEB.md) | Routes, the four mode workspaces, dashboard | 5 | Spec |
@@ -159,9 +159,11 @@ for what actually exists and what each phase still owes.
       2026-08-20, carrying the interviewer's text as the model generates it. **Rubric
       grading landed 2026-08-20** too, and **the quant grader 2026-08-21** — a symbolic
       answer check behind a parser wall, plus the derivation judged against the item's
-      reasoning rubric — so all four modes can now be created and graded, and
-      **`check_answer` joined the interviewer's tools** the same day. Still owed:
-      `record_observation`, and a full session against a live provider*
+      reasoning rubric — so all four modes can now be created and graded, and the
+      interviewer's **last two tools landed** the same day: `check_answer`, and
+      `record_observation`, which makes the conversation itself a third producer of
+      evidence. Still owed: a full session against a live provider, which is gated on
+      Bedrock access rather than on code*
 - [x] **4 — Adaptive engine** — *Elo, FSRS, the replayable projection, the weakness
       priority and the planner landed 2026-08-20, verified against both gates in
       [ADAPTIVE](docs/ADAPTIVE.md). Weights are placeholders until real sessions calibrate

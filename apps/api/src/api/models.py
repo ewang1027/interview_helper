@@ -203,10 +203,13 @@ class ConceptEvidence(SQLModel, table=True):
     """Immutable — append-only, never updated or deleted. `mastery` is a
     recomputable projection over these rows. See docs/ADAPTIVE.md.
 
-    Two producers, distinguished by `source`: session grading (`item_id` +
-    `session_id` set, `practice_problem_id` null) and the practice log
+    Three producers, distinguished by `source`: session grading (`item_id` +
+    `session_id` set, `practice_problem_id` null), the interviewer's own
+    observations mid-session (`interviewer_observation`, same columns as a
+    grading and the softest evidence here), and the practice log
     (`practice_problem_id` set, `item_id`/`session_id` null) — see
-    docs/PRACTICE_LOG.md."""
+    docs/PRACTICE_LOG.md. Only a grading moves an item's rating; the other two
+    are not attempts at it (docs/ADAPTIVE.md)."""
 
     __tablename__ = "concept_evidence"
     __table_args__ = (
@@ -218,7 +221,7 @@ class ConceptEvidence(SQLModel, table=True):
 
     id: str = Field(default_factory=new_id, primary_key=True)
     concept_id: str = Field(foreign_key="concepts.id", index=True)
-    source: str  # "session_grading" | "practice_log"
+    source: str  # "session_grading" | "interviewer_observation" | "practice_log"
     item_id: str | None = Field(default=None, foreign_key="items.id")
     session_id: str | None = Field(default=None, foreign_key="sessions.id")
     practice_problem_id: str | None = Field(default=None, foreign_key="practice_problems.id")

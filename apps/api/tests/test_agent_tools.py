@@ -34,6 +34,7 @@ def test_the_schemas_are_ordered_and_closed():
         "run_code",
         "reveal_hint",
         "check_answer",
+        "record_observation",
         "end_round",
     ]
     for schema in tools.TOOL_SCHEMAS:
@@ -185,6 +186,124 @@ def test_an_empty_answer_is_refused_without_spending_a_check():
     assert ctx.answer_checks == 0
 
 
+# --- record_observation -------------------------------------------------------------------
+
+SAID = (
+    "I'd scan from the left and keep a stack of indices whose values are still unbeaten. "
+    "Each index goes on once and comes off once, so it's linear overall. "
+    "I think a hash map would be O(1) worst case for lookups."
+)
+
+
+def observing(**overrides):
+    call = {
+        "concept_id": "monotonic-stack",
+        "signal": "strong",
+        "confidence": 0.8,
+        "span": "keep a stack of indices whose values are still unbeaten",
+    }
+    call.update(overrides)
+    return call
+
+
+def test_an_observation_is_validated_and_handed_back_not_written():
+    """Tools here cannot reach a database — that is what stops the interviewer scoring
+    itself. So the tool resolves what the observation is worth and the loop writes it."""
+    ctx = context(candidate_said=SAID)
+    outcome = tools.dispatch("record_observation", observing(), ctx)
+
+    assert not outcome.is_error and outcome.output["ok"] is True
+    assert len(ctx.observations) == 1
+    recorded = ctx.observations[0]
+    assert recorded.concept_id == "monotonic-stack"
+    assert recorded.score == 1.0
+
+
+def test_a_span_that_is_not_the_candidates_words_is_refused():
+    """The rubric grader's citation check, one step earlier: there an uncited criterion is
+    scored zero, here there is nothing to score, so it is refused outright."""
+    ctx = context(candidate_said=SAID)
+    outcome = tools.dispatch(
+        "record_observation", observing(span="they clearly understood the invariant"), ctx
+    )
+    assert outcome.is_error and "not in what the candidate said" in outcome.output["error"]
+    assert ctx.observations == []
+
+
+def test_the_interviewer_cannot_cite_itself():
+    """An observation quoting the interviewer's own leading question is the model treating
+    its words as the candidate's — the fabrication the citation check exists for. The span
+    is checked against the candidate's turns only, so this cannot resolve."""
+    interviewer_said = "Would a monotonic stack keep this linear for you?"
+    ctx = context(candidate_said=SAID)
+    outcome = tools.dispatch("record_observation", observing(span=interviewer_said), ctx)
+    assert outcome.is_error
+
+
+def test_a_span_too_short_to_mean_anything_is_refused():
+    """Twelve characters, the same floor the rubric grader uses: "the" is a substring of
+    every answer and evidence of nothing."""
+    ctx = context(candidate_said=SAID)
+    assert tools.dispatch("record_observation", observing(span="a stack"), ctx).is_error
+
+
+def test_an_observation_about_a_concept_that_does_not_exist_is_refused():
+    """`concept_evidence.concept_id` is a foreign key — an unresolvable one is an insert
+    failure in the middle of a turn instead of something the model can be told about."""
+    ctx = context(candidate_said=SAID)
+    outcome = tools.dispatch("record_observation", observing(concept_id="vibes"), ctx)
+    assert outcome.is_error and "taxonomy" in outcome.output["error"]
+
+
+@pytest.mark.parametrize("signal", ["missing", "excellent", ""])
+def test_only_the_three_signals_can_be_claimed(signal):
+    """And there is deliberately no way to say "they never mentioned it": silence is not
+    evidence, and with nothing to quote the span check would refuse it anyway."""
+    ctx = context(candidate_said=SAID)
+    assert tools.dispatch("record_observation", observing(signal=signal), ctx).is_error
+    assert "missing" not in tools.OBSERVATION_SIGNALS
+
+
+def test_the_models_confidence_is_scaled_by_the_ceiling_not_trusted():
+    """A model asked how sure it is answers "very". The ceiling is the application's, and
+    it is the lowest number in the system — below a rubric judgement's 0.5, because an
+    observation is a read of a conversation with no anchors at all."""
+    ctx = context(candidate_said=SAID)
+    tools.dispatch("record_observation", observing(confidence=1.0), ctx)
+    tools.dispatch("record_observation", observing(confidence=0.4), ctx)
+    tools.dispatch("record_observation", observing(confidence=99.0), ctx)
+
+    assert [o.confidence for o in ctx.observations] == [
+        tools.OBSERVATION_CONFIDENCE,
+        round(0.4 * tools.OBSERVATION_CONFIDENCE, 4),
+        tools.OBSERVATION_CONFIDENCE,
+    ]
+    assert tools.OBSERVATION_CONFIDENCE < 0.5
+
+
+def test_observations_are_rationed_because_one_conversation_is_one_conversation():
+    ctx = context(candidate_said=SAID)
+    for _ in range(tools.MAX_OBSERVATIONS):
+        assert not tools.dispatch("record_observation", observing(), ctx).is_error
+
+    refused = tools.dispatch("record_observation", observing(), ctx)
+    assert refused.is_error and "limit" in refused.output["error"]
+    assert len(ctx.observations) == tools.MAX_OBSERVATIONS
+
+
+def test_a_refused_observation_does_not_spend_the_ration():
+    ctx = context(candidate_said=SAID)
+    tools.dispatch("record_observation", observing(concept_id="vibes"), ctx)
+    assert ctx.observations_recorded == 0
+
+
+def test_a_shaky_signal_is_worth_half_and_a_wrong_one_nothing():
+    ctx = context(candidate_said=SAID)
+    tools.dispatch("record_observation", observing(signal="shaky"), ctx)
+    tools.dispatch("record_observation", observing(signal="wrong"), ctx)
+    assert [o.score for o in ctx.observations] == [0.5, 0.0]
+
+
 def test_end_round_records_a_reason():
     ctx = context()
     outcome = tools.dispatch("end_round", {"reason": "solved with two hints"}, ctx)
@@ -206,11 +325,17 @@ def test_a_tool_that_does_not_exist_is_an_error_the_model_can_read():
     assert "No such tool" in outcome.output["error"]
 
 
-def test_the_surface_is_exactly_four_tools():
+def test_the_surface_is_exactly_the_five_tools_the_design_specifies():
     """docs/SECURITY.md: the defence against prompt injection is that succeeding buys very
-    little. Anything added here widens what it buys, so the count is pinned — `check_answer`
-    joined 2026-08-21 and is the reason it is rationed rather than merely present."""
-    assert set(tools.TOOL_NAMES) == {"check_answer", "end_round", "reveal_hint", "run_code"}
+    little. Anything added here widens what it buys, so the count is pinned — and the two
+    that landed on 2026-08-21 are both rationed rather than merely present."""
+    assert set(tools.TOOL_NAMES) == {
+        "check_answer",
+        "end_round",
+        "record_observation",
+        "reveal_hint",
+        "run_code",
+    }
 
 
 def test_a_tool_result_serialises_deterministically():

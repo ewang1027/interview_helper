@@ -19,8 +19,9 @@ from api import sessions as service
 from api.agent import loop, tools
 from api.db import get_engine
 from api.errors import ProblemError
+from api.events import bus
 from api.main import app
-from api.models import Grading, InterviewSession, LlmCall, Turn
+from api.models import ConceptEvidence, Grading, InterviewSession, Item, LlmCall, Mastery, Turn
 from api.routes.sessions import get_model_client, get_runner
 from api.settings import Settings
 from corpus.loader import load_items
@@ -33,6 +34,20 @@ MODEL = "us.anthropic.claude-sonnet-4-6"
 
 
 MODEL_OVERRIDES: dict[str, Any] = {"model_interviewer": MODEL, "model_grader": MODEL}
+
+# The span has to be the candidate's own words, so the two are written together.
+SPAN = "each index goes on the stack once and comes off once"
+CANDIDATE = f"I'd hold a window with two pointers, and {SPAN}, so it stays linear."
+# `i.code.0001`'s **primary** concept, deliberately: the item-rating guard only ever fires
+# on the primary concept's row, so an observation about a secondary one would exercise
+# nothing and pass whether the guard existed or not.
+CONCEPT = "sliding-window"
+
+
+def observing(**overrides: Any) -> dict[str, Any]:
+    call = {"concept_id": CONCEPT, "signal": "shaky", "confidence": 1.0, "span": SPAN}
+    call.update(overrides)
+    return call
 
 
 def llm_settings(**overrides: Any) -> Settings:
@@ -111,6 +126,7 @@ def test_the_request_carries_the_cached_system_prompt_and_the_tools(created_sess
         "run_code",
         "reveal_hint",
         "check_answer",
+        "record_observation",
         "end_round",
     ]
     assert request["messages"] == [{"role": "user", "content": "hello"}]
@@ -182,6 +198,154 @@ def test_hints_taken_in_the_interview_cost_score_at_grading(created_sessions):
         assert grading is not None and grading.score is not None
         assert grading.detail["hints_revealed"] == 2
         assert grading.score < 1.0
+
+
+def test_an_observation_becomes_evidence_and_leaves_the_item_rating_alone(
+    created_sessions, user_id
+):
+    """`concept_evidence`'s third producer, and the first that is not an attempt at the
+    problem. An observation moves what is believed about the candidate and says nothing
+    about how hard the item is — so the rating that belongs to the result stays put, even
+    though the observation is written first and would otherwise take it."""
+    _, session_id = start_session(created_sessions)
+    with Session(get_engine()) as db:
+        item = db.get(Item, FIRST_ITEM)
+        assert item is not None
+        before = item.elo
+
+    turn(
+        session_id,
+        CANDIDATE,
+        ScriptedModel(
+            model_response(tool_block("record_observation", observing())),
+            model_response(text_block("Say more about the worst case.")),
+        ),
+    )
+
+    with Session(get_engine()) as db:
+        rows = db.exec(
+            select(ConceptEvidence).where(ConceptEvidence.session_id == session_id)
+        ).all()
+        assert [(r.concept_id, r.source, r.score, r.confidence) for r in rows] == [
+            (CONCEPT, loop.OBSERVATION_SOURCE, 0.5, tools.OBSERVATION_CONFIDENCE)
+        ]
+        assert rows[0].grader_version == loop.OBSERVATION_VERSION
+        assert rows[0].item_id == FIRST_ITEM
+
+        item = db.get(Item, FIRST_ITEM)
+        assert item is not None
+        assert item.elo == before, "an observation is not an attempt at the problem"
+
+        mastery = db.get(Mastery, (user_id, CONCEPT))
+        assert mastery is not None and mastery.observations == 1
+
+    assert "observation.recorded" in [event.type for event in bus().since(session_id, 0)]
+    bus().forget(session_id)
+
+
+def test_a_refused_observation_writes_nothing(created_sessions):
+    """A span the candidate never said is not evidence, and the row is not written at all —
+    not written and scored zero, which would be evidence of a weakness nobody observed."""
+    _, session_id = start_session(created_sessions)
+    turn(
+        session_id,
+        CANDIDATE,
+        ScriptedModel(
+            model_response(tool_block("record_observation", observing(span="they were lost"))),
+            model_response(text_block("Go on.")),
+        ),
+    )
+    with Session(get_engine()) as db:
+        assert not db.exec(
+            select(ConceptEvidence).where(ConceptEvidence.session_id == session_id)
+        ).all()
+    bus().forget(session_id)
+
+
+def test_a_session_carrying_both_producers_still_replays_exactly(created_sessions, user_id):
+    """The claim everything else rests on, now with a third producer in the table: `mastery`
+    is rebuildable from `concept_evidence` alone. An observation is an ordinary evidence row
+    in every respect but its source and its confidence, and that is what keeps this true
+    without the projection having to be taught about it.
+
+    Both producers, in the order they really happen — the interviewer observes mid-round,
+    the grader writes afterwards — because the rows are not independent: a replay that
+    applied them the other way round would compute a different expectation for the second."""
+    client, session_id = start_session(created_sessions)
+    turn(
+        session_id,
+        CANDIDATE,
+        ScriptedModel(
+            model_response(tool_block("record_observation", observing())),
+            model_response(text_block("Now write it.")),
+        ),
+    )
+    use_settings(**MODEL_OVERRIDES)
+    app.dependency_overrides[get_runner] = FakeRunner
+    reference = ITEMS[FIRST_ITEM].grading["reference_solutions"]["python"]
+    submitted = client.post(
+        f"/api/v1/sessions/{session_id}/submissions",
+        json={"item_id": FIRST_ITEM, "kind": "code", "language": "python", "content": reference},
+    )
+    assert submitted.status_code == 202, submitted.text
+
+    def projection() -> dict[str, Any]:
+        with Session(get_engine()) as db:
+            rows = db.exec(select(Mastery).where(Mastery.user_id == user_id)).all()
+            items = db.exec(select(Item)).all()
+            return {
+                "mastery": {
+                    row.concept_id: (row.ability, row.observations, row.stability) for row in rows
+                },
+                "items": {row.id: row.elo for row in items},
+            }
+
+    with Session(get_engine()) as db:
+        sources = {
+            row.source
+            for row in db.exec(
+                select(ConceptEvidence).where(ConceptEvidence.session_id == session_id)
+            ).all()
+        }
+    assert sources == {loop.OBSERVATION_SOURCE, "session_grading"}, sources
+
+    before = projection()
+    assert client.post("/api/v1/mastery/recompute").status_code == 200
+    assert projection() == before
+    bus().forget(session_id)
+
+
+def test_the_observation_ration_survives_the_turn_it_was_spent_in(created_sessions):
+    """Same reason as the answer check's, and it matters more here: every successful call
+    writes an immutable evidence row, so a cap that resets each turn is an unbounded producer
+    of the softest evidence in the system."""
+    _, session_id = start_session(created_sessions)
+    for n in range(tools.MAX_OBSERVATIONS):
+        turn(
+            session_id,
+            CANDIDATE,
+            ScriptedModel(
+                model_response(tool_block("record_observation", observing(), use_id=f"ob_{n}")),
+                model_response(text_block("Noted.")),
+            ),
+        )
+    with Session(get_engine()) as db:
+        assert loop.observations_recorded(db, session_id, FIRST_ITEM) == tools.MAX_OBSERVATIONS
+
+    turn(
+        session_id,
+        CANDIDATE,
+        ScriptedModel(
+            model_response(tool_block("record_observation", observing(), use_id="ob_over")),
+            model_response(text_block("Let's keep going.")),
+        ),
+    )
+    with Session(get_engine()) as db:
+        rows = db.exec(
+            select(ConceptEvidence).where(ConceptEvidence.session_id == session_id)
+        ).all()
+        assert len(rows) == tools.MAX_OBSERVATIONS, "the fourth is refused, a turn later"
+    bus().forget(session_id)
 
 
 def test_the_answer_check_ration_survives_the_turn_it_was_spent_in(created_sessions):

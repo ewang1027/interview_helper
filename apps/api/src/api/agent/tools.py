@@ -1,10 +1,10 @@
 """The interviewer's entire capability surface, and what each tool actually does.
 
-docs/API.md lists five tools; four are implemented here and one is deferred with a reason
-below. The surface is deliberately small — docs/SECURITY.md's answer to prompt injection is
-not filtering, it is that succeeding buys the attacker almost nothing. There is no tool that
-writes the corpus, sends anything outbound, reads a secret, or touches mastery, and grading
-is not a tool at all, so the interviewer cannot score itself.
+docs/API.md lists five tools and all five are implemented here. The surface is deliberately
+small — docs/SECURITY.md's answer to prompt injection is not filtering, it is that
+succeeding buys the attacker almost nothing. There is no tool that writes the corpus, sends
+anything outbound or reads a secret, and grading is not a tool at all, so the interviewer
+cannot score itself.
 
 Two tools deviate from the signature docs/API.md specifies, both in the same direction —
 taking away a parameter that let the model choose what it was measured against:
@@ -28,11 +28,10 @@ per session is enough for a candidate revising a stated answer and nowhere near 
 search. The count is recovered from the turn record, not held in memory, because a context
 is rebuilt every turn and an in-memory counter would cap nothing.
 
-Deferred, and why:
-
-- **`record_observation`** writes `concept_evidence` mid-session. Evidence has exactly one
-  producer today — the grader — and adding a second risks double-counting a concept from
-  one item.
+**`record_observation` does not write anything.** It is the tool that produces evidence, and
+tools here cannot reach a database — that is the property that makes the interviewer unable
+to score itself. So it validates the observation and hands it back on the context, and the
+turn loop, which does hold a session, writes the row. See `api.agent.loop`.
 """
 
 from __future__ import annotations
@@ -40,11 +39,14 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any
 
 from api.executor_client import CodeRunner, ExecutorProtocolError, ExecutorUnavailableError
 from api.grading.coding import hint_penalty
 from api.grading.quant import check_answer
+from api.grading.rubric import cites_the_answer
+from corpus.loader import load_concepts
 from corpus.models import Item
 
 logger = logging.getLogger(__name__)
@@ -53,6 +55,35 @@ logger = logging.getLogger(__name__)
 # limit is a way to read the answer off the grader; a candidate revising theirs needs two
 # or three. Chosen, not calibrated — the number is here to be raised if real sessions say so.
 MAX_ANSWER_CHECKS = 3
+
+# How many observations the interviewer may record about one item. Each one moves mastery,
+# and unlike a grading they are not independent of each other — three readings of one
+# conversation are still one conversation. At the ceiling below, three of them carry about
+# 0.75 of a single coding grading's confidence, which is the intended order: what was said
+# matters, and it matters less than what was submitted.
+MAX_OBSERVATIONS = 3
+
+# The ceiling on an observation's confidence, and the lowest number in the system. A rubric
+# judgement is a model's read of prose against anchors, with its citation checked, and it
+# gets 0.5. An observation is a model's read of a conversation, mid-flight, with no anchors
+# at all. The model supplies its own confidence and it is scaled by this rather than
+# trusted — a model asked how sure it is answers "very".
+OBSERVATION_CONFIDENCE = 0.25
+
+# What an observation can claim, and what it is worth as a score. There is deliberately no
+# "never mentioned it" signal: silence is not evidence (docs/GRADING.md), and the span
+# requirement enforces that structurally — there is nothing to quote.
+OBSERVATION_SIGNALS: dict[str, float] = {"strong": 1.0, "shaky": 0.5, "wrong": 0.0}
+
+
+@lru_cache
+def _concept_ids() -> frozenset[str]:
+    """The taxonomy, for refusing an observation about a concept that does not exist.
+
+    `concept_evidence.concept_id` is a foreign key, so an unresolvable one is an insert
+    failure in the middle of a turn rather than something the model can be told about."""
+    return frozenset(concept.id for concept in load_concepts())
+
 
 # Ordered, and the order is load-bearing: `tools` renders above `system` in the cached
 # prefix, so a set iterated in hash order would invalidate the cache between processes.
@@ -113,6 +144,46 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "record_observation",
+        "description": (
+            "Record something the candidate's own words showed about one concept, so it "
+            "counts towards what gets drilled next. Quote them verbatim in `span` — it is "
+            "checked against what they actually said, and an observation you cannot point "
+            "at is not recorded. Only what they demonstrated: there is no way to record "
+            "that someone failed to mention something, because not saying a thing is not "
+            f"evidence about it. At most {MAX_OBSERVATIONS} per problem."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "concept_id": {
+                    "type": "string",
+                    "description": "A concept id from this project's taxonomy.",
+                },
+                "signal": {
+                    "type": "string",
+                    "enum": sorted(OBSERVATION_SIGNALS),
+                    "description": (
+                        "strong: they showed it. shaky: partial or hesitant. "
+                        "wrong: they said something incorrect about it."
+                    ),
+                },
+                "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "How sure you are, relative to your other observations.",
+                },
+                "span": {
+                    "type": "string",
+                    "description": "The candidate's own words, quoted exactly.",
+                },
+            },
+            "required": ["concept_id", "signal", "confidence", "span"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "end_round",
         "description": (
             "Finish with this problem — solved, abandoned, or out of time. Say why in one "
@@ -130,6 +201,20 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 TOOL_NAMES = frozenset(schema["name"] for schema in TOOL_SCHEMAS)
 
 
+@dataclass(frozen=True)
+class Observation:
+    """One thing the conversation showed, validated and waiting to be written.
+
+    Carries the score and confidence already resolved, so the loop writes a row rather than
+    re-deciding what the model's words were worth."""
+
+    concept_id: str
+    signal: str
+    score: float
+    confidence: float
+    span: str
+
+
 @dataclass
 class ToolContext:
     """What the tools are allowed to act on: one item, one runner, and the hints already
@@ -140,9 +225,15 @@ class ToolContext:
     runner: CodeRunner | None = None
     hints_revealed: int = 0
     answer_checks: int = 0
+    observations_recorded: int = 0
+    # Everything the candidate has said this session, for checking a quoted span against.
+    # Their words only: an observation citing the interviewer's own turn would be the model
+    # quoting itself, which is the fabrication the citation check exists to catch.
+    candidate_said: str = ""
     ended: bool = False
     end_reason: str | None = None
     hints_taken: list[int] = field(default_factory=list)
+    observations: list[Observation] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -169,6 +260,8 @@ def dispatch(name: str, arguments: dict[str, Any], context: ToolContext) -> Tool
             return _reveal_hint(arguments, context)
         if name == "check_answer":
             return _check_answer(arguments, context)
+        if name == "record_observation":
+            return _record_observation(arguments, context)
         if name == "end_round":
             return _end_round(arguments, context)
     except Exception as exc:  # pragma: no cover - the guard, not a path
@@ -289,6 +382,84 @@ def _check_answer(arguments: dict[str, Any], context: ToolContext) -> ToolOutcom
             "normalized": checked.submitted,
             "method": checked.method,
             "checks_remaining": MAX_ANSWER_CHECKS - context.answer_checks,
+        }
+    )
+
+
+def _record_observation(arguments: dict[str, Any], context: ToolContext) -> ToolOutcome:
+    """Validate one observation. Writing it is the loop's job — see this module's docstring.
+
+    Three things have to hold before a conversation is allowed to move mastery, and each is
+    a rule this project already applies somewhere else:
+
+    - **The concept exists.** `concept_evidence.concept_id` is a foreign key.
+    - **The span is really the candidate's.** Checked with the rubric grader's own citation
+      check, against what the candidate said and not what the interviewer said. A model
+      quoting its own leading question as evidence is exactly the fabrication that check was
+      written for.
+    - **There is a ration.** Three readings of one conversation are still one conversation.
+    """
+    if context.observations_recorded >= MAX_OBSERVATIONS:
+        return ToolOutcome(
+            {
+                "error": (
+                    f"You have recorded {context.observations_recorded} observations on this "
+                    "problem, which is the limit. Keep interviewing; what they submit is "
+                    "graded separately."
+                )
+            },
+            is_error=True,
+        )
+
+    concept_id = str(arguments.get("concept_id", "")).strip()
+    if concept_id not in _concept_ids():
+        return ToolOutcome(
+            {"error": f"{concept_id!r} is not a concept in this project's taxonomy."},
+            is_error=True,
+        )
+
+    signal = str(arguments.get("signal", "")).strip()
+    if signal not in OBSERVATION_SIGNALS:
+        return ToolOutcome(
+            {"error": f"signal must be one of {sorted(OBSERVATION_SIGNALS)}."}, is_error=True
+        )
+
+    span = str(arguments.get("span", ""))
+    if not cites_the_answer(span, context.candidate_said):
+        # Same demotion the rubric grader applies, one step earlier: there, an uncited
+        # criterion is scored zero; here there is nothing to score, so it is simply refused.
+        return ToolOutcome(
+            {
+                "error": (
+                    "That span is not in what the candidate said. Quote them verbatim, at "
+                    "least a dozen characters, and do not quote yourself."
+                )
+            },
+            is_error=True,
+        )
+
+    try:
+        stated = float(arguments.get("confidence", 0.0))
+    except (TypeError, ValueError):
+        return ToolOutcome({"error": "confidence must be a number in [0, 1]."}, is_error=True)
+
+    observation = Observation(
+        concept_id=concept_id,
+        signal=signal,
+        score=OBSERVATION_SIGNALS[signal],
+        # Scaled, not trusted. A model asked how sure it is answers "very", and this is the
+        # ceiling the application owns rather than one the model can talk its way past.
+        confidence=round(max(0.0, min(1.0, stated)) * OBSERVATION_CONFIDENCE, 4),
+        span=span,
+    )
+    context.observations.append(observation)
+    context.observations_recorded += 1
+    return ToolOutcome(
+        {
+            "ok": True,
+            "concept_id": concept_id,
+            "signal": signal,
+            "observations_remaining": MAX_OBSERVATIONS - context.observations_recorded,
         }
     )
 

@@ -12,8 +12,7 @@
 > prompt per mode, three tools, turns persisted), the **SSE stream** (`GET
 > /sessions/{id}/events`, with the interviewer's text streamed as it is generated), and a
 > 24-item corpus, **rubric grading** and the **quant grader** (a symbolic answer check plus
-> the derivation rubric) — so all four modes grade. Not built: `record_observation`, one of
-> the five agent tools.
+> the derivation rubric) — so all four modes grade, and **all five interviewer tools**.
 > `docs/BUILDLOG.md` is authoritative.
 > Related: [GLOSSARY](GLOSSARY.md) · [API](API.md) · [SECURITY](SECURITY.md) · [INFRA](INFRA.md) · [BUILDLOG](BUILDLOG.md) (what is actually built) · [PRACTICE_LOG](PRACTICE_LOG.md)
 
@@ -138,7 +137,7 @@ worse, would *not* raise inside Phase 4's date arithmetic.
 | `turns` | Every exchange, with the tool calls made. Written by the interviewer loop, and the record hints are counted from at grading time. |
 | `artifacts` | Code submissions, diagrams, transcripts. |
 | `gradings` | One row per graded artifact: `status`, a **nullable** score, detail, grader version. A grader that crashed or timed out is recorded as `failed` with no score — a CHECK keeps "failed but scored 0.0" from existing. |
-| `concept_evidence` | **Immutable.** The source of truth for mastery. Written by graded sessions and, from Phase 9, by the practice log — `item_id`/`session_id` are nullable, and a `source` column plus `practice_problem_id` distinguish the two producers. |
+| `concept_evidence` | **Immutable.** The source of truth for mastery. Three producers, distinguished by `source`: graded sessions, the interviewer's own mid-session observations (`interviewer_observation` — same columns, lowest confidence), and from Phase 9 the practice log. `item_id`/`session_id` are nullable and `practice_problem_id` marks the third. Only a grading moves an item's rating; the others are not attempts at it. |
 | `mastery` | Derived projection: ability, observations, stability, due_at, last_seen, and the scheduler's own card. Rebuilt from `concept_evidence` by `POST /mastery/recompute`, never hand-edited. |
 | `llm_calls` | Cost ledger: model, tokens in/out/cache, computed $, latency, session. Written by `api.llm` in its own transaction, so a caller that fails afterwards cannot erase the record of spend. |
 | `research_runs` | Provenance for corpus builds. |

@@ -214,8 +214,8 @@ scoped by the session cookie like everything else under `/api/v1`.
 ## SSE event stream
 
 **Built (2026-08-20).** `GET /sessions/{id}/events` — `text/event-stream`. Every event is
-JSON with a `type` and a monotonic `seq`. Everything below is emitted except
-`observation.recorded`, which lands with the tool that produces it.
+JSON with a `type` and a monotonic `seq`. Every event below is emitted; the last of them,
+`observation.recorded`, joined on 2026-08-21 with the tool that produces it.
 
 | `type` | Payload | Meaning |
 |---|---|---|
@@ -226,7 +226,7 @@ JSON with a `type` and a monotonic `seq`. Everything below is emitted except
 | `agent.tool_use` | `{ tool, input, tool_use_id }` | Interviewer invoked a tool |
 | `tool.result` | `{ tool_use_id, output, is_error }` | What came back |
 | `hint.revealed` | `{ item_id, level, text, score_penalty }` | A hint was given — **and what it cost**. `score_penalty` is the schedule in [GRADING.md](GRADING.md#hints-cost-score) — a fraction of the score still on the table, not absolute points |
-| `observation.recorded` | `{ concept_id, signal }` | Mid-session evidence captured — **not built**, with `record_observation` |
+| `observation.recorded` | `{ concept_id, signal }` | Mid-session evidence captured — a `concept_evidence` row is already written when this arrives |
 | `grading.started` | `{ item_id }` | Grading began |
 | `grading.result` | `{ item_id, score, criteria[], evidence_written[] }` | Grading finished |
 | `budget.warning` | `{ consumed, limit, scope }` | Approaching a token budget |
@@ -266,7 +266,7 @@ succeeding buys you very little.
 | `reveal_hint` | `{ level }` | `{ level, text, score_penalty, hints_remaining }` | ✅ built |
 | `end_round` | `{ reason }` | `{ ok, reason }` | ✅ built |
 | `check_answer` | `{ submitted }` | `{ correct, normalized, method, checks_remaining }` | ✅ built |
-| `record_observation` | `{ concept_id, signal, confidence, span }` | `{ ok }` | ✗ lands with the rubric graders |
+| `record_observation` | `{ concept_id, signal, confidence, span }` | `{ ok, concept_id, signal, observations_remaining }` | ✅ built |
 
 **`run_code` does not take tests, and that is a deliberate departure from what this
 document used to specify.** The tests come from the corpus item; the model supplies only
@@ -297,17 +297,35 @@ says. A refused check does not spend one — it told the model nothing about the
 discovered. It is the same function grading runs: an interviewer saying "that is right" and
 a grader then scoring it zero would be two answers to one question.
 
-The one unbuilt tool is unbuilt for a reason rather than for time. `record_observation`
-writes `concept_evidence`, which has exactly one producer today — the grader — and a second
-producer risks counting one item's concept twice.
+**All five are built** as of 2026-08-21. There is deliberately **no** tool that writes the
+corpus, sends anything outbound, or reads secrets. Grading is not a tool — it runs after the
+turn loop, so the interviewer cannot score itself.
 
-There is deliberately **no** tool that writes the corpus, sends anything outbound, reads
-secrets, or edits mastery. Grading is not a tool — it runs after the turn loop, so the
-interviewer cannot score itself.
+`record_observation` is how a conversation becomes evidence, and it is the third producer of
+`concept_evidence` after session grading and the practice log. Four rules make that
+defensible, none of them new — each is a control this project already applies somewhere:
 
-`record_observation` requires a `span` citing the transcript for the same reason rubric
-criteria do ([GRADING.md](GRADING.md#system-design-and-behavioral)): an observation the
-agent cannot point at is not evidence.
+- **A `span` citing the transcript**, for the same reason rubric criteria carry one
+  ([GRADING.md](GRADING.md#system-design-and-behavioral)): an observation the agent cannot
+  point at is not evidence. It is checked with the rubric grader's own citation check, and
+  **against the candidate's turns only** — an observation quoting the interviewer's own
+  leading question would be the model citing itself.
+- **Three signals — `strong`, `shaky`, `wrong` — and no way to say "they never mentioned
+  it".** Silence is not evidence, and the span requirement enforces that structurally: there
+  is nothing to quote.
+- **The model's `confidence` is scaled, not trusted.** It is multiplied by a ceiling of
+  0.25, the lowest number in the system — below a rubric judgement's 0.5, because an
+  observation is a read of a conversation, mid-flight, with no anchors at all. A model asked
+  how sure it is answers "very".
+- **Three per problem**, counted from the turn record rather than held in memory. Every
+  successful call writes an immutable row, so a cap that reset each turn would be an
+  unbounded producer of the softest evidence here.
+
+An observation **never moves an item's rating** ([ADAPTIVE.md](ADAPTIVE.md#two-numbers-per-you-concept)):
+it is a reading of the conversation, not an outcome of attempting the problem. That matters
+mechanically as well as in principle — an observation is written *during* the round and a
+grading afterwards, so without the rule it would take the rating move that belongs to the
+result.
 
 ## Auth
 
