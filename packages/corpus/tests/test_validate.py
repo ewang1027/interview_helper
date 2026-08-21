@@ -303,6 +303,48 @@ def test_detects_criterion_naming_an_unknown_concept() -> None:
     assert any("unknown concept 'not-a-real-concept'" in m for m in errs), errs
 
 
+def _rubric_item(criteria: list[dict[str, Any]]) -> dict[str, Any]:
+    return _item(
+        modality="design", domain="system_design", grading={"type": "rubric", "criteria": criteria}
+    )
+
+
+def _warnings(findings: list[Any]) -> list[str]:
+    return [f.message for f in findings if f.level == "warn"]
+
+
+def test_warns_when_no_rubric_criterion_measures_the_primary_concept() -> None:
+    """An item's rating moves on the attempt's first evidence row naming its primary
+    concept, so a rubric that names it nowhere leaves that rating at the author's prior
+    forever — and a rating that never moves looks exactly like a well-calibrated one.
+    `i.design.0003` is the live instance."""
+    item = _rubric_item(
+        [
+            {"id": "a", "description": "x" * 20, "weight": 0.5, "levels": {"1": "ok"}},
+            {"id": "b", "description": "y" * 20, "weight": 0.5, "levels": {"1": "ok"}},
+        ]
+    )
+    warns = _warnings(check_items([item, _ARCHETYPE], _CONCEPTS))
+    assert any("never move from its seed" in m for m in warns), warns
+
+
+def test_does_not_warn_when_a_criterion_measures_the_primary_concept() -> None:
+    """Guards the opposite failure: a check that fires on everything is no check."""
+    item = _rubric_item(
+        [
+            {
+                "id": "a",
+                "description": "x" * 20,
+                "weight": 1.0,
+                "levels": {"1": "ok"},
+                "concept": "hash-set-dedup",
+            }
+        ]
+    )
+    warns = _warnings(check_items([item, _ARCHETYPE], _CONCEPTS))
+    assert not any("never move from its seed" in m for m in warns), warns
+
+
 def test_detects_duplicate_criterion_id() -> None:
     item = _answer_item(
         criteria=[

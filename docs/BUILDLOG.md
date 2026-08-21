@@ -2415,3 +2415,44 @@ nothing in a green suite can notice that, because the shape that breaks the equi
 not been built yet when the tests were written. The generalisable habit is the one that
 caught it: after adding a producer, go and read the consumers, particularly the ones whose
 comments describe the *old* producer's shape.
+
+---
+
+## Phase 0 (validator) — the mirror image, caught at build time · 2026-08-21
+
+The entry above recorded one problem fixed and one left standing: an item's rating moving
+several times per attempt, and `i.design.0003`'s moving *never*, because no criterion on its
+rubric names `rate-limiting` — the concept the item is chiefly a measurement of. Both come
+from the same assumption, that an attempt produces exactly one reading of the primary
+concept. The corpus can produce two, or zero.
+
+The second one belonged in the validator, and now is one:
+
+```
+make check         219 passed (hermetic; was 217 — the check catches, and does not overfire)
+corpus validate    0 errors, 1 warning — i.design.0003, as predicted
+```
+
+### A warning, not an error, and not a projection change
+
+A rubric that measures a concept only through its parts is a defensible editorial choice,
+and it is the author who has to make it. Retagging one of `i.design.0003`'s four criteria to
+`rate-limiting` would change what that item's evidence *means*, which is not a decision a
+validator or a grader gets to take on an author's behalf. So the build says so and leaves it:
+**the corpus now validates with one warning**, which is the honest state.
+
+Quant items are exempt. Their answer writes a row against the primary concept whatever the
+reasoning rubric names, so the condition cannot arise there.
+
+### Why this is worth a check at all
+
+A rating that never moves looks exactly like a well-calibrated one. Nothing at runtime can
+distinguish "this item's difficulty was estimated correctly" from "this item's difficulty has
+never been measured", and the planner reads that number to choose what to serve next. There
+is no failure to observe — only a number that is quietly always the author's guess.
+
+Also hardened here: `grade_quant` now refuses an item whose `answer` carries neither `exact`
+nor `numeric`, rather than marking every submission wrong against nothing. The validator has
+errored on that shape since Phase 0, so it should never reach the grader — but a fabricated
+zero corrupts mastery permanently and a failed grading is merely visible, and that asymmetry
+is worth three lines of belt-and-braces.

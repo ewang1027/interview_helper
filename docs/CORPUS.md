@@ -106,6 +106,21 @@ structural rather than editorial: duplicate item id, duplicate concept id, an ar
 setting `archetype_id`, an instance with no grading contract, and `answer` grading with
 neither `exact` nor `numeric`.
 
+Two checks are **warnings** rather than errors, because each is occasionally the right
+editorial choice and neither corrupts anything on its own:
+
+- **A criterion with no `levels`.** An LLM grader without anchors scores on vibe and drifts
+  between runs; the grader copes by saying so ([GRADING.md](GRADING.md#system-design-and-behavioral)).
+- **A rubric that names its item's `primary_concept` nowhere** (added 2026-08-21). An item's
+  rating moves on the attempt's first evidence row naming that concept
+  ([ADAPTIVE.md](ADAPTIVE.md#two-numbers-per-you-concept)), so a rubric that never names it writes no such
+  row and the rating stays at the author's prior however many times the item is attempted —
+  and a rating that never moves looks exactly like a well-calibrated one. `i.design.0003` is
+  the one on disk: its four criteria name every concept the item lists *except*
+  `rate-limiting`, the one it is chiefly a measurement of. **The corpus currently emits this
+  warning**; retagging a criterion is an authoring decision, not a validator's. Quant items
+  are exempt — their answer writes that row whatever the reasoning rubric names.
+
 Checks 2–8 each have a test in `packages/corpus/tests/test_validate.py` proving the check
 *catches* its failure, not merely that it passes. **Check 1 is the exception: JSON Schema
 conformance is covered only by `test_schema_accepts_the_real_concepts`, a pass-only test.**

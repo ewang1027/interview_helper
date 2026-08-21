@@ -409,8 +409,12 @@ def grade_quant(
     grading = item.grading or {}
     if grading.get("type") != "answer":
         raise ValueError(f"{item.id} is not graded by answer (type={grading.get('type')!r})")
-    if not (grading.get("answer") or {}):
-        raise ValueError(f"{item.id} has no answer to check against")
+    expected = grading.get("answer") or {}
+    if expected.get("exact") is None and expected.get("numeric") is None:
+        # The validator errors on this shape, so it should never reach here — and if it
+        # does, every submission is "wrong" against nothing. A failed grading with a reason
+        # is visible; a confident zero corrupts mastery permanently (docs/GRADING.md).
+        raise ValueError(f"{item.id} has no `exact` or `numeric` answer to check against")
     if not submission.strip():
         raise ValueError("an empty answer cannot be graded")
 

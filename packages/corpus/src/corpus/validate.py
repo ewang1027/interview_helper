@@ -419,7 +419,26 @@ def _check_grading(item: dict[str, Any], where: str, concept_ids: set[str]) -> l
             )
         )
     elif actual == "rubric":
-        findings.extend(_check_criteria(grading.get("criteria", []), where, "rubric", concept_ids))
+        criteria = grading.get("criteria", [])
+        findings.extend(_check_criteria(criteria, where, "rubric", concept_ids))
+        # docs/ADAPTIVE.md: an item's rating moves on the attempt's *first* evidence row
+        # naming its primary concept. A rubric that names that concept nowhere writes no
+        # such row, so the item's rating never leaves its author's prior however many times
+        # it is attempted — and nothing at runtime can notice, because a rating that does
+        # not move looks exactly like a well-calibrated one. A warning rather than an error:
+        # a rubric that measures a concept only through its parts is a defensible editorial
+        # choice, and it is the author who has to make it. Quant items are exempt — their
+        # answer writes that row whatever the reasoning rubric names.
+        primary = item.get("primary_concept")
+        if criteria and primary not in {c.get("concept") for c in criteria}:
+            findings.append(
+                Finding(
+                    "warn",
+                    where,
+                    f"no rubric criterion names the primary concept '{primary}', so this "
+                    "item's rating can never move from its seed (docs/ADAPTIVE.md)",
+                )
+            )
 
     return findings
 

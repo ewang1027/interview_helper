@@ -62,8 +62,10 @@ item_elo -= K_item * (score - expected)
 - **Known, not fixed: an item whose rubric never names its primary concept never moves at
   all.** `i.design.0003` is the one on disk — its four criteria name `rate-limiting`
   nowhere, so its rating stays at its author's prior however many times it is attempted.
-  That is a corpus-shape question rather than a projection bug, and the fix belongs in the
-  validator, not here.
+  That is a corpus-shape question rather than a projection bug, so **the validator warns**
+  about it ([CORPUS.md](CORPUS.md#validator-checks)) instead of the projection guessing at a
+  concept the author did not choose. Quant items are exempt: their answer writes that row
+  whatever the reasoning rubric names.
 
 A concept with fewer than five observations is flagged `calibrating`, and the API says so
 rather than presenting an estimate built on one data point as if it were settled.

@@ -375,3 +375,14 @@ def test_an_item_this_grader_does_not_own_is_refused_rather_than_scored():
         grade_quant(DESIGN, SUBMISSION)
     with pytest.raises(ValueError, match="empty answer"):
         grade_quant(TOKENS, "   ")
+
+
+def test_an_item_with_nothing_to_check_against_fails_rather_than_marking_everything_wrong():
+    """The validator errors on this shape so it should never reach the grader. If it does,
+    every submission is "wrong" against nothing — and a fabricated zero corrupts mastery
+    permanently while a failed grading is merely visible."""
+    hollow = TOKENS.model_copy(
+        update={"grading": {"type": "answer", "answer": {"unit": "presses"}}}
+    )
+    with pytest.raises(ValueError, match="no `exact` or `numeric`"):
+        grade_quant(hollow, SUBMISSION)
