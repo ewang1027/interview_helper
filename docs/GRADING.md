@@ -143,6 +143,17 @@ Two requirements on every criterion, both now enforced rather than hoped for:
   asserts that. **The validator still warns rather than errors on a missing `levels`**, so
   the grader copes: an unanchored criterion is sent with an instruction to judge
   conservatively, and it says so rather than pretending anchors were there.
+- **The scale is the criterion's, not the grader's** (corrected 2026-08-21). The corpus
+  does not fix one anchor scale: `system_design` and `behavioral` anchor on 0/2/4, and every
+  quant reasoning rubric anchors on 0/1/2/3. The grader read a hardcoded maximum of 4, which
+  would have scored a *perfect* three-point derivation at 0.75 and written evidence of a
+  weakness that was an artefact of the grader — silently, since nothing about the number
+  looks wrong. Full marks is now the criterion's own top anchor; the response schema
+  reports that maximum so the model is never invited to a level no anchor describes; and a
+  level above the scale is clamped, because `maximum` is an instruction to the provider and
+  not a guarantee from it. A criterion with no anchors at all falls back to the widest
+  scale, so a conservative judgement lands low on a wide scale rather than high on a narrow
+  one the grader invented.
 - **Citation.** Each judgement must quote the span it is based on — **and the quote is
   checked against the artifact.** Whitespace and case are forgiven, because a model that
   reflows a quotation has still quoted it; anything else is not. A citation that is not in

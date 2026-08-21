@@ -27,6 +27,7 @@ from api.grading.rubric import (
     RUBRIC_CONFIDENCE,
     cites_the_answer,
     grade_rubric,
+    level_max,
     response_schema,
 )
 from api.models import LlmCall
@@ -38,6 +39,7 @@ pytestmark = pytest.mark.db
 ITEMS = {item.id: item for item in load_items()}
 DESIGN = ITEMS["i.design.0001"]
 CODING = ITEMS["i.code.0001"]
+QUANT = ITEMS["i.quant.0001"]
 CRITERIA = DESIGN.grading["criteria"]
 
 ANSWER = (
@@ -109,7 +111,7 @@ def test_the_rubric_and_its_anchors_are_sent_verbatim():
 def test_the_response_is_constrained_to_this_items_criteria():
     """An `enum` of the item's own ids, so a judgement of something not on the rubric
     cannot be expressed rather than having to be filtered out afterwards."""
-    schema = response_schema([c["id"] for c in CRITERIA])
+    schema = response_schema(CRITERIA)
     ids = schema["properties"]["criteria"]["items"]["properties"]["id"]
     assert ids["enum"] == [c["id"] for c in CRITERIA]
     assert schema["additionalProperties"] is False
@@ -117,6 +119,67 @@ def test_the_response_is_constrained_to_this_items_criteria():
     model = scripted(verdict(CRITERIA[0]["id"], level=2, citation="delivery volume"))
     grade(model)
     assert model.requests[0]["output_config"]["format"]["type"] == "json_schema"
+
+
+def reanchored(criteria: list[dict[str, Any]], keys: list[str]) -> list[dict[str, Any]]:
+    """The same criteria, re-anchored on a different scale."""
+    return [{**c, "levels": {key: f"what a {key} looks like" for key in keys}} for c in criteria]
+
+
+def test_the_corpus_uses_two_anchor_scales_and_the_grader_reads_both():
+    """Not hypothetical, and the reason the scale is no longer a constant: `system_design`
+    and `behavioral` anchor on 0/2/4, and every quant reasoning rubric on disk anchors on
+    0/1/2/3."""
+    assert {level_max(c) for c in CRITERIA} == {4.0}
+    assert {level_max(c) for c in QUANT.grading["reasoning_rubric"]} == {3.0}
+
+
+def test_an_unanchored_criterion_falls_back_to_the_widest_scale():
+    """The validator only warns on a missing `levels`, so this case reaches the grader. A
+    conservative judgement should land low on a wide scale, not high on a narrow one the
+    grader invented."""
+    assert level_max({"id": "x", "weight": 1.0}) == 4.0
+    assert level_max({"id": "x", "weight": 1.0, "levels": {}}) == 4.0
+
+
+def test_the_response_schema_carries_the_items_own_top_anchor():
+    """Telling a model it may answer 4 on a rubric anchored to 3 invites a level no anchor
+    describes — the ungrounded judgement the anchors exist to prevent."""
+
+    def level(criteria: list[dict[str, Any]]) -> dict[str, Any]:
+        return response_schema(criteria)["properties"]["criteria"]["items"]["properties"]["level"]
+
+    assert level(CRITERIA)["maximum"] == 4.0
+    assert level(reanchored(CRITERIA, ["0", "1", "2", "3"]))["maximum"] == 3.0
+
+
+def test_a_top_anchor_is_full_marks_whatever_the_scale():
+    """The scale belongs to the criterion, not to the grader. Judging a 0..3 criterion
+    against a hardcoded 4 caps a perfect derivation at 0.75 and writes evidence of a
+    weakness that is an artefact of the grader — quant's reasoning rubrics are all 0..3."""
+    criteria = reanchored(CRITERIA, ["0", "1", "2", "3"])
+    item = DESIGN.model_copy(update={"grading": {"type": "rubric", "criteria": criteria}})
+    citation = "what decides where fanout happens"
+    model = scripted(*[verdict(c["id"], level=3, citation=citation) for c in criteria])
+
+    result = grade_rubric(item, ANSWER, client=model, settings=settings())
+
+    assert all(j.score == 1.0 and j.level_max == 3.0 for j in result.judgements)
+    assert result.score == pytest.approx(1.0)
+
+
+def test_a_level_above_the_scale_is_clamped_to_it():
+    """`maximum` is the model's instruction, not a guarantee — nothing downstream should be
+    able to score above 1.0 because a provider ignored it."""
+    criteria = reanchored(CRITERIA, ["0", "1", "2", "3"])
+    item = DESIGN.model_copy(update={"grading": {"type": "rubric", "criteria": criteria}})
+    citation = "what decides where fanout happens"
+    model = scripted(*[verdict(c["id"], level=9, citation=citation) for c in criteria])
+
+    result = grade_rubric(item, ANSWER, client=model, settings=settings())
+
+    assert all(j.level == 3.0 and j.score == 1.0 for j in result.judgements)
+    assert result.score == pytest.approx(1.0)
 
 
 def test_grading_is_routed_as_the_grading_job():

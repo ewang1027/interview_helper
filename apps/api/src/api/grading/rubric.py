@@ -39,9 +39,13 @@ logger = logging.getLogger(__name__)
 
 GRADER_VERSION = "rubric.llm@1"
 
-# The corpus anchors criteria on a 0-4 scale (`levels` keyed "0", "2", "4"), and everything
-# downstream of a grade is 0..1.
-LEVEL_MAX = 4.0
+# The corpus does not fix one anchor scale, and assuming it does costs a quarter of a
+# score in silence. `system_design` and `behavioral` anchor criteria on 0/2/4; every quant
+# reasoning rubric on disk anchors on 0/1/2/3. What "full marks" means is therefore the
+# criterion's own top anchor, read from it — a hardcoded 4 caps a perfect three-point
+# derivation at 0.75 and writes evidence of a weakness that is an artefact of the grader.
+# Only used where a criterion carries no anchors at all.
+DEFAULT_LEVEL_MAX = 4.0
 
 # A rubric judgement is a model's read of prose, not a hidden test passing. docs/ADAPTIVE.md
 # weights evidence by how much it should be trusted, and this is the number that says a
@@ -79,6 +83,7 @@ class Judgement:
     weight: float
     concept: str | None
     level: float
+    level_max: float
     score: float
     demonstrated: bool
     citation: str | None
@@ -91,6 +96,7 @@ class Judgement:
             "weight": self.weight,
             "concept": self.concept,
             "level": self.level,
+            "level_max": self.level_max,
             "score": round(self.score, 4),
             "demonstrated": self.demonstrated,
             "citation": self.citation,
@@ -125,12 +131,31 @@ class RubricGrade:
         }
 
 
-def response_schema(criterion_ids: list[str]) -> dict[str, Any]:
+def level_max(criterion: dict[str, Any]) -> float:
+    """The top anchor on this criterion — what a full-marks judgement is scored against.
+
+    A criterion with no anchors falls back to the widest scale, which is the same case
+    `build_prompt` tells the grader to judge conservatively on: there is no scale to read,
+    so a conservative judgement should land low on a wide one rather than high on a narrow
+    one it invented.
+    """
+    tops = [float(key) for key in (criterion.get("levels") or {})]
+    top = max(tops, default=0.0)
+    return top if top > 0 else DEFAULT_LEVEL_MAX
+
+
+def response_schema(criteria: list[dict[str, Any]]) -> dict[str, Any]:
     """The shape the model must answer in.
 
     `id` is an enum of this item's criteria, so a judgement of something that is not on the
-    rubric cannot be expressed rather than having to be filtered out afterwards.
+    rubric cannot be expressed rather than having to be filtered out afterwards. `maximum`
+    is the item's own top anchor: telling a model it may answer 4 on a rubric anchored to 3
+    invites a level no anchor describes, which is the ungrounded judgement the anchors exist
+    to prevent. Each criterion is still clamped to *its* scale when judged, since one
+    `maximum` cannot describe an item that mixes them.
     """
+    criterion_ids = [c["id"] for c in criteria]
+    top = max((level_max(c) for c in criteria), default=DEFAULT_LEVEL_MAX)
     return {
         "type": "object",
         "properties": {
@@ -141,7 +166,7 @@ def response_schema(criterion_ids: list[str]) -> dict[str, Any]:
                     "properties": {
                         "id": {"type": "string", "enum": criterion_ids},
                         "demonstrated": {"type": "boolean"},
-                        "level": {"type": "number", "minimum": 0, "maximum": LEVEL_MAX},
+                        "level": {"type": "number", "minimum": 0, "maximum": top},
                         "citation": {"type": "string"},
                         "reasoning": {"type": "string"},
                     },
@@ -222,7 +247,7 @@ def grade_rubric(
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": build_prompt(item, answer)}],
         max_tokens=MAX_TOKENS,
-        output_schema=response_schema([c["id"] for c in criteria]),
+        output_schema=response_schema(criteria),
         session_id=session_id,
         client=client,
         settings=settings,
@@ -296,6 +321,7 @@ def _judge(criterion: dict[str, Any], verdict: dict[str, Any] | None, answer: st
     """One criterion's judgement, after the citation has been checked."""
     weight = float(criterion.get("weight", 0.0))
     concept = criterion.get("concept")
+    top = level_max(criterion)
     if verdict is None:
         # The model skipped it. Not demonstrated, which is the same conclusion as "the
         # candidate did not address it" — and the honest one, since nothing says otherwise.
@@ -304,6 +330,7 @@ def _judge(criterion: dict[str, Any], verdict: dict[str, Any] | None, answer: st
             weight=weight,
             concept=concept,
             level=0.0,
+            level_max=top,
             score=0.0,
             demonstrated=False,
             citation=None,
@@ -314,7 +341,7 @@ def _judge(criterion: dict[str, Any], verdict: dict[str, Any] | None, answer: st
     citation = str(verdict.get("citation") or "")
     verified = cites_the_answer(citation, answer)
     demonstrated = bool(verdict.get("demonstrated")) and verified
-    level = max(0.0, min(LEVEL_MAX, float(verdict.get("level", 0.0))))
+    level = max(0.0, min(top, float(verdict.get("level", 0.0))))
     reasoning = str(verdict.get("reasoning") or "")
     if verdict.get("demonstrated") and not verified:
         reasoning = f"[citation not found in the answer] {reasoning}"
@@ -324,7 +351,8 @@ def _judge(criterion: dict[str, Any], verdict: dict[str, Any] | None, answer: st
         weight=weight,
         concept=concept,
         level=level if demonstrated else 0.0,
-        score=(level / LEVEL_MAX) if demonstrated else 0.0,
+        level_max=top,
+        score=(level / top) if demonstrated else 0.0,
         demonstrated=demonstrated,
         citation=citation or None,
         reasoning=reasoning,

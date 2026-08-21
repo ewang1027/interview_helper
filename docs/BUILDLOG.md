@@ -2131,3 +2131,77 @@ the check has to happen **before** the unit starts, from a prediction. And a pro
 calibrated only on the fastest machine it will ever meet has not been calibrated — the
 slow machine was always going to be the interesting one, because slow is what the probe
 measures.
+
+---
+
+## Phase 3 (anchor scales) — a grader that capped a perfect answer at 0.75 · 2026-08-21
+
+Found while starting the quant grader, which reuses the rubric grader for the derivation
+half. It would have reused a bug.
+
+```
+make check       185 passed (hermetic)
+make test-db     108 passed (live Postgres; was 103 — five anchor-scale tests)
+```
+
+### One constant, two scales
+
+`api.grading.rubric` carried `LEVEL_MAX = 4.0` with a comment stating that the corpus
+anchors criteria on 0/2/4. That was true of every rubric the grader had ever been pointed
+at — `system_design` and `behavioral`, which is all `grading.type == "rubric"` selects.
+It is not true of the corpus. Every `reasoning_rubric` on a quant item anchors on
+**0/1/2/3**, and has since Phase 1:
+
+| Items | `levels` keys |
+|---|---|
+| `i.design.*`, `i.behav.*` | `0`, `2`, `4` |
+| `i.quant.*` (`reasoning_rubric`) | `0`, `1`, `2`, `3` |
+
+So the first quant grading would have divided a top-anchor judgement by 4, scored a
+**perfect derivation at 0.75**, and written that number as `concept_evidence` at rubric
+confidence against `markov-chain-absorption`. Nothing would have failed. The score is
+plausible, the evidence is well-formed, and the adaptive engine would have drilled a
+weakness that was an artefact of the divisor — for every quant session, forever, since
+mastery is derived by replaying exactly those rows.
+
+The schema was wrong in the same way and in the other direction: `maximum: 4` told the
+model it could answer 4 on a rubric whose anchors stop at 3, which is an invitation to the
+one thing the anchors exist to prevent — a level no anchor describes.
+
+### What replaced it
+
+`level_max(criterion)` reads the top anchor off the criterion. Three consequences, each
+with a test:
+
+- **Full marks is the criterion's own top anchor**, so 3-of-3 and 4-of-4 both score 1.0.
+- **The response schema reports the item's maximum**, computed from its criteria.
+- **A level above the scale is clamped.** `maximum` is an instruction to a provider, not a
+  guarantee from one, and nothing downstream should be able to score above 1.0 because a
+  provider ignored it.
+
+A criterion with no anchors at all keeps the old constant, now named `DEFAULT_LEVEL_MAX` —
+the validator only *warns* on a missing `levels`, so that case reaches the grader. It gets
+the widest scale on purpose: told to judge conservatively with no scale to read, a grader
+should land low on a wide scale rather than high on a narrow one it invented.
+
+`Judgement` now records the `level_max` it was judged against, so a stored grading says
+what its numbers meant rather than leaving a later reader to assume a scale.
+
+### Verified against the pre-fix arithmetic, not just asserted
+
+The two scoring tests were re-run with the divisor put back to the constant: both fail
+(`0.75` where `1.0` is owed), and pass on the fix. A test for a bug that never saw the bug
+is a test of nothing — this repo has found that twice now, in the planner gate that passed
+for the wrong reason and in the probe budget that CI disagreed with.
+
+### The lesson, stated once
+
+A constant whose comment describes *the data it has seen* is a bug waiting for the second
+kind of data. The comment was accurate when written and wrong within a day of the corpus
+growing, and neither the schema nor the validator constrains an anchor scale — nothing was
+going to catch it except reading the other items.
+
+### Next
+
+The quant grader itself: sympy as a dependency, the answer check, and the reasoning rubric
+this fix just made safe to reuse.
