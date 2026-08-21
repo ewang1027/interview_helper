@@ -525,22 +525,28 @@ def list_problems(
         query = query.where(col(PracticeProblem.status) == status)
     if cursor is not None:
         query = query.where(col(PracticeProblem.id) < cursor)
-    rows = list(db.exec(query.order_by(col(PracticeProblem.id).desc()).limit(limit + 1)).all())
+    fetched = list(db.exec(query.order_by(col(PracticeProblem.id).desc()).limit(limit + 1)).all())
+
+    # The cursor is decided **before** the concept filter runs, and that ordering is the
+    # whole of it. Deciding after, a page whose rows all fail the filter reports no cursor —
+    # so the client stops, believing it has seen everything, while matching problems sit
+    # further back. The consequence is a page that can come back shorter than `limit`, or
+    # empty, with a cursor to continue from; that is ordinary cursor semantics, and a
+    # truncated list that looks complete is not.
+    more = len(fetched) > limit
+    page = fetched[:limit]
+    next_cursor = page[-1].id if more and page else None
+
     if concept_id is not None:
-        # Filtered here rather than in SQL: the secondary ids are a JSONB array, and a
-        # containment query over it would need a GIN index this table has no need for at
-        # the scale it will ever reach.
-        rows = [
+        # Filtered in Python rather than in SQL: the secondary ids are a JSONB array, and a
+        # containment query over it would want a GIN index this table has no use for at the
+        # scale a personal practice log reaches.
+        page = [
             row
-            for row in rows
+            for row in page
             if row.primary_concept_id == concept_id or concept_id in row.secondary_concept_ids
         ]
-    more = len(rows) > limit
-    rows = rows[:limit]
-    return {
-        "problems": [as_view(row) for row in rows],
-        "next_cursor": rows[-1].id if more and rows else None,
-    }
+    return {"problems": [as_view(row) for row in page], "next_cursor": next_cursor}
 
 
 def review_queue(db: Session, *, now: datetime | None = None) -> dict[str, Any]:

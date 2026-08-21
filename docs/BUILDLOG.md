@@ -2777,6 +2777,24 @@ where the ordering should have been copied from.
   project implements it yet, and logging the same problem twice is a duplicate row rather
   than a corruption. It belongs with the convention, not with this feature.
 
+### A filtered listing that stopped early
+
+Caught by re-reading the pagination after the wave was pushed. `GET /practice/problems`
+filters `concept_id` in Python — the secondary ids are a JSONB array, and a containment
+query wants a GIN index a personal practice log will never need — and it decided
+`next_cursor` **after** that filter ran. So a page whose rows all failed the filter reported
+no cursor, and a client stopped believing it had seen everything while matching problems sat
+further back.
+
+The cursor now describes where the *scan* reached rather than how many rows matched, so a
+filtered page may come back short or empty and still say where to continue. Pinned by a test
+that pages one at a time past two non-matching problems to reach a third; with the old
+ordering it finds nothing at all.
+
+The general form is worth keeping: **a limit and a filter have to be applied in the order
+that keeps the cursor meaningful**, and a short page is ordinary while a truncated list that
+looks complete is not.
+
 ### Next
 
 Phase 1's corpus is now the binding constraint on everything else. Twenty-four items is

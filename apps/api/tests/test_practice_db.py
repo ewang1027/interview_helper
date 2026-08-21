@@ -293,6 +293,31 @@ def test_the_queue_holds_what_is_due_most_overdue_first(logged):
     assert queue[0]["days_overdue"] >= 9
 
 
+def test_a_filtered_page_that_matches_nothing_still_says_where_to_continue(logged):
+    """The cursor is decided before the concept filter runs. Deciding after, a page whose
+    rows all fail the filter reports no cursor — so a client stops believing it has seen
+    everything, while matching problems sit further back. A short page is ordinary; a
+    truncated list that looks complete is not."""
+    first = client_with(classifier(primary=PRIMARY, secondaries=[]))
+    wanted = log(first, logged, title="The one being looked for")
+    # Two newer problems, neither tagged with what the filter asks for.
+    for title in ("Newer one", "Newest one"):
+        client = client_with(classifier(primary="hash-map-counting", secondaries=[]))
+        log(client, logged, title=title)
+
+    client = client_with(classifier())
+    seen: list[str] = []
+    cursor: str | None = None
+    for _ in range(10):
+        query = f"?concept_id={PRIMARY}&limit=1" + (f"&cursor={cursor}" if cursor else "")
+        body = client.get(f"/api/v1/practice/problems{query}").json()
+        seen += [row["id"] for row in body["problems"]]
+        cursor = body["next_cursor"]
+        if cursor is None:
+            break
+    assert wanted["id"] in seen
+
+
 # --- The shared engine ----------------------------------------------------------------------
 
 

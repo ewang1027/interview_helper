@@ -224,6 +224,13 @@ classification that was already acted on is a `409` that says so.
 problem in the same pending state, which a human already resolves — so an outage costs a
 confirmation rather than the record of something you actually solved.
 
+**A `concept_id`-filtered page can come back shorter than `limit`, or empty, with a cursor
+to continue from.** The cursor describes where the *scan* reached, not how many rows
+matched; page until `next_cursor` is null. The alternative — deciding the cursor after
+filtering — returns no cursor for a page whose rows all fail the filter, so a client stops
+believing it has seen everything while matching problems sit further back. A short page is
+ordinary; a truncated list that looks complete is not.
+
 ### Corpus and cost
 
 | Method | Path | Purpose |
