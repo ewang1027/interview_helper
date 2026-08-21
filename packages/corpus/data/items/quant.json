@@ -437,6 +437,306 @@
       ],
       "corpus_version": 1,
       "created_at": "2026-08-19"
+    },
+    {
+      "id": "i.quant.0004",
+      "kind": "instance",
+      "domain": "quant",
+      "modality": "quant",
+      "archetype_id": "a.quant.0001",
+      "title": "A turnstile that stops on one of each",
+      "statement_md": "A turnstile lights either **green** or **red** each time it is pushed. The two are equally\nlikely, and nothing the turnstile has already shown changes the odds on the next push.\n\nYou keep pushing and stop the moment the two most recent lights are **green and then red, in\nthat order**.\n\nGive the expected number of pushes, as an exact value. Set the calculation up explicitly\nrather than quoting a formula, and say what each quantity you introduce stands for.",
+      "concepts": [
+        "markov-chain-absorption",
+        "law-total-expectation",
+        "conditional-expectation"
+      ],
+      "primary_concept": "markov-chain-absorption",
+      "difficulty": {
+        "band": "easy",
+        "elo": 1420
+      },
+      "expected_minutes": 7,
+      "sources": [
+        {
+          "url": "https://whiteoakintel.com/blog/markov-chain-coin-sequence/",
+          "title": "Markov Chain Coin Sequence: E[HH] vs E[HTH] Explained",
+          "retrieved_at": "2026-08-19",
+          "evidence": "A write-up devoted entirely to pattern waiting times, which states outright that the question recurs in quantitative finance loops at named trading firms and that its purpose is to separate candidates who see the absorbing-state structure from those improvising. Also documents the paired-pattern follow-up."
+        },
+        {
+          "url": "https://quantvault.org/top-50-quant-interview-questions.html",
+          "title": "Top 50 Quant Interview Questions (With Full Solutions)",
+          "retrieved_at": "2026-08-19",
+          "evidence": "A compiled bank organised by topic that carves out a whole section for Markov chains and absorption, and whose worked demonstration of the section is a first-occurrence waiting-time computation. Attributes the pool to a shared set of trading-firm loops rather than to one author's taste."
+        },
+        {
+          "url": "https://www.tradinginterview.com/jane-street-interview-questions/",
+          "title": "Example Jane Street Interview Questions",
+          "retrieved_at": "2026-08-19",
+          "evidence": "Independent site collecting phone-round examples for one firm; its first listed category is sequential state-transition modelling, and it notes the round is scored on the reasoning narrated aloud rather than the final figure. Corroborates the pattern from a firm-specific angle instead of a topic taxonomy."
+        }
+      ],
+      "hints": [
+        "How much of the history do you actually need to carry forward? After any push, what is the only thing about the past that changes what happens next?",
+        "Two situations are enough: the last light was green, or it was not. Name the expected number of further pushes from each.",
+        "Write one equation per situation by conditioning on the next push. Count that push as a 1, then add the expected cost of wherever it leaves you.",
+        "Be careful with a green that follows a green. It does not send you back to the start — you are still one green away from finishing, which is exactly what makes this different from waiting for two of the same colour."
+      ],
+      "follow_ups": [
+        "Now stop on green followed by green instead. Is the answer the same, and if not, which is larger and why?",
+        "The green light now has probability p rather than a half. What do the two answers become, and is there a p at which they cross?",
+        "You want the expected number of pushes until green-then-red has appeared **twice**. Does the same state machine still work?"
+      ],
+      "grading": {
+        "type": "answer",
+        "answer": {
+          "exact": "4",
+          "numeric": 4.0,
+          "tolerance": 1e-06,
+          "unit": "pushes"
+        },
+        "reasoning_rubric": [
+          {
+            "id": "state_identification",
+            "weight": 0.4,
+            "concept": "markov-chain-absorption",
+            "description": "Collapses the history to whether the last light was green, and says why that is the whole of what matters for the next push.",
+            "levels": {
+              "0": "Works with the raw sequence, or takes 1 / (1/4) = 4 from the probability of the pair alone with no notion of state — the right number from an argument that would give the same answer for green-then-green.",
+              "1": "Mentions 'states' but the set is wrong or unbounded — tracking the whole run of greens so far, say, rather than only whether the last light was green.",
+              "2": "Two states, plus finishing, identified correctly, but with no argument that the last light is all the history you need.",
+              "3": "Two states plus an absorbing one, with an explicit statement that the last light alone is a sufficient summary because the pushes are independent."
+            }
+          },
+          {
+            "id": "conditioning_setup",
+            "weight": 0.35,
+            "concept": "law-total-expectation",
+            "description": "Writes the one-step equations correctly, in particular that a green following a green leaves the process where it was rather than sending it back.",
+            "levels": {
+              "0": "No equations, or equations that omit the +1 for the push just spent.",
+              "1": "Equations written but a second green is treated as a failure that returns to the start.",
+              "2": "Both equations correct; the green-after-green case is handled right but passed over without comment.",
+              "3": "Both equations correct, with the green-after-green case called out as the point of the problem and the +1 justified as conditioning on the next push."
+            }
+          },
+          {
+            "id": "solve_and_contrast",
+            "weight": 0.25,
+            "concept": "conditional-expectation",
+            "description": "Solves to 4 and can say why waiting for two greens in a row would take longer, rather than reporting whatever the algebra produced.",
+            "levels": {
+              "0": "Arithmetic error carried through with no check; answer far from 4.",
+              "1": "Reaches 4 but cannot say whether it is plausible or how it would change for another pair.",
+              "2": "Reaches 4 correctly with no comparison offered.",
+              "3": "Reaches 4 and explains that two greens in a row takes longer — 6 — because a failed match there throws away the progress already made, while here it does not."
+            }
+          }
+        ]
+      },
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
+    },
+    {
+      "id": "i.quant.0005",
+      "kind": "instance",
+      "domain": "quant",
+      "modality": "quant",
+      "archetype_id": "a.quant.0002",
+      "title": "A three-roll game where changing your mind costs",
+      "statement_md": "A stall runs a game with a fair ten-sided die, faces 1 to 10. A face pays that many dollars.\n\nYou roll, and you may either **bank** the face in front of you or **discard** it and roll\nagain. Discarding costs **50 cents**, taken off whatever you finally bank. You get at most\nthree rolls, and the third must be banked whatever it shows.\n\nPlaying to take home as much as possible, what is the game worth before the first roll? Give\nan exact value, state the rule you would follow at each roll, and say where each threshold\ncomes from.",
+      "concepts": [
+        "expected-value-decision",
+        "law-total-expectation",
+        "edge-and-fair-value"
+      ],
+      "primary_concept": "expected-value-decision",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1660
+      },
+      "expected_minutes": 12,
+      "sources": [
+        {
+          "url": "https://www.techinterview.org/companies/jane-street/",
+          "title": "Jane Street Interview Guide: Mental Math, Probability, Trading Games",
+          "retrieved_at": "2026-08-19",
+          "evidence": "Stage-by-stage loop guide that lists an accept-or-try-again game and its optimal acceptance threshold among the brainteasers, and separately describes trading rounds built on fair-value reasoning. Useful because it places the pattern inside a described interview process, not a question list."
+        },
+        {
+          "url": "https://www.rohan-paul.com/p/ml-interview-q-series-dice-game-strategy",
+          "title": "Dice Game Strategy: Optimal Stopping Decisions Using Expected Value",
+          "retrieved_at": "2026-08-19",
+          "evidence": "An interview-question series entry treating the bounded-chances stopping game as a standalone asked problem, working it by backward induction and then confirming the analytic value with a Monte Carlo script. Attests the pattern from the quant/ML interview-prep side rather than the trading-desk side."
+        },
+        {
+          "url": "https://www.tradinginterview.com/jane-street-interview-questions/",
+          "title": "Example Jane Street Interview Questions",
+          "retrieved_at": "2026-08-19",
+          "evidence": "Lists optimal stopping paired with expected value as one of a handful of example phone-round categories for a single firm, naming backward induction as the expected method. Third independent domain attesting the same pattern."
+        }
+      ],
+      "hints": [
+        "Which roll is the easiest one to price? You have no decision to make on the last one.",
+        "Work backwards. At each earlier roll you are comparing the face in front of you against one number: what the rest of the game is worth if you let this face go.",
+        "The fee is not something to subtract at the end. Rolling again buys you the next stage's value *minus* the 50 cents you paid to get there, and that is the number the face has to beat.",
+        "Do the two comparisons: at the second roll the face must beat 5, at the first it must beat 6. Then average the face you keep against the value of walking on, weighted by how often each happens."
+      ],
+      "follow_ups": [
+        "The fee rises to $2 a discard. Do the thresholds move, and does the game stay worth playing?",
+        "You may now roll a fourth time. What does that add, and is the extra roll worth more or less than the third one was?",
+        "The stall charges an entry fee up front. What is the largest fee at which you would still play, and is that the same number as the game's value?"
+      ],
+      "grading": {
+        "type": "answer",
+        "answer": {
+          "exact": "7",
+          "numeric": 7.0,
+          "tolerance": 1e-06,
+          "unit": "dollars"
+        },
+        "reasoning_rubric": [
+          {
+            "id": "backward_induction",
+            "weight": 0.4,
+            "concept": "expected-value-decision",
+            "description": "Prices the game from the compulsory last roll backwards, rather than reasoning forward from the first.",
+            "levels": {
+              "0": "Reasons forward or averages the three rolls; no notion of what the remaining game is worth.",
+              "1": "Says 'work backwards' but prices only one stage, or reuses 5.5 as the value of the remaining game at both decisions.",
+              "2": "Both stages priced in the right order with the right values — 11/2 then 13/2 — stated without justification.",
+              "3": "Explicit backward chain: the last roll is worth 11/2, that is what a discard on roll two buys before the fee, and 13/2 is what a discard on roll one buys — with the recursion named."
+            }
+          },
+          {
+            "id": "fee_in_the_threshold",
+            "weight": 0.35,
+            "concept": "expected-value-decision",
+            "description": "Puts the discard fee inside the value of rolling again, where it changes the decision, rather than taking it off the answer at the end.",
+            "levels": {
+              "0": "Ignores the fee, or subtracts it once from the final value as though it did not affect any choice.",
+              "1": "Sees that the fee matters but charges it for banking, or subtracts it from the face in hand rather than from what rolling again is worth.",
+              "2": "Rolling again is valued at the next stage minus the fee at both decisions, giving thresholds of 5 and 6 — correct but asserted.",
+              "3": "Both thresholds correct and derived as 'bank the face if and only if it beats what another roll is worth after paying for it', with the boundary face named as a genuine indifference."
+            }
+          },
+          {
+            "id": "arithmetic_and_value",
+            "weight": 0.25,
+            "concept": "edge-and-fair-value",
+            "description": "Carries the stage arithmetic to the exact value and offers a plausibility check on the number.",
+            "levels": {
+              "0": "Value materially wrong, or reported without units or exactness.",
+              "1": "Method sound but an arithmetic slip leaves the value off, and the slip is not noticed.",
+              "2": "Reaches exactly 7, no commentary.",
+              "3": "Reaches exactly 7 and bounds it sensibly — above the 13/2 that one more roll is worth, below 10 — or notices that banking a 6 on the first roll leaves the value unchanged because that face is exactly the indifference point."
+            }
+          }
+        ]
+      },
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
+    },
+    {
+      "id": "i.quant.0006",
+      "kind": "instance",
+      "domain": "quant",
+      "modality": "quant",
+      "archetype_id": "a.quant.0003",
+      "title": "Coats handed back without the tickets",
+      "statement_md": "Nine guests each hand a coat to a cloakroom. At the end of the night the tickets have been\nlost, and the attendant hands the nine coats back one per guest, in a uniformly random\norder.\n\nGive the expected number of guests who get their own coat, as an exact value. Set the\ncalculation up explicitly rather than quoting a known result, and say what each quantity you\nintroduce stands for.",
+      "concepts": [
+        "linearity-of-expectation",
+        "indicator-variables",
+        "symmetry-arguments"
+      ],
+      "primary_concept": "linearity-of-expectation",
+      "difficulty": {
+        "band": "easy",
+        "elo": 1320
+      },
+      "expected_minutes": 7,
+      "sources": [
+        {
+          "url": "https://www.techinterview.org/post/3233474553/probability-brainteasers-quant-interviews/",
+          "title": "Probability Brainteasers for Quant Interviews: Dice, Coins, Cards, Urns",
+          "retrieved_at": "2026-08-19",
+          "evidence": "A brainteaser taxonomy that names four tools it says the rounds actually test, two of which are the additivity of expectation and the use of 0/1 counters, and which asserts that several named market-making and hedge-fund loops lean on this family. Attests the technique, not merely one puzzle."
+        },
+        {
+          "url": "https://quantvault.org/top-50-quant-interview-questions.html",
+          "title": "Top 50 Quant Interview Questions (With Full Solutions)",
+          "retrieved_at": "2026-08-19",
+          "evidence": "Presents a short list of roughly fifteen recurring techniques behind its question bank and includes additivity of expectation with 0/1 counters among them, with a dedicated expectation-and-variance section. Independent compilation attributing the pool to several firms' loops."
+        },
+        {
+          "url": "https://www.quantt.co.uk/resources/quant-interview-questions",
+          "title": "Quant Interview Questions 2026: 50 With Answers",
+          "retrieved_at": "2026-08-19",
+          "evidence": "A separate question list whose probability section resolves an expected-count problem by splitting the count into per-item contributions and adding them, which is exactly this pattern in use. Names a broad set of employers, so it is not a single desk's habit."
+        }
+      ],
+      "hints": [
+        "Counting the arrangements in which exactly k guests are matched is hard. Is there a way to get the average without ever knowing that distribution?",
+        "Give each guest a variable that is 1 when they get their own coat and 0 otherwise. What is the count you are asked about, in terms of those nine variables?",
+        "For one particular guest, what is the chance the coat they are handed is theirs? Argue it by symmetry rather than by counting arrangements.",
+        "Add the nine expectations. You do not need the variables to be independent for that step, and they are not — say why the step is still valid."
+      ],
+      "follow_ups": [
+        "Twenty guests instead of nine. What changes?",
+        "What is the probability that *nobody* gets their own coat, and why is that a much harder question than this one?",
+        "The attendant hands back coats in a random order but never gives a guest the coat of the person next to them. Does linearity still get you an answer?"
+      ],
+      "grading": {
+        "type": "answer",
+        "answer": {
+          "exact": "1",
+          "numeric": 1.0,
+          "tolerance": 1e-06,
+          "unit": "guests"
+        },
+        "reasoning_rubric": [
+          {
+            "id": "indicator_decomposition",
+            "weight": 0.4,
+            "concept": "indicator-variables",
+            "description": "Turns the count into a sum of one 0/1 variable per guest, rather than reaching for the distribution of the count itself.",
+            "levels": {
+              "0": "Attempts the distribution of the number of matches, or reaches for derangements, or guesses.",
+              "1": "Mentions indicators but attaches them to coat-guest pairs rather than one per guest, giving 81 of them instead of 9.",
+              "2": "Nine indicators, one per guest, summed correctly, set up without comment.",
+              "3": "Nine indicators, with the count-as-a-sum step named as the move that makes the problem tractable at all."
+            }
+          },
+          {
+            "id": "single_probability",
+            "weight": 0.3,
+            "concept": "symmetry-arguments",
+            "description": "Computes the chance that one particular guest gets their own coat, by symmetry rather than by counting arrangements.",
+            "levels": {
+              "0": "Uses something other than 1/9 — treating the coats as handed out with replacement, or counting arrangements and slipping.",
+              "1": "Right idea but conditions on what happened to other guests and gets tangled in the dependence.",
+              "2": "Gets 1/9 for a particular guest correctly.",
+              "3": "Gets 1/9 and justifies it by symmetry — every one of the nine coats is equally likely to reach that guest, so where they stand in the queue is irrelevant."
+            }
+          },
+          {
+            "id": "dependence_justification",
+            "weight": 0.3,
+            "concept": "linearity-of-expectation",
+            "description": "Says explicitly that summing the expectations is valid without any independence assumption, and does not smuggle one in.",
+            "levels": {
+              "0": "Asserts the nine events are independent, or multiplies probabilities as though they were.",
+              "1": "Adds the expectations without ever addressing dependence.",
+              "2": "Notes that expectation is additive whether or not the variables are independent.",
+              "3": "Notes additivity regardless of dependence and identifies where the dependence lives — one guest being matched changes the odds for everyone left — and observes that the answer is 1 for any number of guests."
+            }
+          }
+        ]
+      },
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
     }
   ]
 }

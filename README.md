@@ -70,8 +70,8 @@ breakdown, because adaptation you cannot inspect is adaptation you cannot trust.
 | `apps/api/` | FastAPI — `/health` and `/auth/*` at the root, and behind a session cookie under `/api/v1` the **session layer** (plan → submit → grade → report), mastery, costs and `corpus/status`. The deterministic coding grader, GitHub OAuth, the model-call path, the **interviewer agent** and the **SSE stream** live here too |
 | `apps/web/` | *Empty placeholder.* Next.js 15 app, Phase 5 |
 | `apps/executor/` | Sandboxed code runner (no network, non-root, resource-capped) — isolation, `POST /execute` and `POST /probe` (the complexity probe) are built |
-| `packages/corpus/` | Versioned question corpus + JSON Schema + validator (27 items today) |
-| `research/` | *Empty placeholder.* Corpus ingestion pipeline, Phase 1 — the 27 items were hand-authored, not pipeline-produced |
+| `packages/corpus/` | Versioned question corpus + JSON Schema + validator (30 items today) |
+| `research/` | *Empty placeholder.* Corpus ingestion pipeline, Phase 1 — the 30 items were hand-authored, not pipeline-produced |
 | `scripts/` | The gates: secret scan, doc links, doc consistency, reference-solution verification — all four run in CI — plus the local push and hygiene checks |
 | `hooks/` | `pre-push`: secret scan and the docs-with-code check, installed by `make setup` |
 | `infra/compose/` | Local Postgres today; the rest of the stack lands in Phase 6 with the Dockerfiles |
@@ -115,7 +115,7 @@ make seed       # load the corpus into the database
 make dev-api    # run the API against it (uvicorn --reload)
 make login      # mint a session cookie — every /api/v1 route needs one
 make check      # ruff + mypy + pytest + corpus validate + doc gates + secret scan, then hygiene
-make test-db    # schema and session tests against the live Postgres
+make test-db    # seeds the corpus, then the schema and session tests against live Postgres
 
 make test-sandbox     # every test needing real Docker: escapes, /execute, /probe, grading
 make test-e2e         # one scripted coding session — needs Postgres AND Docker
@@ -142,10 +142,11 @@ owes.
 
 - [x] **0 — Foundations:** repo, schema, taxonomy, corpus contract, CI
 - [ ] **1 — Corpus v1:** researched, evidence-ranked, original statements — *thin slice
-      landed (2026-08-20, widened 2026-08-21): 27 items — 3 archetypes in each of the four
-      domains, with 6 coding instances and 3 in each other domain, all verified. Coding now
-      has two instances per archetype at different ratings, so the planner can choose
-      between items and not just between concepts; bulk authoring toward ~400/~150 remains*
+      landed (2026-08-20, widened 2026-08-21): 30 items — 3 archetypes in each of the four
+      domains, with 6 coding and 6 quant instances and 3 in each other domain, all verified.
+      Coding and quant now carry two instances per archetype at different ratings, so the
+      planner can choose between items and not just between concepts; bulk authoring toward
+      ~400/~150 remains*
 - [x] **2 — Executor + deterministic grading** — *isolation, `POST /execute`,
       `POST /probe` and the scoring grader landed and verified (2026-08-20). A quadratic
       submission that passes every one of an item's tests is caught by the probe and

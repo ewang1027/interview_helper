@@ -156,7 +156,11 @@ weakness the candidate does not have, which is the failure this grader is most a
 cause. `tolerance` still applies as an absolute band, and `accept_forms` covers what sympy
 cannot normalise — a mixed number, a currency figure — matched as bounded text and tried
 *last*, because an equivalence sympy proved is a stronger thing to be right about than a
-substring of a sentence.
+substring of a sentence. **A form the parser can already read is skipped entirely**
+(2026-08-21): it is decided, correctly, by the equivalence check, and matching it as text is
+strictly worse. Authoring `i.quant.0006`, whose answer is `1`, found why — `1` listed as an
+accepted form matched the numerator of "about 1/9 of them, so 0.111" and marked a wrong
+answer correct.
 
 **sympy parses untrusted text, so it is walled first** ([SECURITY.md](SECURITY.md#the-answer-parser)).
 

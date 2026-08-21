@@ -20,7 +20,7 @@ detail behind it.
 | Phase | State | What exists | What it still owes |
 |---|---|---|---|
 | **0** Foundations | **complete** | workspace, 159-concept taxonomy, corpus schema + validator, CI | — |
-| **1** Corpus v1 | **partial** — thin slice | 27 items — 3 archetypes in each of four domains, with 6 coding instances and 3 in each other domain, all verified | bulk authoring toward ~400/~150, and archetypes for concepts nothing measures as a primary |
+| **1** Corpus v1 | **partial** — thin slice | 30 items — 3 archetypes in each of four domains, with 6 coding and 6 quant instances and 3 in each other domain, all verified | design and behavioral second instances, bulk authoring toward ~400/~150, and archetypes for concepts nothing measures as a primary |
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | a full session against a live provider — gated on Bedrock access, not on code |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within five sessions | weights are placeholders until real sessions calibrate them |
@@ -2897,3 +2897,81 @@ Same again for quant, design and behavioral — three more instances each, which
 domain to two per archetype. Then the expensive half: new **archetypes**, which is what the
 prerequisite gate is actually waiting for, and what takes real research rather than
 authoring against a pattern already attested on disk.
+
+---
+
+## Phase 1 (quant, second instance per archetype) — and a form that matched the wrong number · 2026-08-21
+
+Three new quant instances, one per archetype, spread away from the ratings already there.
+Thirty items now; quant and coding both carry two instances per archetype.
+
+```
+corpus validate    159 concepts · 30 items (12 archetypes, 18 instances) · 0 errors, 0 warnings
+make check         249 passed   make test-db 139 passed   make test-e2e 1 passed
+```
+
+| New item | Archetype | Rating | Answer | Why it is a different question |
+|---|---|---|---|---|
+| `i.quant.0004` | `a.quant.0001` | easy 1420 | `4` | the target is a *pair*, not a run — a repeat of the first symbol does not reset |
+| `i.quant.0005` | `a.quant.0002` | medium 1660 | `7` | a fee per discard, so the threshold is "beats the next stage **minus what it costs to get there**" |
+| `i.quant.0006` | `a.quant.0003` | easy 1320 | `1` | indicators over a permutation, and the answer is 1 for every n |
+
+Every answer was checked twice before it was written down — once by exact reasoning and
+once by simulating 400,000 runs. The waiting time came back 3.9998 against 4, the game
+7.0046 against 7, the coats 0.9985 against 1.
+
+### The level-0 anchor that is the whole reason quant has a rubric
+
+`i.quant.0004` asks for the expected pushes until green-then-red on a fair light. The
+marginal probability of that pair is 1/4, so "1 over 1/4, so 4" produces **the right number**
+— and would produce 4 for green-then-green as well, which is really 6. The rubric's
+lowest anchor names that argument explicitly.
+
+It is the cleanest example this corpus has of why docs/GRADING.md weights the derivation at
+0.6: a grader that checked the number alone would score that answer full marks, and the
+evidence it wrote about `markov-chain-absorption` would be false.
+
+### An accepted form that matched a different number
+
+Running the new items through the grader before committing them turned up a real defect.
+`i.quant.0006`'s answer is `1`, and `1` was listed in `accept_forms`. Against "about 1/9 of
+them, so 0.111" the digit guards all held — the `1` in `1/9` is genuinely bounded by
+non-digits — and a **wrong answer was marked correct**.
+
+The fix is not a better guard. It is that `accept_forms` had no business holding `1` at all:
+the field is for forms sympy *cannot* normalise, and anything parseable is already decided,
+correctly, by the equivalence check one step earlier. `accepted_form` now **skips any form
+the parser can read**, which makes the field mean what the schema says it means and removes
+the whole class — including from the items already on disk, whose lists are mostly redundant
+spellings of numbers sympy handles. `i.quant.0003`'s `5 1/3`, a mixed number nothing can
+parse, is what the field is actually for and still works.
+
+### Two gates, and the one that was not run
+
+The coding wave was pushed with `make check`, `make test-db` and `make verify-solutions`
+green — and CI failed, on `make test-e2e`, which is the fourth gate and the one not run.
+`test_session_e2e` pinned the whole plan (`["i.code.0001", "i.code.0002"]`) and the planner
+had correctly started preferring the new easier item. Same class as the eight fixed in that
+wave, in the one place the local runs could not see it.
+
+The test needed only its *impostor's* item pinned — `QUADRATIC_SPANS` is written against that
+entrypoint — so it now names that one and takes whatever else the planner served, with the
+evidence-row count computed from the corpus rather than written down as `8`.
+
+This repo's own rule is that a gate you did not run is a gate you cannot cite. Four gates
+exist precisely because they catch different things, and the corpus is the input all four
+share.
+
+### Also: `make test-db` seeds first now
+
+`items` is a projection of the corpus, and the planner reads it. Twice in two waves,
+authoring items and then running the database tests produced a wall of failures — 47 the
+first time — whose only cause was a table that had not been re-seeded, and whose output said
+nothing about it. CI has always seeded before that step; local now does too.
+
+### Next
+
+Design and behavioral, three instances each, which brings all four domains to two per
+archetype. Then the expensive half — new **archetypes**, which need research rather than
+authoring against a pattern already attested, and which are what the prerequisite gate is
+waiting for.

@@ -84,6 +84,11 @@ test-e2e: ## One scripted coding session against a live stack — needs Postgres
 	uv run pytest -q -m e2e
 
 test-db: ## DB-backed tests against a live Postgres (make dev first)
+	@# Seeded first, because `items` is a projection of the corpus and the planner reads it.
+	@# Twice now, authoring corpus items and then running this produced a wall of failures
+	@# whose only cause was a stale table -- 47 of them the first time, and nothing in the
+	@# output said so. CI already seeds before this step; this brings local into line.
+	uv run python -m api.seed
 	uv run pytest apps/api/tests -q -m db
 
 test-llm: ## The only tests that call a real model — costs money, needs credentials and Postgres

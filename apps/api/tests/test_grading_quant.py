@@ -213,11 +213,20 @@ def test_an_accepted_form_covers_what_sympy_cannot_normalise():
 
 
 def test_an_accepted_form_is_bounded_by_digits_but_not_by_punctuation():
-    """`39` must not match inside `390` — and must still match at the end of a sentence,
-    which is where an answer usually sits."""
-    assert accepted_form("the answer is 39.", ["39"]) == "39"
-    assert accepted_form("there are 390 of them", ["39"]) is None
-    assert accepted_form("it came to 39.5 presses", ["39"]) is None
+    """A form must not match inside a longer number — and must still match at the end of a
+    sentence, which is where an answer usually sits."""
+    assert accepted_form("the answer is 5 1/3.", ["5 1/3"]) == "5 1/3"
+    assert accepted_form("it came to 5 1/30 changeovers", ["5 1/3"]) is None
+    assert accepted_form("i make it 15 1/3", ["5 1/3"]) is None
+
+
+def test_a_form_the_parser_can_already_read_is_not_matched_as_text():
+    """Found by authoring `i.quant.0006`, whose answer is 1: listing `1` as an accepted form
+    matched the numerator of "about 1/9 of them, so 0.111" and marked a wrong answer
+    correct. Anything parseable is already decided by the equivalence check; what belongs in
+    this list is exactly what that check cannot read."""
+    assert accepted_form("about 1/9 of them, so 0.111", ["1"]) is None
+    assert accepted_form("i make it 5 1/3 changeovers", ["5 1/3", "1"]) == "5 1/3"
 
 
 def test_the_strongest_method_that_fits_is_the_one_reported():

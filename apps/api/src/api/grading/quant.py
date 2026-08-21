@@ -322,11 +322,19 @@ def accepted_form(statement: str, forms: list[str]) -> str | None:
     match inside `390` or `39.5` — but only against *digits*: a form at the end of a
     sentence is followed by a full stop, and a guard that refuses that refuses most of the
     real ones.
+
+    **A form the parser can already handle is skipped**, because it is not what this list is
+    for and matching it as text is strictly worse. `i.quant.0006`'s answer is `1`, and `1`
+    listed as an accepted form matched the numerator of "about 1/9 of them, so 0.111" — a
+    wrong answer marked correct. Anything parseable is already decided, correctly, by the
+    equivalence check above; what is left here is exactly the forms that check cannot read.
     """
     haystack = _normalise(statement)
     for form in forms:
         needle = _normalise(form)
-        if needle and re.search(rf"(?<!\d)(?<!\d\.){re.escape(needle)}(?!\d)(?!\.\d)", haystack):
+        if not needle or safe_parse(form) is not None:
+            continue
+        if re.search(rf"(?<!\d)(?<!\d\.){re.escape(needle)}(?!\d)(?!\.\d)", haystack):
             return form
     return None
 

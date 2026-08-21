@@ -33,7 +33,9 @@ from corpus.loader import load_items
 pytestmark = pytest.mark.e2e
 
 # The naive backward scan from docs/BUILDLOG.md: correct, and quadratic on ascending
-# input. It passes every test i.code.0002 ships, so only the probe can mark it down.
+# input. It passes every test i.code.0002 ships, so only the probe can mark it down. The
+# item is named here because this source is written against its entrypoint.
+IMPOSTOR_ITEM = "i.code.0002"
 QUADRATIC_SPANS = (
     "def pressure_spans(readings):\n"
     "    out = []\n"
@@ -98,14 +100,21 @@ def test_a_coding_session_runs_from_plan_to_report(executor_server, created_sess
     created = client.post("/api/v1/sessions", json={"mode": "coding", "budget_minutes": 45}).json()
     created_sessions.append(created["id"])
     planned = [entry["item_id"] for entry in created["plan"]["items"]]
-    assert planned == ["i.code.0001", "i.code.0002"], planned
 
     # A correct solution, and a correct-but-quadratic one. The pair is the whole point:
     # both pass every test they are given, and the report has to tell them apart.
+    #
+    # Only the impostor's item is pinned, because `QUADRATIC_SPANS` is written against that
+    # item's entrypoint. Which item joins it in the plan is the planner's decision and it
+    # changes when the corpus does — this test asserted the whole plan until a second
+    # `sliding-window` instance was authored and the planner, correctly, preferred it.
+    assert IMPOSTOR_ITEM in planned, planned
+    correct_item = next(item_id for item_id in planned if item_id != IMPOSTOR_ITEM)
+
     items = {item.id: item for item in load_items()}
     submissions = {
-        "i.code.0001": (items["i.code.0001"].grading or {})["reference_solutions"]["python"],
-        "i.code.0002": QUADRATIC_SPANS,
+        correct_item: (items[correct_item].grading or {})["reference_solutions"]["python"],
+        IMPOSTOR_ITEM: QUADRATIC_SPANS,
     }
     for item_id, source in submissions.items():
         resp = client.post(
@@ -119,15 +128,17 @@ def test_a_coding_session_runs_from_plan_to_report(executor_server, created_sess
 
     report = client.get(f"/api/v1/sessions/{created['id']}/report").json()
     scores = {row["item_id"]: row["score"] for row in report["items"]}
-    assert scores["i.code.0001"] == pytest.approx(1.0)
-    assert scores["i.code.0002"] == pytest.approx(0.75)
+    assert scores[correct_item] == pytest.approx(1.0)
+    assert scores[IMPOSTOR_ITEM] == pytest.approx(0.75)
 
-    quadratic = next(r for r in report["items"] if r["item_id"] == "i.code.0002")
+    quadratic = next(r for r in report["items"] if r["item_id"] == IMPOSTOR_ITEM)
     assert quadratic["detail"]["complexity"] == "slower_than_target"
     assert quadratic["detail"]["complexity_slope"] > 1.65
 
-    # Eight evidence rows: four concepts on each item, primary at full confidence.
-    assert len(report["evidence"]) == 8
+    # One evidence row per concept each item names, counted from the corpus rather than
+    # written down: the number is a property of what was served.
+    expected_rows = len(items[correct_item].concepts) + len(items[IMPOSTOR_ITEM].concepts)
+    assert len(report["evidence"]) == expected_rows
     primary = [row for row in report["evidence"] if row["concept_id"] == "monotonic-stack"]
     assert primary and primary[0]["confidence"] == pytest.approx(0.9)
     assert primary[0]["score"] == pytest.approx(0.75)
