@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
@@ -203,6 +204,30 @@ def enforce_budget(db: Session, *, session_id: str | None, settings: Settings) -
 # --- The call ------------------------------------------------------------------------------
 
 
+def _request(
+    *,
+    model: str,
+    max_tokens: int,
+    messages: list[dict[str, Any]],
+    system: str | list[dict[str, Any]] | None,
+    tools: list[dict[str, Any]] | None,
+    effort: str | None,
+) -> dict[str, Any]:
+    """The request body, built the same way for a streamed and an unstreamed call.
+
+    One builder because the cache prefix is `tools` then `system`: two builders is two
+    chances for those to be assembled differently and for a switch between call styles to
+    read as a cache miss on the bill."""
+    request: dict[str, Any] = {"model": model, "max_tokens": max_tokens, "messages": messages}
+    if system is not None:
+        request["system"] = cached_system(system) if isinstance(system, str) else system
+    if tools:
+        request["tools"] = tools
+    if effort is not None:
+        request["output_config"] = {"effort": effort}
+    return request
+
+
 def complete(
     *,
     job: Job,
@@ -223,19 +248,14 @@ def complete(
     with Session(get_engine()) as db:
         enforce_budget(db, session_id=session_id, settings=config)
 
-    request: dict[str, Any] = {
-        "model": model,
-        "max_tokens": max_tokens,
-        "messages": messages,
-    }
-    if system is not None:
-        request["system"] = cached_system(system) if isinstance(system, str) else system
-    if tools:
-        request["tools"] = tools
-    effort = routing.effort_for(job)
-    if effort is not None:
-        request["output_config"] = {"effort": effort}
-
+    request = _request(
+        model=model,
+        max_tokens=max_tokens,
+        messages=messages,
+        system=system,
+        tools=tools,
+        effort=routing.effort_for(job),
+    )
     started = time.monotonic()
     try:
         response = (client or routing.client()).messages.create(**request)
@@ -249,6 +269,30 @@ def complete(
         raise unavailable(f"The model provider did not answer: {exc}") from exc
     latency_ms = int((time.monotonic() - started) * 1000)
 
+    return _record_and_wrap(
+        response,
+        job=job,
+        model=model,
+        config=config,
+        session_id=session_id,
+        latency_ms=latency_ms,
+    )
+
+
+def _record_and_wrap(
+    response: Any,
+    *,
+    job: Job,
+    model: str,
+    config: Settings,
+    session_id: str | None,
+    latency_ms: int,
+) -> Completion:
+    """Everything that happens once the provider has answered, whichever way it was asked.
+
+    Shared by `complete` and `stream` on purpose: the ledger row, its price and the budget
+    warning are not features of one call style, and two copies of this is how a streamed
+    call quietly stops being counted."""
     usage = usage_of(response)
     cost = cost_of(
         model,
@@ -277,6 +321,71 @@ def complete(
         cost_usd=cost,
         latency_ms=latency_ms,
         call_id=call_id,
+    )
+
+
+def stream(
+    *,
+    job: Job,
+    messages: list[dict[str, Any]],
+    on_delta: Callable[[str], None],
+    system: str | list[dict[str, Any]] | None = None,
+    tools: list[dict[str, Any]] | None = None,
+    session_id: str | None = None,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
+    client: MessagesClient | None = None,
+    settings: Settings | None = None,
+    router: ModelRouter | None = None,
+) -> Completion:
+    """Same call, delivered as it is generated. `on_delta` gets each chunk of text.
+
+    Returns the same `Completion` as `complete`, built from the final message — so a caller
+    that ignores `on_delta` behaves identically, and the ledger cannot tell the difference.
+    That is deliberate: streaming is a delivery decision, and nothing downstream of a call
+    should have to know which way it was made.
+
+    `on_delta` is called from inside the request. It must be cheap and it must not raise —
+    publishing to the in-process event bus is both. An exception there is caught and logged
+    rather than allowed to abandon a call that is already being paid for.
+    """
+    config = settings or get_settings()
+    routing = router or ModelRouter(config)
+    model = routing.model_for(job)
+
+    with Session(get_engine()) as db:
+        enforce_budget(db, session_id=session_id, settings=config)
+
+    request = _request(
+        model=model,
+        max_tokens=max_tokens,
+        messages=messages,
+        system=system,
+        tools=tools,
+        effort=routing.effort_for(job),
+    )
+    started = time.monotonic()
+    try:
+        with (client or routing.client()).messages.stream(**request) as active:
+            for chunk in active.text_stream:
+                try:
+                    on_delta(chunk)
+                except Exception:  # pragma: no cover - the guard, not a path
+                    logger.exception("a delta subscriber raised; the call continues")
+            response = active.get_final_message()
+    except anthropic.RateLimitError as exc:
+        raise provider_rate_limited(
+            f"{config.model_provider} rate limited the request: {exc}"
+        ) from exc
+    except (anthropic.APIStatusError, anthropic.APIConnectionError) as exc:
+        raise unavailable(f"The model provider did not answer: {exc}") from exc
+
+    return _record_and_wrap(
+        response,
+        job=job,
+        model=model,
+        config=config,
+        session_id=session_id,
+        latency_ms=int((time.monotonic() - started) * 1000),
     )
 
 

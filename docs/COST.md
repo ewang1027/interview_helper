@@ -150,6 +150,10 @@ costing. `GET /api/v1/costs/budget` answers the other question: will the next ca
 refused, and why. A `/costs` view in the web app will render both — `apps/web` is an empty
 directory until Phase 5.
 
+A streamed call and an unstreamed one are counted identically: `api.llm.complete` and
+`api.llm.stream` share one request builder and one recording path, because two copies of
+that is how a streamed call quietly stops being priced.
+
 **`cost_usd` is computed once, at call time, and never recomputed on read.** Rates change,
 and a ledger that silently re-prices last month's calls cannot be reconciled against a
 bill. A model with no entry in the rate table is recorded at `$0` with a warning rather

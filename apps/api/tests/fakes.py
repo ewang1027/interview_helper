@@ -7,7 +7,7 @@ to drift away from the Protocol the real client implements.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from types import SimpleNamespace
 from typing import Any
 
@@ -117,6 +117,32 @@ def model_response(
     )
 
 
+class _ScriptedStream:
+    """The context manager `client.messages.stream(...)` returns.
+
+    Chunks the response's text so a delta subscriber sees more than one, which is the only
+    way a test can tell streaming from a single write."""
+
+    def __init__(self, response: SimpleNamespace, chunks: int = 3) -> None:
+        self._response = response
+        text = "".join(b.text for b in response.content if getattr(b, "type", None) == "text")
+        size = max(1, -(-len(text) // chunks)) if text else 1
+        self._chunks = [text[i : i + size] for i in range(0, len(text), size)]
+
+    def __enter__(self) -> _ScriptedStream:
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        return None
+
+    @property
+    def text_stream(self) -> Iterator[str]:
+        yield from self._chunks
+
+    def get_final_message(self) -> SimpleNamespace:
+        return self._response
+
+
 class ScriptedModel:
     """Answers a fixed sequence of responses, and records what it was asked.
 
@@ -124,17 +150,27 @@ class ScriptedModel:
     *loop*: the interesting cases are "asks for a tool, then answers" and "keeps asking".
     Running past the end of the script is an error, not a repeat — a loop that calls one
     more time than the test expected is exactly the bug this catches.
+
+    Serves both `messages.create` and `messages.stream` from the same script, because the
+    thing under test should behave the same either way.
     """
 
     def __init__(self, *responses: SimpleNamespace) -> None:
         self.responses = list(responses)
         self.requests: list[dict[str, Any]] = []
-        self.messages = SimpleNamespace(create=self._create)
+        self.messages = SimpleNamespace(create=self._create, stream=self._stream)
 
-    def _create(self, **kwargs: Any) -> SimpleNamespace:
-        self.requests.append(kwargs)
+    def _next(self) -> SimpleNamespace:
         if not self.responses:
             raise AssertionError(
                 f"the model was called {len(self.requests)} times; the script ran out"
             )
         return self.responses.pop(0)
+
+    def _create(self, **kwargs: Any) -> SimpleNamespace:
+        self.requests.append(kwargs)
+        return self._next()
+
+    def _stream(self, **kwargs: Any) -> _ScriptedStream:
+        self.requests.append(kwargs)
+        return _ScriptedStream(self._next())

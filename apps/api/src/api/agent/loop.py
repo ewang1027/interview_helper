@@ -16,14 +16,17 @@ Shape of one turn:
 The transcript is rebuilt from `turns` on every call rather than held in memory: the API is
 stateless between requests, and the database is the only thing that survives a restart.
 
-Not here: streaming. `GET /sessions/{id}/events` is the next wave, and until it exists a
-turn is one request and one response (docs/API.md).
+The call is streamed so the live channel has something to say while the model is thinking,
+but `POST /turns` still answers with the finished message: deltas are a rendering
+convenience and `agent.message.done` is authoritative (docs/API.md). A client that ignores
+the stream sees exactly what it saw before.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -113,6 +116,20 @@ def as_messages(rows: list[Turn]) -> list[dict[str, Any]]:
     return messages
 
 
+def delta_publisher(channel: event_bus.EventBus, session_id: str) -> Callable[[str], None]:
+    """A callback that publishes one text chunk and returns nothing.
+
+    Named rather than written inline because a lambda over `publish` returns the `Event` it
+    created, and `on_delta` promises a sink whose result is ignored. The signature is the
+    documentation of that, and mypy is right to insist on it.
+    """
+
+    def publish(chunk: str) -> None:
+        channel.publish(session_id, "agent.message.delta", text=chunk)
+
+    return publish
+
+
 def _write(
     db: Session,
     session_id: str,
@@ -172,7 +189,7 @@ def run_turn(
     truncated = False
 
     for round_number in range(MAX_TOOL_ROUNDS):
-        completion = llm.complete(
+        completion = llm.stream(
             job="interviewing",
             system=system,
             messages=as_messages(transcript(db, session_row.id)),
@@ -180,6 +197,7 @@ def run_turn(
             session_id=session_row.id,
             settings=settings,
             client=client,
+            on_delta=delta_publisher(channel, session_row.id),
         )
         uses = [block for block in completion.content if getattr(block, "type", None) == "tool_use"]
         _write(

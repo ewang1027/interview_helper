@@ -11,8 +11,8 @@
 > model call has ever been made), the cost routes, `GET /corpus/items/{id}`,
 > `Idempotency-Key`, and rate limiting. The cost routes and the model-call path are built
 > (2026-08-20), and so are **the interviewer** (`POST /sessions/{id}/turns`, three of the
-> five tools) and **the SSE stream** — every event below except `agent.message.delta`, which
-> needs a streamed model call. Vapi in **Phase 7**.
+> five tools) and **the SSE stream**, carrying the interviewer's text as it is generated.
+> Vapi in **Phase 7**.
 > (The executor's `POST /execute` and `POST /probe` are built on their own contract — see
 > [SECURITY](SECURITY.md) — and `api.executor_client` is what speaks to them.)
 > Related: [ARCHITECTURE](ARCHITECTURE.md) · [GRADING](GRADING.md) (what the graders do with submissions) · [ADAPTIVE](ADAPTIVE.md) (where the planner gets its input) · [VOICE](VOICE.md) (the second transport) · [WEB](WEB.md) (the first consumer)
@@ -211,14 +211,15 @@ scoped by the session cookie like everything else under `/api/v1`.
 
 ## SSE event stream
 
-**Built (2026-08-20), except `agent.message.delta`.** `GET /sessions/{id}/events` —
-`text/event-stream`. Every event is JSON with a `type` and a monotonic `seq`.
+**Built (2026-08-20).** `GET /sessions/{id}/events` — `text/event-stream`. Every event is
+JSON with a `type` and a monotonic `seq`. Everything below is emitted except
+`observation.recorded`, which lands with the tool that produces it.
 
 | `type` | Payload | Meaning |
 |---|---|---|
 | `session.state` | `{ state, reason? }` | State machine transition |
 | `item.presented` | `{ item_id, title, statement_md, expected_minutes }` | A problem is now in play |
-| `agent.message.delta` | `{ text }` | Streaming interviewer text — **not built**: the model call is not streamed yet, so a turn's text arrives once, on `done` |
+| `agent.message.delta` | `{ text }` | Streaming interviewer text, as the model generates it |
 | `agent.message.done` | `{ message_id, text }` | Complete turn; authoritative over deltas |
 | `agent.tool_use` | `{ tool, input, tool_use_id }` | Interviewer invoked a tool |
 | `tool.result` | `{ tool_use_id, output, is_error }` | What came back |

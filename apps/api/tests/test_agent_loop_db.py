@@ -331,7 +331,9 @@ def test_a_turn_narrates_itself_on_the_event_stream(created_sessions):
         )
 
     published = channel.since(session_id, 0)
-    assert [event.type for event in published] == [
+    # Deltas are dropped from the comparison: how many arrive is the provider's business,
+    # and pinning it would make this a test of the fake's chunking.
+    assert [event.type for event in published if event.type != "agent.message.delta"] == [
         "item.presented",
         "agent.tool_use",
         "tool.result",
@@ -340,10 +342,73 @@ def test_a_turn_narrates_itself_on_the_event_stream(created_sessions):
         "tool.result",
         "agent.message.done",
     ]
-    assert [event.seq for event in published] == list(range(1, 8))
+    assert [event.seq for event in published] == list(range(1, len(published) + 1))
 
     hint = next(event for event in published if event.type == "hint.revealed")
     # The price is on the event, not discovered in the report afterwards (docs/API.md).
     assert hint.data["score_penalty"] == pytest.approx(0.05)
     assert hint.data["text"] == ITEMS[FIRST_ITEM].hints[0]
     assert published[-1].data["text"] == "Now tell me the complexity."
+
+
+def test_the_interviewers_text_arrives_as_deltas_before_it_arrives_whole(created_sessions):
+    """`agent.message.delta` is what makes the stream worth watching rather than polling.
+    `agent.message.done` stays authoritative: the deltas must reconstruct it exactly, or a
+    client that renders optimistically ends up with text the server never said."""
+    from api.events import EventBus
+
+    _, session_id = start_session(created_sessions)
+    channel = EventBus()
+    said = "Start with the brute force, then tell me what it costs."
+    model = ScriptedModel(model_response(text_block(said)))
+
+    with Session(get_engine()) as db:
+        session_row = db.get(InterviewSession, session_id)
+        assert session_row is not None
+        item = service.current_item(db, session_row)
+        assert item is not None
+        result = loop.run_turn(
+            db,
+            session_row,
+            item,
+            "ready",
+            runner=FakeRunner(),
+            settings=llm_settings(),
+            client=model,
+            bus=channel,
+        )
+
+    published = channel.since(session_id, 0)
+    deltas = [event for event in published if event.type == "agent.message.delta"]
+    done = [event for event in published if event.type == "agent.message.done"]
+
+    assert len(deltas) > 1, "one delta is not a stream"
+    assert "".join(event.data["text"] for event in deltas) == said
+    assert [event.data["text"] for event in done] == [said]
+    assert result.text == said
+    # Every delta precedes the message it composes; a client reconciling on `done` cannot
+    # be handed the authoritative text first.
+    assert max(event.seq for event in deltas) < done[0].seq
+
+
+def test_a_delta_subscriber_that_raises_does_not_lose_the_call(created_sessions):
+    """The callback runs inside a request that is already being paid for. Letting it abort
+    the call would trade a rendering problem for a lost answer and a wasted charge."""
+    from api import llm as llm_module
+
+    _, session_id = start_session(created_sessions)
+    model = ScriptedModel(model_response(text_block("still fine")))
+
+    def explode(chunk: str) -> None:
+        raise RuntimeError("the subscriber is broken")
+
+    completion = llm_module.stream(
+        job="interviewing",
+        messages=[{"role": "user", "content": "hi"}],
+        on_delta=explode,
+        session_id=session_id,
+        settings=llm_settings(),
+        client=model,
+    )
+    assert completion.text == "still fine"
+    assert completion.usage.total > 0

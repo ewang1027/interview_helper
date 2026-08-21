@@ -22,7 +22,7 @@ detail behind it.
 | **0** Foundations | **complete** | workspace, 159-concept taxonomy, corpus schema + validator, CI | — |
 | **1** Corpus v1 | **partial** — thin slice | 24 items — 3 archetypes + 3 instances in each of four domains, verified | bulk authoring toward ~400/~150 |
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
-| **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, three tools, `turns` written), and the **SSE stream** | streamed model output (`agent.message.delta`), rubric graders, two agent tools, a full session against a live provider |
+| **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, three tools, `turns` written), and the **SSE stream** (deltas included) | rubric graders, two agent tools, a full session against a live provider |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within five sessions | weights are placeholders until real sessions calibrate them |
 | **5–8** Web, AWS, voice, hardening | **not started** | — | — |
 | **9** Practice log | **partial** — schema only | `practice_problems`, `practice_solves`, and `concept_evidence`'s two-producer shape — all migrated, landed with the Phase 3 slice | classification, endpoints, scheduling. No longer gated on the engine: `apply_evidence` already handles an evidence row with no item, so a logged solve would feed mastery today. It is gated on a **model call**, which nothing in this project has ever made |
@@ -1940,3 +1940,54 @@ un-see it.
 Streamed model output, which turns `agent.message.delta` on and makes the stream worth
 watching rather than worth polling. Then rubric grading, which unlocks the other three
 modes.
+
+---
+
+## Phase 3 (streamed turns) — `agent.message.delta`, and one function that must not fork · 2026-08-20
+
+The stream now has something to say while the model is thinking. `api.llm.stream` makes the
+same call as `complete`, delivers the text through an `on_delta` callback as it arrives, and
+returns the identical `Completion` built from the final message.
+
+```
+make check       183 passed (hermetic)
+make test-db      79 passed (live Postgres; was 76)
+```
+
+### The thing worth being careful about is not the streaming
+
+It is that a streamed call and an unstreamed one must be *counted* the same. Two entry
+points is two chances for the ledger row, the price, the budget warning or the cache
+breakpoint to drift apart, and the drift is invisible: a streamed call that quietly stops
+being priced looks exactly like a cheap month. So there is one request builder — `tools`
+then `system`, because that is the cache prefix — and one `_record_and_wrap`, and the two
+entry points differ only in how they ask.
+
+`on_delta` runs inside a request that is already being paid for, so an exception in it is
+caught and logged rather than allowed to abandon the call. A test asserts a subscriber that
+raises on every chunk still yields a completion with its usage intact: trading a rendering
+problem for a lost answer *and* a wasted charge is the wrong trade.
+
+### Deltas reconstruct the message exactly, and arrive before it
+
+Both asserted, because both are what a client renders against. `agent.message.done` stays
+authoritative (docs/API.md); a client that reconciles on it can only be correct if every
+delta precedes it and the concatenation matches. The test pins the concatenation and the
+ordering, and deliberately does *not* pin how many deltas arrive — chunking is the
+provider's business, and asserting it would make this a test of the fake.
+
+### Three edits lost to one script
+
+Worth recording as a process failure rather than a code one. Three separate patch scripts in
+this wave asserted several replacements and wrote the file only at the end; when a later
+assertion failed — usually because `ruff format` had already re-wrapped the line being
+matched — every earlier edit in that script was discarded silently. The symptom each time
+was a test failing for a reason that made no sense against the code as written, because the
+code as written was not what was on disk. The lesson is the same one this repo keeps
+relearning about gates: verify the thing happened, do not assume it did.
+
+### Next
+
+Rubric grading, which is what turns `quant`, `design` and `behavioral` from planned modes
+into sessions that can be created — `create_session` refuses them today because nothing can
+grade them.

@@ -10,9 +10,8 @@
 > (`api.llm` — budget checked, call made, `llm_calls` row written) with `/costs` and
 > `/costs/budget` over it, the **interviewer agent** (`POST /sessions/{id}/turns`, a system
 > prompt per mode, three tools, turns persisted), the **SSE stream** (`GET
-> /sessions/{id}/events`, every specified event but `agent.message.delta`), and a 24-item
-> corpus. Not built: streamed model output, rubric grading, and two of the five agent
-> tools.
+> /sessions/{id}/events`, with the interviewer's text streamed as it is generated), and a
+> 24-item corpus. Not built: rubric grading, and two of the five agent tools.
 > `docs/BUILDLOG.md` is authoritative.
 > Related: [GLOSSARY](GLOSSARY.md) · [API](API.md) · [SECURITY](SECURITY.md) · [INFRA](INFRA.md) · [BUILDLOG](BUILDLOG.md) (what is actually built) · [PRACTICE_LOG](PRACTICE_LOG.md)
 
