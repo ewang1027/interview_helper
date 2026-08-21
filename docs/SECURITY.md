@@ -7,6 +7,8 @@
 > The six escape tests pass against real Docker, and **three of the six** were confirmed
 > load-bearing by re-running them against a deliberately weakened sandbox — the PID,
 > memory and contamination tests have had no negative control, and that is owed.
+> **The answer parser** (2026-08-21) is the second place untrusted text meets something
+> powerful, and the first one outside the sandbox — see below.
 > Not built: `cpp`, `peak_rss_kb`. AWS-layer enforcement in **Phase 6**.
 > "Measured behaviour" below records where this document's original claims were wrong.
 > Related: [ARCHITECTURE](ARCHITECTURE.md) (service boundaries) · [INFRA](INFRA.md) (where these controls are configured) · [GRADING](GRADING.md) (what the executor is for)
@@ -239,6 +241,39 @@ Mitigations:
 
 That last point matters more than the first two. **Design the tool surface so injection
 is not worth much**, rather than trying to prevent every injection.
+
+## The answer parser
+
+*Built 2026-08-21.* The quant grader checks an answer with sympy, and `parse_expr`
+**evaluates what it parses**. What it is asked to parse is a span pulled out of whatever the
+candidate typed. That makes it the first place in this system where untrusted text reaches
+something powerful **inside the API process** — outside the sandbox, in the one service that
+holds database and model credentials.
+
+The threat model here is the honest one from the top of this document: the single user is
+not attacking themselves. This is defence against the same input arriving through a route
+that is not a person typing — a pasted answer, a corpus item that grows an author, the web
+client in Phase 5 — and against the ordinary case of a parser meeting prose.
+
+`api.grading.quant.safe_parse` refuses before it works, in this order:
+
+| Check | Bound | What it stops |
+|---|---|---|
+| Character allowlist | `[0-9A-Za-z_+\-*/^().\s]` | `__class__`, subscripts, tuples, string literals — the whole attribute-walk family |
+| Length | 120 characters | An answer is short; a payload is not |
+| Exponent | numeric, `abs ≤ 64` | `9**9**9` — seven characters, passes every other check, never finishes |
+| Globals | allowlist, `__builtins__` emptied | Name resolution to anything not on the list. Emptied *explicitly*: `eval` reinstates the real builtins when globals arrive without them, which is the opposite of what an allowlist means |
+| Node budget | 400 nodes, counted lazily | A tree big enough to matter, refused without being walked to the end |
+
+**The order is the control.** Every bound is checked against the *text*, before the parse
+that would be expensive. A budget enforced after the work is not a budget — the same
+correction the complexity probe's driver needed on 2026-08-21, arrived at independently in
+a different part of the system on the same day.
+
+Refusal is silent and total: an unparseable span is simply not the answer, and the grader
+moves to the next candidate expression. A hostile input therefore costs a wrong answer at
+worst, never an exception path. Tests assert each row of that table refuses, and assert it
+returns in under a second.
 
 ## Secrets
 

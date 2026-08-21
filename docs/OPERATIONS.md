@@ -63,7 +63,7 @@ Step 3 is the real test. It proves the restored evidence is not merely present b
 | Alarm | Threshold | Why |
 |---|---|---|
 | API 5xx rate | >2% over 5 min | Something is broken |
-| Executor unavailable | any | Coding and quant grading stop entirely |
+| Executor unavailable | any | Coding grading stops entirely; the other three graders need no sandbox |
 | Grading failure rate | >10% over 1h | Grader bug — **stop and investigate before more evidence is written** |
 | Session token budget hit | any | Either a runaway loop or budgets set too low |
 | Bedrock spend rate | > daily projection × 2 | Runaway loop; catch in minutes, not at month end |

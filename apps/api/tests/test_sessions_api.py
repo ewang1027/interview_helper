@@ -10,7 +10,7 @@ written by the time a submission call returns — no polling, and no sleep-based
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, get_args
 
 import pytest
 from conftest import sign_in
@@ -18,11 +18,13 @@ from fakes import FakeRunner
 from fastapi.testclient import TestClient
 from sqlmodel import Session, col, select
 
+from api import sessions
 from api.db import get_engine
 from api.executor_client import ProbeOutcome, RunResult
 from api.main import app
 from api.models import ConceptEvidence, Grading
 from api.routes.sessions import get_runner
+from api.schemas import Mode
 
 pytestmark = pytest.mark.db
 
@@ -150,7 +152,12 @@ def test_the_report_carries_the_evidence_it_wrote(created_sessions):
     assert report["graded"] == 3
     assert report["mean_score"] == pytest.approx(1.0)
     assert len(report["evidence"]) == 11  # 4 + 4 + 3 concepts across the three items
-    assert any("rubric" in note for note in report["notes"])
+    # A coding session, graded by tests alone and with no interviewer: the one note it
+    # earns is that nobody was in the room. The notes are read off the session, so a claim
+    # about what does or does not exist cannot go stale in the payload.
+    assert report["notes"] == [
+        "No interviewer agent ran: there are no turns, hints or observations."
+    ]
 
 
 def test_ending_early_abandons_the_session_and_keeps_what_was_graded(created_sessions):
@@ -213,9 +220,18 @@ def test_an_unknown_session_is_a_problem_json_404(created_sessions):
     assert resp.json()["type"].endswith("/not-found")
 
 
-def test_a_mode_with_no_grader_is_refused_with_the_reason(created_sessions):
-    """A quant session would plan real items and then dead-end at the first submission,
-    because no quant grader exists. Refusing up front says so."""
+def test_every_mode_the_api_accepts_has_a_grader():
+    """The refusal below has no subject left — quant was the last mode without a grader
+    (2026-08-21). This is what notices if a mode is ever added ahead of one, which is the
+    only way that refusal starts mattering again."""
+    assert set(get_args(Mode)) == sessions.GRADEABLE_MODES
+
+
+def test_a_mode_with_no_grader_would_be_refused_with_the_reason(created_sessions, monkeypatch):
+    """Kept alive with a patched set rather than deleted: the guard is what stops a future
+    mode planning real items and then dead-ending at the first submission, and a guard
+    nothing exercises has stopped working without saying so."""
+    monkeypatch.setattr(sessions, "GRADEABLE_MODES", frozenset({"coding"}))
     client = make_client()
     resp = client.post("/api/v1/sessions", json={"mode": "quant", "budget_minutes": 45})
     assert resp.status_code == 422

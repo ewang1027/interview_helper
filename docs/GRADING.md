@@ -1,8 +1,8 @@
 # Grading
 
-> **Status:** The **coding grader and the rubric grader are both built** (2026-08-20), so
-> `coding`, `design` and `behavioral` sessions can be created and graded; `quant` cannot,
-> because its deterministic answer check needs a dependency this workspace does not have.
+> **Status:** All four graders are **built** — coding and rubric on 2026-08-20, quant on
+> 2026-08-21 — so every mode can be created and graded, and `POST /sessions` no longer
+> refuses any of them.
 > On the coding grader:
 > `api.grading.coding` joins an item to its own tests, sends them to the executor's
 > `POST /execute`, measures growth through `POST /probe`, folds the two into a score, and
@@ -15,15 +15,19 @@
 > layer persists them**: a graded submission writes `artifacts`, `gradings` and
 > `concept_evidence`, and a failed one writes a `gradings` row with a NULL score and no
 > evidence at all.
-> **Not built:** the quant answer check, both rubric graders, the calibration harness,
-> `cpp`, and `peak_rss_kb`. Hint penalties are implemented but nothing *records* hints yet
-> (`turns` has no hint column), so the count is an argument the caller supplies.
+> On the quant grader: `api.grading.quant` reads the answer out of the candidate's closing
+> statement, checks it by sympy equivalence behind a parser wall, and judges the derivation
+> against the item's `reasoning_rubric` with the same code system design uses. Verified
+> against the real corpus: the three items' exact answers are matched in every spelling the
+> corpus lists, a sanity bound after a correct answer does not cost it, and a full quant
+> session runs create → submit → grade → evidence.
+> **Not built:** the calibration harness, `cpp`, and `peak_rss_kb`.
 > Related: [SECURITY](SECURITY.md) (the sandbox code runs in) · [ADAPTIVE](ADAPTIVE.md) (what the evidence feeds) · [API](API.md) (how results reach the client) · [OPERATIONS](OPERATIONS.md) (calibration drift)
 
 Every graded artifact produces one thing: `concept_evidence` rows. Everything else —
 the score you see, the report, the next session's plan — is downstream of those.
 
-Implemented in Phase 2 (deterministic) and Phase 3 (rubric).
+Implemented in Phase 2 (deterministic) and Phase 3 (rubric and quant).
 
 ## The four graders
 
@@ -109,24 +113,56 @@ re-run the graders, don't believe the claim.
 
 ## Quant
 
-The answer check is deterministic — sympy equivalence, so `1/3`, `0.333...`, and `2/6`
-all pass — with a numeric tolerance fallback and an `accept_forms` list for answers
-sympy cannot normalize.
+*Built 2026-08-21.* `api.grading.quant`. The answer check is deterministic — sympy
+equivalence, so `1/3`, `0.333...` and `2/6` all pass — and **a correct number with wrong
+reasoning is not a pass in a quant interview**, so the derivation is graded against the
+item's `reasoning_rubric` by the same code system design uses. The two produce separate
+evidence: the answer writes against the primary concept, the reasoning criteria write
+against whichever concepts they name. A concept named by both is measured twice, by two
+instruments, and both readings are real.
 
-Note before starting that work: **`sympy` is not a dependency of any package in this
-workspace** and is not importable in the project venv. The three `exact` strings on disk
-(`39`, `149/20`, `16/3`) are trivially parseable, so no content is at risk, but the
-grader's first commit has to add the dependency.
+**The answer is read from the closing statement, not from the page.** Every real derivation
+mentions numbers that are not the answer — an intermediate value, a sanity bound, the naive
+figure the problem exists to refute. `i.quant.0001` is exactly this: the answer is 39 and
+the derivation says 27 out loud. So the grader takes the line the candidate *declared* their
+answer on (`Answer:`, `Final answer:`), or failing that the last line containing arithmetic
+at all, and matches any expression on it. Both halves of that matter: scanning the whole
+page would accept the decoy, and taking only the last expression would fail "39 presses,
+which must exceed 27" — a correct answer punished for being checked.
 
-This is why `quant` is still the one mode `POST /sessions` refuses (2026-08-20). The rubric
-half of quant grading would work today — it is the same grader system design uses — but
-half a grader is not a grader, and a quant session that scored the reasoning and ignored
-the answer would produce evidence nobody should trust.
+**A stated answer and no answer are different.** A candidate who never committed to a number
+has not got it wrong; they have not answered. That scores zero on the answer half and writes
+**no evidence**, on the same reasoning that keeps a not-demonstrated rubric criterion silent.
 
-But **a correct number with wrong reasoning is not a pass in a quant interview**, so
-the derivation is graded against a `reasoning_rubric` too. The two produce separate
-evidence: the answer writes evidence against the primary concept, the reasoning
-criteria write against whichever concepts they name.
+| Factor | Value | Why |
+|---|---|---|
+| `answer` | `1.0` or `0.0` | Symbolically equal to the item's answer, or not |
+| `reasoning` | the weighted `reasoning_rubric` | The same judgement, citation check included, that grades a design answer |
+| weighting | `0.4 × answer + 0.6 × reasoning` | Below half on purpose: this is the arithmetic that makes a bare correct number *not a pass*. The reverse is deliberate too — a sound derivation with a slipped digit keeps most of what the reasoning earned, which is how an interviewer scores it, and the rubric's own arithmetic criterion already docks the wrong value |
+| `hint_retention` | the same schedule as every other grader | |
+
+An item with no `reasoning_rubric` — the schema makes it optional — is graded on the number
+alone. Dividing by a half that does not exist would cap every such item at 0.4.
+
+**Confidence has two tiers.** A declared answer carries `0.9`, the same as a hidden test
+passing, because a symbolic equivalence is a fact. An answer *read out of* a closing
+sentence carries `0.75`: the check is equally deterministic, but which expression it was
+pointed at was inferred, and a mis-read is a wrong verdict about a right answer.
+
+**A decimal is accepted at the precision it was written to** — `5.33` for `16/3`, provided
+it carries at least three significant figures, so `5` is not a correct rounding of
+everything. This is how a person reads it, and refusing it would write evidence of a
+weakness the candidate does not have, which is the failure this grader is most able to
+cause. `tolerance` still applies as an absolute band, and `accept_forms` covers what sympy
+cannot normalise — a mixed number, a currency figure — matched as bounded text and tried
+*last*, because an equivalence sympy proved is a stronger thing to be right about than a
+substring of a sentence.
+
+**sympy parses untrusted text, so it is walled first** ([SECURITY.md](SECURITY.md#the-answer-parser)).
+
+Known and accepted: with no declaration and no other arithmetic below it, a trailing sanity
+bound is read as the answer. There is nothing in the text that distinguishes a check from a
+claim, and a test pins the behaviour rather than leaving it to be discovered.
 
 ## System design and behavioral
 

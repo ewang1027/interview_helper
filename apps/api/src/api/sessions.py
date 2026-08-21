@@ -43,6 +43,7 @@ from api.executor_client import (
     Language,
 )
 from api.grading.coding import GRADER_VERSION, CodingGrade, grade_coding
+from api.grading.quant import QuantGrade, grade_quant
 from api.grading.rubric import RubricGrade, grade_rubric
 from api.mastery import apply_evidence, lock_projection
 from api.models import Artifact, ConceptEvidence, Grading, InterviewSession, Item, Turn
@@ -80,17 +81,18 @@ REPORTABLE_STATES = frozenset({"complete", "abandoned"})
 # produce an interview that can never complete, so it is refused with the reason rather
 # than allowed and then dead-ended at submission time.
 #
-# `design` and `behavioral` joined when the rubric grader landed; `quant` has not, because
-# its answer check is deterministic (sympy equivalence) and sympy is not a dependency of
-# this workspace yet — half of that grader existing is not the same as it existing.
-GRADEABLE_MODES = frozenset({"coding", "design", "behavioral"})
+# `design` and `behavioral` joined when the rubric grader landed, and `quant` when its
+# answer check did (2026-08-21). Every mode the API accepts now has a grader, so the
+# refusal below has no subject left — it is kept because the next mode added will need it,
+# and a test asserts the two sets have not drifted apart.
+GRADEABLE_MODES = frozenset({"coding", "quant", "design", "behavioral"})
 
 # The languages the executor will accept, as a narrowing table: `artifacts.language` is
 # a free string in the database, and handing an unknown one straight to the grader would
 # be a type error waiting for the first hand-written row.
 LANGUAGES: dict[str, Language] = {"python": "python", "cpp": "cpp"}
 
-# What a submission of each kind is called. Only `code` has a grader today.
+# What a submission of each kind is called. All four have a grader.
 MODE_ARTIFACT_KIND = {
     "coding": "code",
     "quant": "answer",
@@ -423,12 +425,20 @@ def _grade(artifact_id: str, runner: CodeRunner | None, client: Any = None) -> N
                         db, artifact, f"{artifact.language!r} is not a language the executor runs"
                     )
                     return
-                grade: CodingGrade | RubricGrade = grade_coding(
+                grade: CodingGrade | RubricGrade | QuantGrade = grade_coding(
                     item,
                     artifact.content,
                     runner=runner,
                     language=language,
                     hints_revealed=hints,
+                )
+            elif grading_type == "answer":
+                grade = grade_quant(
+                    item,
+                    artifact.content,
+                    hints_revealed=hints,
+                    session_id=artifact.session_id,
+                    client=client,
                 )
             elif grading_type == "rubric":
                 grade = grade_rubric(
@@ -449,7 +459,7 @@ def _grade(artifact_id: str, runner: CodeRunner | None, client: Any = None) -> N
             _record_failure(db, artifact, f"executor unavailable: {exc}")
             return
         except ProblemError as exc:
-            # The rubric grader's provider was refused or unavailable, or the budget was
+            # A model grader's provider was refused or unavailable, or the budget was
             # spent. Same reasoning as above: not the candidate's fault, so not their score.
             _record_failure(db, artifact, f"grader could not reach a model: {exc.detail}")
             return
@@ -503,7 +513,9 @@ def _record_failure(db: Session, artifact: Artifact, detail: str) -> None:
     _maybe_complete(db, artifact.session_id)
 
 
-def _record_grade(db: Session, artifact: Artifact, grade: CodingGrade | RubricGrade) -> None:
+def _record_grade(
+    db: Session, artifact: Artifact, grade: CodingGrade | RubricGrade | QuantGrade
+) -> None:
     # Before the evidence rows exist, so their `ts` values are stamped inside the critical
     # section and a replay sees them in the order they were applied.
     lock_projection(db)
@@ -661,6 +673,24 @@ def build_report(db: Session, session_row: InterviewSession) -> dict[str, Any]:
         .where(ConceptEvidence.session_id == session_row.id)
         .order_by(col(ConceptEvidence.id))
     ).all()
+    turns = db.exec(select(Turn.id).where(Turn.session_id == session_row.id)).first()
+
+    # Read off this session rather than stated as a constant. Both notes used to be
+    # hardcoded, and both had been false since the day the thing they denied was built —
+    # a report that says "no rubric grader exists yet" while reporting rubric scores is
+    # the exact failure this project treats a stale document as.
+    notes: list[str] = []
+    if turns is None:
+        notes.append("No interviewer agent ran: there are no turns, hints or observations.")
+    judged = sorted(
+        {row.grader_version for row in evidence if not row.grader_version.startswith("coding.")}
+    )
+    if judged:
+        notes.append(
+            "Some scores are a model's judgement against a rubric, not a test result "
+            f"({', '.join(judged)}); their evidence carries lower confidence "
+            "(docs/GRADING.md)."
+        )
 
     return {
         "session_id": session_row.id,
@@ -683,10 +713,8 @@ def build_report(db: Session, session_row: InterviewSession) -> dict[str, Any]:
             }
             for row in evidence
         ],
-        # Stated in the payload, not just in the docs: a report that silently omitted the
-        # rubric half would read as a complete assessment of a session it only half graded.
-        "notes": [
-            "Deterministic grading only — no rubric grader exists yet (docs/GRADING.md).",
-            "No interviewer agent ran: there are no turns, hints or observations.",
-        ],
+        # Stated in the payload, not just in the docs: a report that silently mixed a
+        # model's judgement into a column of test results would read as more certain than
+        # the numbers in it are.
+        "notes": notes,
     }

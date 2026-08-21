@@ -199,8 +199,9 @@ def cites_the_answer(citation: str, answer: str) -> bool:
     return len(quoted) >= 12 and quoted in _normalise(answer)
 
 
-def build_prompt(item: Item, answer: str) -> str:
-    criteria = (item.grading or {}).get("criteria") or []
+def build_prompt(item: Item, answer: str, criteria: list[dict[str, Any]]) -> str:
+    """The request. `criteria` is passed rather than read off the item: quant's derivation
+    is judged against `reasoning_rubric`, which is the same shape in a different place."""
     lines = [
         f"# Problem\n\n{item.statement_md}",
         "\n# Rubric\n",
@@ -223,6 +224,79 @@ def build_prompt(item: Item, answer: str) -> str:
     return "\n".join(lines)
 
 
+def judge_criteria(
+    item: Item,
+    answer: str,
+    criteria: list[dict[str, Any]],
+    *,
+    session_id: str | None = None,
+    client: Any = None,
+    settings: Settings | None = None,
+) -> tuple[tuple[Judgement, ...], str]:
+    """One model call, judging an artifact against a list of criteria. Returns the
+    judgements and the grader's summary.
+
+    Separate from `grade_rubric` because two graders need it and neither owns it: a quant
+    derivation is judged against `reasoning_rubric` by exactly this code, and a second copy
+    of it would be a second place for the citation check to drift.
+    """
+    if not criteria:
+        raise ValueError(f"{item.id} has a rubric with no criteria")
+    if not answer.strip():
+        raise ValueError("an empty answer cannot be graded")
+
+    completion = llm.complete(
+        job="grading",
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": build_prompt(item, answer, criteria)}],
+        max_tokens=MAX_TOKENS,
+        output_schema=response_schema(criteria),
+        session_id=session_id,
+        client=client,
+        settings=settings,
+    )
+    verdicts = _parse(completion.text)
+    judgements = tuple(
+        _judge(criterion, verdicts.get(criterion["id"]), answer) for criterion in criteria
+    )
+    return judgements, verdicts.get("__summary__", {}).get("text", "")
+
+
+def weighted_score(judgements: tuple[Judgement, ...]) -> float:
+    """The judgements as one number in [0, 1], each criterion carrying its own weight."""
+    weight = sum(j.weight for j in judgements) or 1.0
+    return sum(j.score * j.weight for j in judgements) / weight
+
+
+def evidence_from(
+    judgements: tuple[Judgement, ...], *, grader_version: str = GRADER_VERSION
+) -> tuple[Evidence, ...]:
+    """The `concept_evidence` rows a set of judgements implies.
+
+    Demonstrated only: silence is not evidence of weakness, and telling the adaptive engine
+    otherwise would drill a concept the candidate was never asked about.
+    """
+    return tuple(
+        Evidence(
+            concept_id=judgement.concept,
+            score=judgement.score,
+            confidence=RUBRIC_CONFIDENCE,
+            grader_version=grader_version,
+        )
+        for judgement in judgements
+        if judgement.demonstrated and judgement.concept
+    )
+
+
+def criteria_detail(judgements: tuple[Judgement, ...]) -> str:
+    """How many criteria were demonstrated, and which were not."""
+    missing = [j.id for j in judgements if not j.demonstrated]
+    detail = f"{len(judgements) - len(missing)}/{len(judgements)} criteria demonstrated"
+    if missing:
+        detail += f"; not demonstrated: {', '.join(missing)}"
+    return detail
+
+
 def grade_rubric(
     item: Item,
     answer: str,
@@ -237,48 +311,16 @@ def grade_rubric(
     if grading.get("type") != "rubric":
         raise ValueError(f"{item.id} is not graded by rubric (type={grading.get('type')!r})")
     criteria = grading.get("criteria") or []
-    if not criteria:
-        raise ValueError(f"{item.id} has a rubric with no criteria")
-    if not answer.strip():
-        raise ValueError("an empty answer cannot be graded")
 
-    completion = llm.complete(
-        job="grading",
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": build_prompt(item, answer)}],
-        max_tokens=MAX_TOKENS,
-        output_schema=response_schema(criteria),
-        session_id=session_id,
-        client=client,
-        settings=settings,
-    )
-    verdicts = _parse(completion.text)
-    judgements = tuple(
-        _judge(criterion, verdicts.get(criterion["id"]), answer) for criterion in criteria
+    judgements, summary = judge_criteria(
+        item, answer, criteria, session_id=session_id, client=client, settings=settings
     )
 
-    earned = sum(j.score * j.weight for j in judgements)
-    weight = sum(j.weight for j in judgements) or 1.0
-    raw = earned / weight
+    raw = weighted_score(judgements)
     retention = hint_retention(hints_revealed)
     score = raw * retention
-
-    evidence = tuple(
-        Evidence(
-            concept_id=judgement.concept,
-            score=judgement.score,
-            confidence=RUBRIC_CONFIDENCE,
-            grader_version=GRADER_VERSION,
-        )
-        for judgement in judgements
-        # Demonstrated only: silence is not evidence of weakness, and telling the adaptive
-        # engine otherwise would drill a concept the candidate was never asked about.
-        if judgement.demonstrated and judgement.concept
-    )
-    missing = [j.id for j in judgements if not j.demonstrated]
-    detail = f"{len(judgements) - len(missing)}/{len(judgements)} criteria demonstrated"
-    if missing:
-        detail += f"; not demonstrated: {', '.join(missing)}"
+    evidence = evidence_from(judgements)
+    detail = criteria_detail(judgements)
     if hints_revealed:
         detail += f"; {hints_revealed} hint(s) taken, keeping {retention:.0%}"
 
@@ -289,7 +331,7 @@ def grade_rubric(
         hints_revealed=hints_revealed,
         judgements=judgements,
         evidence=evidence,
-        summary=verdicts.get("__summary__", {}).get("text", "") if verdicts else "",
+        summary=summary,
         detail=detail,
         components={"rubric": round(raw, 4), "hint_retention": round(retention, 4)},
     )

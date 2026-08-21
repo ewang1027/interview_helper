@@ -14,8 +14,11 @@ The deviation is deliberate and this paragraph is the record of it.
 
 Deferred, and why:
 
-- **`check_answer`** is quant-only, and `create_session` refuses every mode but `coding`
-  because nothing else has a grader. A tool no reachable session can call is not built.
+- **`check_answer`** is quant-only. It was blocked because no quant session could be
+  created; since the quant grader landed (2026-08-21) that reason has expired, and it is
+  simply not built yet. The check itself exists as `api.grading.quant.check_answer`, so the
+  tool would be a thin proxy onto the same function grading uses — which is the point of
+  building it that way round.
 - **`record_observation`** writes `concept_evidence` mid-session. Evidence has exactly one
   producer today — the grader — and adding a second before rubric grading exists risks
   double-counting a concept from one item. It lands with the rubric graders.

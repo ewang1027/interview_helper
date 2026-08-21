@@ -55,6 +55,5 @@ def test_the_hint_count_comes_from_the_item():
 
 @pytest.mark.parametrize("mode", ["coding", "quant", "design", "behavioral"])
 def test_every_mode_builds(mode):
-    """`create_session` only allows coding today, but the planner's other three modes are
-    one grader away and a prompt that raises then is a worse discovery."""
+    """All four modes can be created and graded now, so all four reach this prompt."""
     assert system_prompt(mode, CODING)

@@ -100,12 +100,11 @@ errors are `application/problem+json`.
 | `GET` | `/sessions/{id}/report` | Full report; 409 until `complete` or `abandoned` | ✅ built |
 | `GET` | `/sessions` | History, paginated | ✅ built |
 
-`coding`, `design` and `behavioral` sessions can be created; **`quant` is refused with
-`422`** naming the missing grader, because creating a session in a mode nothing can grade
-would produce an interview that can never complete. Quant's answer check is deterministic
-and needs a dependency this workspace does not have yet
-([GRADING.md](GRADING.md#quant)) — the rubric half alone would score the reasoning and
-ignore the answer.
+**All four modes can be created and graded** since the quant grader landed (2026-08-21).
+The `422` that refuses a mode with no grader is still there and now has no subject: creating
+a session in a mode nothing can grade would produce an interview that can never complete, so
+the guard stays for the next mode added, and a test asserts the two sets have not drifted
+apart.
 
 **Planning is adaptive** ([ADAPTIVE](ADAPTIVE.md)): concepts ranked by weakness priority,
 then the item whose expected score lands closest to the informative band. Each plan carries
@@ -266,7 +265,7 @@ succeeding buys you very little.
 | `run_code` | `{ language, source }` | `{ outcome, passed, total, failures[], detail, gradeable }` | ✅ built |
 | `reveal_hint` | `{ level }` | `{ level, text, score_penalty, hints_remaining }` | ✅ built |
 | `end_round` | `{ reason }` | `{ ok, reason }` | ✅ built |
-| `check_answer` | `{ item_id, submitted }` | `{ correct, normalized, method }` | ✗ quant only, and no quant session can be created |
+| `check_answer` | `{ item_id, submitted }` | `{ correct, normalized, method }` | ✗ unblocked, not built |
 | `record_observation` | `{ concept_id, signal, confidence, span }` | `{ ok }` | ✗ lands with the rubric graders |
 
 **`run_code` does not take tests, and that is a deliberate departure from what this
@@ -283,11 +282,12 @@ name a different one would be a way to read ahead. Levels are enforced monotonic
 than trusted: skipping to the last hint is what a model trying to be helpful does, and it
 is the most expensive one.
 
-The two unbuilt tools are unbuilt for reasons rather than for time. `check_answer` is
-quant-only and `POST /sessions` refuses every mode but `coding`, so no reachable session
-can call it. `record_observation` writes `concept_evidence`, which has exactly one producer
-today — the grader — and a second producer before rubric grading exists risks counting one
-item's concept twice.
+The two unbuilt tools are unbuilt for reasons rather than for time, and one of those
+reasons expired on 2026-08-21. `check_answer` is quant-only, and quant sessions can now be
+created, so it is **no longer blocked — just not built**; the grading-time check exists as
+`api.grading.quant.check_answer` and the tool would be a thin proxy onto it.
+`record_observation` writes `concept_evidence`, which has exactly one producer today — the
+grader — and a second producer risks counting one item's concept twice.
 
 There is deliberately **no** tool that writes the corpus, sends anything outbound, reads
 secrets, or edits mastery. Grading is not a tool — it runs after the turn loop, so the

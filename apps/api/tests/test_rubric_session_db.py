@@ -2,7 +2,8 @@
 
 `create_session` refused every mode but `coding` until this landed, because a session in a
 mode nothing can grade is an interview that can never complete. This is the proof that the
-refusal has actually lifted rather than the constant having been edited.
+refusal has actually lifted rather than the constant having been edited — and since the
+quant grader landed (2026-08-21) there is no mode left for it to refuse.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from sqlmodel import Session, col, delete, select
 
 from api.db import get_engine
 from api.events import bus
+from api.grading.quant import DECLARED_CONFIDENCE
 from api.grading.rubric import RUBRIC_CONFIDENCE
 from api.main import app
 from api.models import ConceptEvidence, Grading, LlmCall
@@ -50,7 +52,10 @@ def _ledger():
 
 
 def grader_saying(item_id: str, *, level: float, citation: str) -> ScriptedModel:
-    criteria = ITEMS[item_id].grading["criteria"]
+    grading = ITEMS[item_id].grading
+    # `criteria` on a rubric item, `reasoning_rubric` on a quant one — the same shape in a
+    # different place, judged by the same code.
+    criteria = grading.get("criteria") or grading["reasoning_rubric"]
     payload = {
         "criteria": [
             {
@@ -156,14 +161,61 @@ def test_a_grader_that_cannot_reach_a_model_fails_the_grading_without_scoring_it
     bus().forget(session_id)
 
 
-def test_quant_is_still_refused_and_says_why(created_sessions):
-    """Half a grader existing is not the same as a grader existing: the quant answer check
-    is deterministic and sympy is not a dependency of this workspace yet."""
-    use_settings()
+def test_a_quant_session_can_be_created_submitted_and_graded(created_sessions):
+    """The mode this file used to prove was refused. Half a grader is not a grader, and
+    quant needed both halves — a symbolic answer check and the derivation rubric — before a
+    quant session could produce evidence anyone should trust. Both halves are visible in
+    what it writes: one deterministic row for the number, one per criterion for the
+    derivation, at two different confidences."""
+    use_settings(**MODEL_OVERRIDES)
     client = sign_in(TestClient(app))
-    refused = client.post("/api/v1/sessions", json={"mode": "quant", "budget_minutes": 30})
-    assert refused.status_code == 422
-    assert "quant" in refused.json()["detail"]
+
+    created = client.post("/api/v1/sessions", json={"mode": "quant", "budget_minutes": 30})
+    assert created.status_code == 201, created.text
+    session_id = created.json()["id"]
+    created_sessions.append(session_id)
+    planned = [entry["item_id"] for entry in created.json()["plan"]["items"]]
+    assert planned and all(item_id.startswith("i.quant.") for item_id in planned)
+
+    item_id = planned[0]
+    item = ITEMS[item_id]
+    derivation = (
+        "I conditioned on the next step from each state, which is the move that makes this "
+        "tractable at all, and solved the resulting system.\n"
+        f"Answer: {item.grading['answer']['exact']}"
+    )
+    app.dependency_overrides[get_model_client] = lambda: grader_saying(
+        item_id, level=3, citation="conditioned on the next step from each state"
+    )
+    submitted = client.post(
+        f"/api/v1/sessions/{session_id}/submissions",
+        json={"item_id": item_id, "kind": "answer", "content": derivation},
+    )
+    assert submitted.status_code == 202, submitted.text
+
+    detail = client.get(f"/api/v1/sessions/{session_id}").json()
+    graded = next(entry for entry in detail["items"] if entry["item_id"] == item_id)
+    assert graded["status"] == "graded"
+    assert graded["score"] == pytest.approx(1.0)
+
+    with Session(get_engine()) as db:
+        grading = db.exec(select(Grading).order_by(col(Grading.id).desc())).first()
+        assert grading is not None
+        assert grading.grader_version == "quant.answer@1"
+        assert grading.detail["answer"]["correct"] and grading.detail["answer"]["declared"]
+        assert grading.detail["criteria"], "the score has to be explainable without a re-run"
+
+        evidence = db.exec(
+            select(ConceptEvidence).where(ConceptEvidence.session_id == session_id)
+        ).all()
+        by_confidence = sorted(row.confidence for row in evidence)
+        # One deterministic reading of the number, and one per criterion of the derivation.
+        assert by_confidence == [RUBRIC_CONFIDENCE] * len(item.grading["reasoning_rubric"]) + [
+            DECLARED_CONFIDENCE
+        ]
+        assert item.primary_concept in {row.concept_id for row in evidence}
+
+    bus().forget(session_id)
 
 
 def test_a_behavioral_session_is_now_allowed(created_sessions):

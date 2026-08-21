@@ -22,7 +22,7 @@ detail behind it.
 | **0** Foundations | **complete** | workspace, 159-concept taxonomy, corpus schema + validator, CI | — |
 | **1** Corpus v1 | **partial** — thin slice | 24 items — 3 archetypes + 3 instances in each of four domains, verified | bulk authoring toward ~400/~150 |
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
-| **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, three tools, `turns` written), the **SSE stream** (deltas included), and **rubric grading** — `design` and `behavioral` sessions grade | quant's answer check, two agent tools, a full session against a live provider |
+| **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, three tools, `turns` written), the **SSE stream** (deltas included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | two agent tools, a full session against a live provider |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within five sessions | weights are placeholders until real sessions calibrate them |
 | **5–8** Web, AWS, voice, hardening | **not started** | — | — |
 | **9** Practice log | **partial** — schema only | `practice_problems`, `practice_solves`, and `concept_evidence`'s two-producer shape — all migrated, landed with the Phase 3 slice | classification, endpoints, scheduling. No longer gated on the engine: `apply_evidence` already handles an evidence row with no item, so a logged solve would feed mastery today. It is gated on a **model call**, which nothing in this project has ever made |
@@ -2205,3 +2205,141 @@ going to catch it except reading the other items.
 
 The quant grader itself: sympy as a dependency, the answer check, and the reasoning rubric
 this fix just made safe to reuse.
+
+---
+
+## Phase 3 (quant grading) — the last mode, and a wall in a new place · 2026-08-21
+
+`api.grading.quant` checks the number and judges the derivation, `POST /sessions` stopped
+refusing `quant`, and **all four modes now run end to end**. Phase 3's grader column is
+closed.
+
+```
+make check       217 passed (hermetic; was 185 — +32, most of them the answer check)
+make test-db     117 passed (live Postgres; was 108 — +9, the grade and a whole quant session)
+```
+
+### Two halves, because either alone writes evidence nobody should trust
+
+The answer is checked symbolically — `39`, `3 + 9 + 27` and `1,024` are all expressions, and
+`2/6` is `1/3`. The derivation is judged against the item's `reasoning_rubric` by
+`api.grading.rubric`'s own code rather than a second copy of it: `judge_criteria` was lifted
+out of `grade_rubric` for exactly this, so the citation check has one implementation and
+cannot drift between two graders.
+
+The weighting is `0.4 × answer + 0.6 × reasoning`. Below half on the number on purpose —
+this is the arithmetic behind docs/GRADING.md's "a correct number with wrong reasoning is
+not a pass", since a memorised value and a derived one are indistinguishable from the value
+alone. The reverse matters as much: a sound derivation with a slipped digit keeps 0.6 rather
+than collapsing to zero, which is how an interviewer scores it, and the rubric's own
+arithmetic criterion already docks the wrong value where it belongs.
+
+### The hard part was not the equivalence. It was finding the answer
+
+Every real derivation states numbers that are not the answer. `i.quant.0001` is the clean
+case: the answer is 39, and a good derivation says **27** out loud, because 27 is the naive
+value the problem exists to refute. `i.quant.0002`'s answer is 7.45 and its derivation
+passes through 5.5 and 6.75.
+
+Both obvious rules are wrong, in opposite directions:
+
+- **Scan the whole submission for a match** and the decoy passes — a candidate who computed
+  27 and mentioned 39 in passing is marked correct.
+- **Take the last expression** and "39 presses, which must exceed 27" is marked wrong. That
+  is a correct answer punished for being sanity-checked, and it writes evidence of a
+  weakness the candidate does not have.
+
+What landed: the line the candidate **declared** their answer on wins from anywhere
+(`Answer:`, `Final answer:`, last declaration if there are two), and failing that the last
+line containing arithmetic at all is the conclusion, with any expression on that line
+allowed to match. A declaration is unambiguous in a way no heuristic improves on; the
+fallback is a guess, and it is priced as one — evidence from a declared answer carries 0.9,
+the same as a hidden test passing, and from a read one 0.75. The check is equally
+deterministic either way. What was inferred is *which expression it was pointed at*, and a
+mis-read is a wrong verdict about a right answer.
+
+**A stated answer and no answer stay separate**, the same way a not-demonstrated criterion
+does: a candidate who never committed to a number scores zero on the answer half and writes
+**no evidence** for it.
+
+The limitation is pinned by a test rather than hidden: with no declaration and no other
+arithmetic below it, a trailing sanity bound *is* read as the answer. Nothing in the text
+distinguishes a check from a claim.
+
+### A decimal is accepted at the precision it was written to
+
+`5.33` is `16/3` to a person, and to this grader — provided it carries three significant
+figures, so `5` is not a correct rounding of everything. The corpus authors had already hit
+this and worked around it by hand, listing `5.333` and `5.33` in `accept_forms`; the rule
+generalises what they were doing and leaves `accept_forms` for what the schema says it is
+for — a mixed number, a currency figure — matched as bounded text and tried **last**,
+because an equivalence sympy proved is a stronger thing to be right about than a substring
+of a sentence.
+
+### The wall, and the bug it hid
+
+`parse_expr` evaluates what it parses, and what it parses here is a span of whatever the
+candidate typed — the first untrusted text to meet something powerful **inside the API
+process**, outside the sandbox, in the service that holds the database and model
+credentials. docs/SECURITY.md now carries the control: a character allowlist, a 120-character
+cap, numeric exponents bounded at 64, emptied `__builtins__`, and a lazily-counted node
+budget. Every one of them is checked against the *text*, before the parse that would be
+expensive — `9**9**9` is seven characters and passes every check that is not about the
+exponent.
+
+The allowlist was also where the wave's real mistake was. `parse_expr` resolves its own
+rewritten source — `39` becomes `Integer(39)` — against the globals it is handed, so an
+allowlist without `Integer`, `Float`, `Rational` and `Symbol` refuses **every expression**,
+including `1/3`. And nothing pointed at it. The corpus items list their own answers in
+`accept_forms`, so ten of the twelve smoke cases came back correct anyway, by substring
+match; the two that did not looked like a punctuation bug in the accept-form guard — which
+they also genuinely were. A dead parser was invisible in the passes *and* in the failures.
+
+What caught it was not a test. It was printing **how** each case matched rather than only
+whether it did: twelve rows of `method="accept_form"`, with no `exact` anywhere in a column
+that should have been full of them.
+
+That is the second half of the ordering rule above. `accept_forms` is tried last now, and
+would have been anyway on the merits — but it also means a parser that refuses everything
+fails loudly rather than being covered for by a list the corpus author wrote by hand.
+
+### Two documents that had been false since the day they were written
+
+Found while wiring the mode in, both fixed here:
+
+- **`GET /sessions/{id}/report` shipped two hardcoded notes**, one saying "no rubric grader
+  exists yet" and one saying no interviewer agent ran. Both had been false since 2026-08-20,
+  and a quant report would have carried the first one under a column of quant scores. The
+  notes are now **read off the session**: the interviewer note appears when the session has
+  no turns, and the model-judgement note names the grader versions actually present in the
+  evidence. A payload that states what does not exist is a document, and this repo's rule
+  about documents applies to it.
+- **`check_answer`'s deferral reason expired.** docs/API.md said the tool was unbuilt
+  because no quant session could be created. That is no longer true; it is unbuilt because
+  nobody has built it. The grading-time check exists as `api.grading.quant.check_answer`, so
+  the tool is a thin proxy onto the same function grading uses — which is the point of
+  having written it that way round.
+
+### Deferred deliberately
+
+- **No transcript grading**, unchanged. `record_observation` is still what would make the
+  conversation evidence.
+- **`tolerance` is absolute**, as the schema implies. The rounding rule covers the case that
+  would otherwise want a relative band; whether any item needs one is a question for real
+  sessions.
+- **The two answer confidences are a guess.** 0.9 and 0.75 are reasoned, not measured, like
+  every other constant in this system until sessions calibrate them.
+
+### The lesson, stated once
+
+A grader can be wrong in two directions and only one of them is loud. Marking a correct
+answer wrong writes evidence of a weakness the candidate does not have, and mastery is
+derived by replaying evidence, so it does not wash out — it compounds through every later
+plan. That asymmetry is why the answer is read from a declaration where there is one, why a
+rounded decimal is accepted, and why silence writes nothing at all.
+
+### Next
+
+Phase 3's remaining owings are `record_observation`, `check_answer` as a tool, and the one
+that has been pending since the model-call path landed: **a full session against a live
+provider**, still gated on the Bedrock use-case form in docs/COST.md.

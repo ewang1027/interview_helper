@@ -95,9 +95,9 @@ buildlog disagree about what exists, the buildlog is right.**
 | [CONCEPTS](docs/CONCEPTS.md) | The 159-concept taxonomy and its rules | 0 | ✅ Built |
 | [CORPUS](docs/CORPUS.md) | What a corpus item is; the validator's eight checks | 0 → 1 | ✅ Contract built |
 | [RESEARCH](docs/RESEARCH.md) | How items get researched and authored | 1 | Spec |
-| [SECURITY](docs/SECURITY.md) | Threat model, sandbox isolation, the six escape tests | 2 | ✅ Isolation built |
-| [GRADING](docs/GRADING.md) | The four graders and what they produce | 2 → 3 | ✅ Coding grader built; rubric graders are Phase 3 |
-| [API](docs/API.md) | Endpoints, session state machine, SSE events, agent tools | 3 | ✅ Sessions built; agent, SSE and auth are spec |
+| [SECURITY](docs/SECURITY.md) | Threat model, sandbox isolation, the six escape tests, the answer parser | 2 | ✅ Isolation built |
+| [GRADING](docs/GRADING.md) | The four graders and what they produce | 2 → 3 | ✅ All four graders built |
+| [API](docs/API.md) | Endpoints, session state machine, SSE events, agent tools | 3 | ✅ Sessions, agent, SSE and auth built; three of five tools |
 | [COST](docs/COST.md) | Model routing, hard budgets, the ledger | 3 → 6 | Policy set |
 | [ADAPTIVE](docs/ADAPTIVE.md) | Elo + FSRS, evidence, weakness priority, planning | 4 | ✅ Built |
 | [WEB](docs/WEB.md) | Routes, the four mode workspaces, dashboard | 5 | Spec |
@@ -157,8 +157,10 @@ for what actually exists and what each phase still owes.
       2026-08-20**: a system prompt per mode, a turn loop with three tools, and `turns`
       finally getting rows, narrating itself on **the SSE stream** — also landed
       2026-08-20, carrying the interviewer's text as the model generates it. **Rubric
-      grading landed 2026-08-20** too, so `design` and `behavioral` sessions can be
-      created and graded — `quant` still cannot, and says why*
+      grading landed 2026-08-20** too, and **the quant grader 2026-08-21** — a symbolic
+      answer check behind a parser wall, plus the derivation judged against the item's
+      reasoning rubric — so all four modes can now be created and graded. Still owed: two
+      agent tools, and a full session against a live provider*
 - [x] **4 — Adaptive engine** — *Elo, FSRS, the replayable projection, the weakness
       priority and the planner landed 2026-08-20, verified against both gates in
       [ADAPTIVE](docs/ADAPTIVE.md). Weights are placeholders until real sessions calibrate
