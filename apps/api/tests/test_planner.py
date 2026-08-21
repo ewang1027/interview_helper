@@ -20,8 +20,16 @@ def test_only_active_instances_of_the_requested_mode_are_eligible():
 
 
 def test_focus_concepts_narrow_the_pool():
-    ids = [item.id for item in eligible_items("coding", ("monotonic-stack",))]
-    assert ids == ["i.code.0002"]
+    """Asserted as a property of the pool rather than as a list of ids. Pinning the ids
+    made this a test of how many items the corpus happens to hold — it broke the day a
+    second `monotonic-stack` instance was authored, which is a thing the corpus is supposed
+    to be able to do."""
+    focused = eligible_items("coding", ("monotonic-stack",))
+    assert focused
+    assert all("monotonic-stack" in item.concepts for item in focused)
+    assert focused == [
+        item for item in eligible_items("coding") if "monotonic-stack" in item.concepts
+    ]
 
 
 def test_a_focus_nothing_matches_leaves_nothing_eligible():

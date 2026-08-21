@@ -1,7 +1,7 @@
 # The research pipeline
 
 > **Status:** Specification — **not built, and already partly bypassed.** `research/` is
-> empty; no stage below has ever run. Phase 1's 24-item thin slice on disk was authored
+> empty; no stage below has ever run. Phase 1's 27-item thin slice on disk was authored
 > directly by Claude Code agents working from `CORPUS.md`'s checklist, skipping
 > sweep/extract/cluster/rank entirely and recording no `research_runs` row. This remains
 > the design for **bulk** authoring toward the ~400/~150 target, which has not started.

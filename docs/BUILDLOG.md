@@ -20,7 +20,7 @@ detail behind it.
 | Phase | State | What exists | What it still owes |
 |---|---|---|---|
 | **0** Foundations | **complete** | workspace, 159-concept taxonomy, corpus schema + validator, CI | — |
-| **1** Corpus v1 | **partial** — thin slice | 24 items — 3 archetypes + 3 instances in each of four domains, verified | bulk authoring toward ~400/~150 |
+| **1** Corpus v1 | **partial** — thin slice | 27 items — 3 archetypes in each of four domains, with 6 coding instances and 3 in each other domain, all verified | bulk authoring toward ~400/~150, and archetypes for concepts nothing measures as a primary |
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | a full session against a live provider — gated on Bedrock access, not on code |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within five sessions | weights are placeholders until real sessions calibrate them |
@@ -2802,3 +2802,98 @@ enough to prove four graders and an adaptive engine work and not enough to be tr
 docs/ADAPTIVE.md's two "structural at 24 items" limitations — the prerequisite gate with
 nowhere to send you, and an informative band that cannot choose between items because there
 is only ever one — are both statements about the corpus, not the engine.
+
+---
+
+## Phase 1 (coding, second instance per archetype) — the corpus gets a choice · 2026-08-21
+
+Three new coding instances, one per existing archetype, at ratings deliberately unlike the
+ones already there. The corpus goes from 24 items to 27, and coding from three instances to
+six.
+
+```
+corpus validate    159 concepts · 27 items (12 archetypes, 15 instances) · 0 errors, 0 warnings
+verify-solutions   6/6 references pass their own tests in the sandbox — slopes 1.06 / 0.99 /
+                   1.07 / 1.03 / 1.02 / 1.08 against their declared targets
+make check         248 passed (hermetic) · make test-db 139 passed (live Postgres)
+```
+
+| New item | Archetype | Rating | What it is |
+|---|---|---|---|
+| `i.code.0004` | `a.code.0001` | easy 1360 | the window's budget is a *count*, not a distinctness — one counter, no map |
+| `i.code.0005` | `a.code.0002` | hard 1740 | nearest-smaller on **both** sides, so the stack settles a block rather than a span |
+| `i.code.0006` | `a.code.0003` | medium 1620 | the bisected quantity is a rate, and the feasibility check is a sum of ceilings |
+
+### What this fixes, and what it does not
+
+docs/ADAPTIVE.md carried two limitations described as "structural at 24 items". They are
+not the same kind of thing, and only one of them is about the number of items:
+
+- **The informative band could not choose *which* item to serve, only which concept** —
+  because there was exactly one instance per archetype. Now there are two for every coding
+  archetype, and the band demonstrably chooses. A cold-start candidate at the default 1550
+  is served the new easy item at an expected score of **0.75**, squarely in the band, where
+  before the closest thing was `i.code.0001` at 1480. Lifted.
+- **The prerequisite gate still has nowhere to send you.** Substitution only moves toward a
+  concept some item carries as its **primary**, and an instance inherits its archetype's
+  primary — so three new instances added zero new primaries. Twelve primaries across 159
+  concepts, unchanged. Closing that needs new *archetypes*, which is a different and more
+  expensive piece of work than this one, and the doc now says so instead of implying item
+  count is the variable.
+
+### `O(n log n)` is a much weaker declaration than it looks
+
+`i.code.0006` was authored with `complexity_target: O(n log n)`, which is a true statement
+about the algorithm. Running its naive impostor — a rate-by-rate scan — through the real
+probe returned **`inconclusive` at slope 2.00**.
+
+That is the probe behaving exactly as designed. The linearithmic band's ceiling is 1.75 and
+the margin 0.35, so nothing under 2.10 is called slow; the cushion exists because
+distinguishing n log n from n² at these sizes is genuinely hard, and failing a correct
+n-log-n solution is the worse error. But the consequence is worth naming: **an item
+declaring `O(n log n)` gets materially less protection than one declaring `O(n)`.**
+
+The fix was to say something truer. The binary search here is over the *rate* range, not
+over n — `O(n log M)`. `classify_target` drops a log over any symbol that is not `n`,
+because the probe only varies n, so that reads as the linear band: the reference measures
+1.08 against a 1.30 ceiling, and the same impostor is now caught at **2.01 against a 1.65
+threshold**. The authoring checklist in docs/CORPUS.md carries this, with the instruction
+that matters most — check the target by running an impostor, not by reading the band table.
+
+### Four tests were measuring the corpus, not the code
+
+Growing the corpus broke eight database tests and one hermetic one, and every failure was
+the same mistake in a different place: **an assertion that pinned an identity where it meant
+a property.**
+
+| Test | Pinned | Now asserts |
+|---|---|---|
+| `test_focus_concepts_narrow_the_pool` | `== ["i.code.0002"]` | every eligible item tagged with the concept, computed from the corpus |
+| `test_agent_loop_db` (7 tests) | `FIRST_ITEM = "i.code.0001"` | the item the planner actually served, read from the plan |
+| `test_a_due_concept_you_are_good_at_takes_one_slot` | `REVIEW_ITEM = "i.code.0003"` | the entry with no priority — structurally the review slot |
+
+The last one is the interesting one, because it was not merely brittle: at the hand-written
+ability of 1750 the *new* item is squarely in the informative band, so the ordinary weakness
+path serves it and the review slot is never reached. The test's premise — a concept you are
+good at that nothing in-band can measure — had quietly stopped being true of the corpus. The
+ability is now 2100, which re-creates the scenario, with a comment saying that the number
+expresses a situation and the situation depends on what is on disk.
+
+Worth stating once: **a test that names a corpus item is a test of how many items the corpus
+holds.** That is a thing this project intends to change roughly four hundred more times.
+
+### Also found: a stale seed is 47 failures
+
+The first full `make test-db` after authoring failed 55 tests. Forty-seven of them were one
+cause: `items` in the development database is seeded from the corpus, and the seed had not
+been re-run, so the planner was choosing from a table that did not contain the new items.
+`uv run python -m api.seed` fixed those in one go. Not a defect — but the failure mode is
+loud, uniform and completely uninformative about its cause, so it is written down here for
+whoever meets it next.
+
+### Next
+
+Same again for quant, design and behavioral — three more instances each, which brings every
+domain to two per archetype. Then the expensive half: new **archetypes**, which is what the
+prerequisite gate is actually waiting for, and what takes real research rather than
+authoring against a pattern already attested on disk.

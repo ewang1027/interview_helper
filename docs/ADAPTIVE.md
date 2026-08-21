@@ -7,10 +7,16 @@
 > `POST /mastery/recompute` rebuilds the whole projection — item ratings included — from
 > `concept_evidence` alone.
 > **The weights below are still placeholders**, to be calibrated against real sessions.
-> Two limits are structural at 24 items rather than defects: the prerequisite gate usually
-> has nowhere to send you (no item measures `stack-simulation`), and with one item per
-> concept the informative band cannot influence *which item* is served — only which
-> concept.
+> Two limits are structural in the corpus rather than defects, and the second is now
+> partly lifted. **The prerequisite gate usually has nowhere to send you** — it substitutes
+> only toward a concept some item carries as its *primary*, and most concepts have none.
+> Adding instances does not help: an instance inherits its archetype's primary concept, so
+> closing this needs new *archetypes*. **The informative band could not influence which
+> item was served, only which concept** — with one instance per archetype there was nothing
+> to choose between. Since 2026-08-21 coding carries two instances per archetype at
+> different ratings, and the band does choose: a cold-start candidate is served the easier
+> one at an expected score of 0.75, and the same concept at a high ability falls out of the
+> band entirely and reaches the review slot instead.
 > Related: [CONCEPTS](CONCEPTS.md) (the DAG it plans over) · [GRADING](GRADING.md) (where evidence comes from) · [API](API.md#mastery-and-planning) (how it is exposed) · [GLOSSARY](GLOSSARY.md) · [PRACTICE_LOG](PRACTICE_LOG.md) (a second evidence source, and a lighter FSRS-inspired scheduler at problem granularity)
 
 How the system decides what to make you do next.
@@ -175,7 +181,9 @@ A session is a **budget** (minutes) and a **mode**. The planner:
    serves `dp-1d`. This is the one place the DAG is a hard gate rather than a hint.
    **As far as the corpus allows:** substituting toward a concept no item measures would
    plan a session with nothing in it, so an unserveable prerequisite is reported in the
-   plan and the original concept is kept. At 24 items that is the common case.
+   plan and the original concept is kept. It is still the common case: substitution needs
+   an item whose *primary* concept is the prerequisite, and the corpus has twelve primaries
+   across 159 concepts.
 4. Keeps a minority of due-for-review items that you are *good* at, so fluency on
    solved material does not rot. At most one per session — a session is about what you
    are bad at, and review is the seasoning. **The slot is reserved before the weakness

@@ -34,8 +34,9 @@ WEAK_ITEM = "i.code.0002"
 WEAK_ENTRYPOINT = "pressure_spans"
 WEAK_CONCEPT = "monotonic-stack"
 
-# The item the review slot should reach for, and the concept it measures.
-REVIEW_ITEM = "i.code.0003"
+# The concept the review slot should reach for. Which *item* it picks is the planner's
+# choice and there is more than one measuring this now, so the assertion below is about the
+# concept served — pinning an id made it a test of the corpus's size.
 REVIEW_CONCEPT = "binary-search-answer"
 
 SOURCE = "def f(xs):\n    return xs\n"
@@ -236,7 +237,14 @@ def test_a_due_concept_you_are_good_at_takes_one_slot(created_sessions, user_id,
             Mastery(
                 user_id=user_id,
                 concept_id=REVIEW_CONCEPT,
-                ability=1750.0,
+                # Far enough above every item measuring this concept that none of them is
+                # in the informative band — which is the situation the review slot exists
+                # for. 1750 used to produce it and stopped when a second, easier
+                # `binary-search-answer` instance was authored: at that ability the new
+                # item is squarely in band, so the ordinary weakness path serves it and the
+                # review slot is not needed. The scenario is "you are good at it"; the
+                # number that expresses it depends on the corpus.
+                ability=2100.0,
                 observations=6,
                 stability=5.0,
                 due_at=past,
@@ -248,8 +256,13 @@ def test_a_due_concept_you_are_good_at_takes_one_slot(created_sessions, user_id,
     plan = build_plan(db_session, user_id, "coding", 45)
     served = [entry["item_id"] for entry in plan["items"]]
 
-    assert REVIEW_ITEM in served, served
-    review = next(entry for entry in plan["items"] if entry["item_id"] == REVIEW_ITEM)
+    # Selected structurally: the review slot is the one entry the planner adds outside the
+    # priority ranking, so it is the one with no priority. Matching on the concept instead
+    # picks up the weakness shortlist's own entry for it, which is a different decision that
+    # happens to name the same concept.
+    review = next((entry for entry in plan["items"] if entry["reason"]["priority"] is None), None)
+    assert review is not None, served
+    assert review["reason"]["targets"] == REVIEW_CONCEPT
     assert review["reason"]["prerequisite_note"] == "due for review, and you are good at it"
     # And it is seasoning, not the session: something weak was still served alongside it.
     assert len(served) >= 2, served

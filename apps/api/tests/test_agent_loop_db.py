@@ -29,7 +29,6 @@ from corpus.loader import load_items
 pytestmark = pytest.mark.db
 
 ITEMS = {item.id: item for item in load_items()}
-FIRST_ITEM = "i.code.0001"
 MODEL = "us.anthropic.claude-sonnet-4-6"
 
 
@@ -67,6 +66,21 @@ def _ledger_and_turns():
         if new:
             db.exec(delete(LlmCall).where(col(LlmCall.id).in_(new)))
             db.commit()
+
+
+def in_play(session_id: str) -> str:
+    """The item the interviewer is on, read from the plan.
+
+    Not a constant. Which item the planner serves is its decision and it now has more than
+    one coding instance per concept to decide between — a test that pins the id is a test of
+    how many items the corpus happens to hold, which is a thing the corpus is meant to be
+    able to change."""
+    with Session(get_engine()) as db:
+        session_row = db.get(InterviewSession, session_id)
+        assert session_row is not None
+        item = service.current_item(db, session_row)
+        assert item is not None
+        return str(item.id)
 
 
 def start_session(created_sessions: list[str]) -> tuple[TestClient, str]:
@@ -121,7 +135,7 @@ def test_the_request_carries_the_cached_system_prompt_and_the_tools(created_sess
 
     request = model.requests[0]
     assert request["system"][0]["cache_control"] == {"type": "ephemeral"}
-    assert ITEMS[FIRST_ITEM].statement_md in request["system"][0]["text"]
+    assert ITEMS[in_play(session_id)].statement_md in request["system"][0]["text"]
     assert [tool["name"] for tool in request["tools"]] == [
         "run_code",
         "reveal_hint",
@@ -171,6 +185,7 @@ def test_hints_taken_in_the_interview_cost_score_at_grading(created_sessions):
     """The one place a conversation reaches into a measurement. Two hints on i.code.0001
     keep 0.95 * 0.90 of an otherwise perfect score."""
     client, session_id = start_session(created_sessions)
+    item_id = in_play(session_id)
     model = ScriptedModel(
         model_response(tool_block("reveal_hint", {"level": 1})),
         model_response(tool_block("reveal_hint", {"level": 2}, use_id="tu_2")),
@@ -180,16 +195,16 @@ def test_hints_taken_in_the_interview_cost_score_at_grading(created_sessions):
     turn(session_id, "Still stuck.", ScriptedModel(model_response(text_block("Keep going."))))
 
     with Session(get_engine()) as db:
-        assert loop.hints_revealed(db, session_id, FIRST_ITEM) == 2
+        assert loop.hints_revealed(db, session_id, item_id) == 2
 
     # The submission runs through the route, which builds a real `ExecutorClient` unless
     # told otherwise — and there is no executor listening in a `db`-marked test.
     use_settings(**MODEL_OVERRIDES)
     app.dependency_overrides[get_runner] = FakeRunner
-    reference = ITEMS[FIRST_ITEM].grading["reference_solutions"]["python"]
+    reference = ITEMS[item_id].grading["reference_solutions"]["python"]
     submitted = client.post(
         f"/api/v1/sessions/{session_id}/submissions",
-        json={"item_id": FIRST_ITEM, "kind": "code", "language": "python", "content": reference},
+        json={"item_id": item_id, "kind": "code", "language": "python", "content": reference},
     )
     assert submitted.status_code == 202, submitted.text
 
@@ -208,8 +223,9 @@ def test_an_observation_becomes_evidence_and_leaves_the_item_rating_alone(
     about how hard the item is — so the rating that belongs to the result stays put, even
     though the observation is written first and would otherwise take it."""
     _, session_id = start_session(created_sessions)
+    item_id = in_play(session_id)
     with Session(get_engine()) as db:
-        item = db.get(Item, FIRST_ITEM)
+        item = db.get(Item, item_id)
         assert item is not None
         before = item.elo
 
@@ -230,9 +246,9 @@ def test_an_observation_becomes_evidence_and_leaves_the_item_rating_alone(
             (CONCEPT, loop.OBSERVATION_SOURCE, 0.5, tools.OBSERVATION_CONFIDENCE)
         ]
         assert rows[0].grader_version == loop.OBSERVATION_VERSION
-        assert rows[0].item_id == FIRST_ITEM
+        assert rows[0].item_id == item_id
 
-        item = db.get(Item, FIRST_ITEM)
+        item = db.get(Item, item_id)
         assert item is not None
         assert item.elo == before, "an observation is not an attempt at the problem"
 
@@ -272,6 +288,7 @@ def test_a_session_carrying_both_producers_still_replays_exactly(created_session
     the grader writes afterwards — because the rows are not independent: a replay that
     applied them the other way round would compute a different expectation for the second."""
     client, session_id = start_session(created_sessions)
+    item_id = in_play(session_id)
     turn(
         session_id,
         CANDIDATE,
@@ -282,10 +299,10 @@ def test_a_session_carrying_both_producers_still_replays_exactly(created_session
     )
     use_settings(**MODEL_OVERRIDES)
     app.dependency_overrides[get_runner] = FakeRunner
-    reference = ITEMS[FIRST_ITEM].grading["reference_solutions"]["python"]
+    reference = ITEMS[item_id].grading["reference_solutions"]["python"]
     submitted = client.post(
         f"/api/v1/sessions/{session_id}/submissions",
-        json={"item_id": FIRST_ITEM, "kind": "code", "language": "python", "content": reference},
+        json={"item_id": item_id, "kind": "code", "language": "python", "content": reference},
     )
     assert submitted.status_code == 202, submitted.text
 
@@ -320,6 +337,7 @@ def test_the_observation_ration_survives_the_turn_it_was_spent_in(created_sessio
     writes an immutable evidence row, so a cap that resets each turn is an unbounded producer
     of the softest evidence in the system."""
     _, session_id = start_session(created_sessions)
+    item_id = in_play(session_id)
     for n in range(tools.MAX_OBSERVATIONS):
         turn(
             session_id,
@@ -330,7 +348,7 @@ def test_the_observation_ration_survives_the_turn_it_was_spent_in(created_sessio
             ),
         )
     with Session(get_engine()) as db:
-        assert loop.observations_recorded(db, session_id, FIRST_ITEM) == tools.MAX_OBSERVATIONS
+        assert loop.observations_recorded(db, session_id, item_id) == tools.MAX_OBSERVATIONS
 
     turn(
         session_id,
@@ -443,7 +461,7 @@ def test_the_route_takes_a_turn_and_reports_the_item(created_sessions):
     body = post_turn(
         client, session_id, "ready", ScriptedModel(model_response(text_block("Let's begin.")))
     )
-    assert body["item_id"] == FIRST_ITEM
+    assert body["item_id"] == in_play(session_id)
     assert body["state"] == "interviewing"
     assert body["message"] == "Let's begin."
     assert body["round_ended"] is False
@@ -556,7 +574,7 @@ def test_a_turn_narrates_itself_on_the_event_stream(created_sessions):
     hint = next(event for event in published if event.type == "hint.revealed")
     # The price is on the event, not discovered in the report afterwards (docs/API.md).
     assert hint.data["score_penalty"] == pytest.approx(0.05)
-    assert hint.data["text"] == ITEMS[FIRST_ITEM].hints[0]
+    assert hint.data["text"] == ITEMS[in_play(session_id)].hints[0]
     assert published[-1].data["text"] == "Now tell me the complexity."
 
 

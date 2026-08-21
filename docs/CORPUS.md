@@ -1,8 +1,10 @@
 # The corpus and how it gets built
 
 > **Status:** Contract built and enforced (**Phase 0**) — schema and validator ship with
-> tests. A **thin Phase 1 slice is authored and verified**: 3 archetypes + 3 instances in
-> each of the four domains. Bulk authoring toward the ~400/~150 target has not started.
+> tests. A **thin Phase 1 slice is authored and verified**: 3 archetypes in each of the
+> four domains, with 6 coding instances (2026-08-21) and 3 in each other domain. Every
+> coding reference solution passes its own tests in a real sandbox and measures inside its
+> declared complexity band. Bulk authoring toward the ~400/~150 target has not started.
 > Related: [RESEARCH](RESEARCH.md) (how items get made) · [CONCEPTS](CONCEPTS.md) (what they tag against) · [GRADING](GRADING.md) (what the grading contracts mean) · [GLOSSARY](GLOSSARY.md) · [PRACTICE_LOG](PRACTICE_LOG.md) (why its ingestion is manual-entry-only, not URL-fetch)
 
 The corpus is the question bank. It is **researched and authored at build time** by
@@ -161,8 +163,8 @@ would orphan the `concept_evidence` rows that reference it.
 Refresh is *designed* to run as a scheduled Claude Code job so it stays on the Max plan,
 recording a `research_runs` row per run for provenance: what was searched, what was added,
 what was deprecated. **Neither exists yet** — there is no scheduled job, the table is
-migrated but empty, and the 24 items on disk were authored by hand-launched agents with no
-provenance row written for either wave.
+migrated but empty, and the 27 items on disk were authored by hand-launched agents and by
+hand, with no provenance row written for any wave.
 
 ## Authoring checklist (Phase 1)
 
@@ -185,6 +187,15 @@ For each instance:
       times slower than yours — CI's runners measured ~2–3M simple loop iterations/s, and
       oversized sweeps come back `inconclusive` there (measured: [4000…32000] escaped the
       quadratic impostor on CI that [1000…8000] catches)
+- [ ] Coding: **the `complexity_target` string decides how much protection the probe gives
+      you.** `O(n log n)` lands in the linearithmic band, whose ceiling plus margin is 2.10
+      — wide on purpose, so a genuine n-log-n solution is never failed, and wide enough
+      that a quadratic impostor measuring 2.00 comes back `inconclusive` rather than
+      caught (measured on `i.code.0006`). When the log factor is over a *value* range and
+      not over n — a binary search on the answer, most often — say so: `O(n log M)` reads
+      as linear in n, which is what the probe actually varies, and the same impostor is
+      then called at 2.01 against a 1.65 threshold. Check the target you wrote by running
+      an impostor through `make verify-solutions`, not by reading the band table
 - [ ] Quant: exact and/or numeric answer, tolerance, plus a reasoning rubric — a right
       number with wrong reasoning is not a pass in a real quant interview
 - [ ] Design/behavioral: ≥3 criteria with score anchors, weights summing to 1.0
