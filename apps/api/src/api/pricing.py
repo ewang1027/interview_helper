@@ -4,12 +4,23 @@
 and a ledger that silently re-prices last month's calls is a ledger you cannot reconcile
 against a bill.
 
-**These are Anthropic first-party list rates.** Bedrock is partner-operated and priced
-separately (https://aws.amazon.com/bedrock/pricing/), so on `MODEL_PROVIDER=bedrock` — the
-default — the number here is an *estimate at list price*, and the AWS bill is authoritative.
-It is still worth computing: the shape of the spend (which job, which model, how much of it
-was cache) is what docs/COST.md's "measure before optimizing" needs, and that shape is the
-same whoever bills it.
+**These are Anthropic first-party list rates**, and Bedrock is partner-operated and priced
+separately (https://aws.amazon.com/bedrock/pricing/). That used to make the number here an
+estimate. Checked 2026-08-20 against Bedrock's own rate card for the model this project
+runs — `aws bedrock list-foundation-model-agreement-offers --model-id
+anthropic.claude-sonnet-4-6` — the two agree exactly:
+
+    input $3.00/M · output $15.00/M · cache read $0.30/M · cache write $3.75/M (5m)
+
+which also confirms the two multipliers below: a read is a tenth of input and a 5-minute
+write is a quarter more. The one-hour write is 2x input, not 1.25x — this module always
+requests the 5-minute default, and that is the reason it should keep doing so silently
+rather than growing a TTL parameter nobody sets.
+
+Still an estimate for any model whose Bedrock card has not been read, and the bill is
+authoritative either way. It is worth computing regardless: the shape of the spend — which
+job, which model, how much of it was cache — is what docs/COST.md's "measure before
+optimizing" needs, and that shape is the same whoever bills it.
 
 Rates last checked 2026-08-20 against the model table in the `claude-api` skill.
 """
@@ -23,8 +34,9 @@ from datetime import UTC, date, datetime
 
 logger = logging.getLogger(__name__)
 
-# Cache multipliers on the input rate. A 5-minute write costs ~1.25x, a read ~0.1x — the
-# read discount is the entire reason docs/COST.md cares whether caching is working.
+# Cache multipliers on the input rate, confirmed against Bedrock's published rate card
+# rather than rounded from documentation: a 5-minute write is 1.25x, a read 0.1x. The read
+# discount is the entire reason docs/COST.md cares whether caching is working.
 CACHE_WRITE_MULTIPLIER = 1.25
 CACHE_READ_MULTIPLIER = 0.1
 

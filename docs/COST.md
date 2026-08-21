@@ -50,7 +50,7 @@ The routing table above is the *design*. Measured against this project's AWS acc
 |---|---|
 | `us.anthropic.claude-sonnet-4-6` | **answers** |
 | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | answers |
-| `us.anthropic.claude-opus-5`, `us.anthropic.claude-sonnet-5`, `us.anthropic.claude-opus-4-8` | `403 not available for this account` |
+| `us.anthropic.claude-opus-5`, `us.anthropic.claude-sonnet-5`, `us.anthropic.claude-opus-4-8` | `403 not available for this account` — a different refusal from the form gate, and it may or may not lift when the form is submitted |
 | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | `404 model use case details have not been submitted for this account` |
 | `anthropic.claude-opus-5` (the id shipped here since Phase 3) | `404 does not exist` on the Mantle endpoint; `on-demand throughput isn't supported` on InvokeModel |
 
@@ -68,14 +68,42 @@ regression.
 
 ### Getting the routing table back
 
-In the Bedrock console for the account, under **Model access**: submit the **Anthropic use
-case details** form — that is what currently gates even Sonnet 4.6, so it is the one that
-unblocks live model calls at all — and request access to the Claude 5 models the table
-names. Then set the four `MODEL_*` variables in `.env` back to their intended
-inference-profile ids. Nothing in the code changes: that is what `ModelRouter` is for.
+**The advice this section carried on 2026-08-20 was wrong, and the correction is the
+useful part.** It said to request access in the Bedrock console under *Model access*. That
+page no longer exists: AWS retired it on 2025-09-29 and now enables every serverless
+foundation model automatically, along with the `PutFoundationModelEntitlement` permission
+and its API. Control moved to IAM policies and SCPs. Anyone following the old instruction
+goes looking for a console page that was removed a year ago.
 
-Until then `make test-llm` skips with the provider's own words, which is the right
-behaviour for an environment condition, and every other gate runs against a scripted model.
+What actually gates this account is the one exception to that change: **Anthropic models
+are enabled but require a one-time use-case form before first use.** The account's own
+answer says so precisely —
+
+```
+$ aws bedrock get-foundation-model-availability --model-id anthropic.claude-sonnet-4-6
+  "agreementAvailability": { "status": "NOT_AVAILABLE" },
+  "authorizationStatus": "AUTHORIZED",
+  "entitlementAvailability": "AVAILABLE",
+  "regionAvailability": "AVAILABLE"
+
+$ aws bedrock get-use-case-for-model-access
+  ResourceNotFoundException: You have not filled out the request form.
+```
+
+Authorized, entitled, available in the region, and no agreement — which is exactly the
+shape of "the form has not been submitted". Two ways to submit it:
+
+1. **The Bedrock console playground.** Open any Anthropic model; it prompts the form once.
+2. **`PutUseCaseForModelAccess`**, whose `formData` is base64-encoded JSON:
+   `companyName`, `companyWebsite`, `intendedUsers`, `industryOption`,
+   `otherIndustryOption`, `useCases`.
+
+Then set the four `MODEL_*` variables back to their intended inference-profile ids if
+Claude 5 becomes reachable. Nothing in the code changes: that is what `ModelRouter` is for.
+
+Until the form is submitted `make test-llm` skips with the provider's own words, which is
+the right behaviour for an environment condition, and every other gate runs against a
+scripted model.
 
 ## Hard budgets
 
@@ -124,11 +152,16 @@ directory until Phase 5.
 
 **`cost_usd` is computed once, at call time, and never recomputed on read.** Rates change,
 and a ledger that silently re-prices last month's calls cannot be reconciled against a
-bill. Two consequences: the rates in `api.pricing` are Anthropic **first-party list
-prices**, so on Bedrock — partner-operated, separately priced — the dollar figure is an
-estimate and the AWS bill is authoritative; and a model with no entry in the rate table is
-recorded at `$0` with a warning rather than a guess, because the token counts are worth
-keeping even when the price is not known.
+bill. A model with no entry in the rate table is recorded at `$0` with a warning rather
+than a guess, because the token counts are worth keeping even when the price is not.
+
+The rates in `api.pricing` are Anthropic first-party list prices. For the model this
+project actually runs they are not an approximation: Bedrock's own rate card, read on
+2026-08-20 with `aws bedrock list-foundation-model-agreement-offers --model-id
+anthropic.claude-sonnet-4-6`, gives `$3.00/M` in, `$15.00/M` out, `$0.30/M` cache read and
+`$3.75/M` cache write — identical, and confirming the cache multipliers. It also prices a
+one-hour cache write at 2x input rather than 1.25x, which is why this system asks for the
+five-minute default and nothing offers to change it.
 
 [PRACTICE_LOG](PRACTICE_LOG.md)'s problem-classification calls (Phase 9) log here with
 `job="practice_log_classify"`, riding the existing "Classification, extraction" routing

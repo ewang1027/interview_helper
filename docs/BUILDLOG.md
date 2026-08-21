@@ -1824,6 +1824,29 @@ live test exists, runs one real turn, and is one form submission away from runni
 - **The interviewer cannot end the session**, only a round. Ending an interview early is
   `POST /end`, which is the candidate's decision.
 
+### The console page this file told you to visit does not exist
+
+Follow-up, same day, after the advice failed in the obvious way: docs/COST.md said to
+request access in the Bedrock console under *Model access*. **AWS retired that page on
+2025-09-29** and now enables every serverless foundation model automatically, along with the
+`PutFoundationModelEntitlement` permission and its API; control moved to IAM and SCPs.
+
+The one exception is the thing actually blocking this account: **Anthropic models are
+enabled and still require a one-time use-case form before first use.** The account says so
+itself — `authorizationStatus: AUTHORIZED`, `entitlementAvailability: AVAILABLE`,
+`regionAvailability: AVAILABLE`, `agreementAvailability: NOT_AVAILABLE`, and
+`get-use-case-for-model-access` answering *"You have not filled out the request form"*.
+Either the console playground or `PutUseCaseForModelAccess` submits it.
+
+The same investigation answered a question this project had been carrying as a caveat.
+`api.pricing` prices Bedrock calls at Anthropic list rates and said so, honestly, as an
+estimate. Bedrock's own rate card for the model in use —
+`aws bedrock list-foundation-model-agreement-offers --model-id anthropic.claude-sonnet-4-6`
+— gives `$3.00/M` in, `$15.00/M` out, `$0.30/M` cache read, `$3.75/M` cache write. Identical
+to the table, and it confirms both cache multipliers from the provider's own numbers rather
+than from documentation. It also prices a one-hour cache write at 2x input, which is a good
+reason to keep asking for the five-minute default.
+
 ### Next
 
 The SSE stream, so a turn arrives as it is generated rather than all at once — and with it
