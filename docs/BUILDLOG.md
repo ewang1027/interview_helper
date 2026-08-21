@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-08-20
+## Where things stand — 2026-08-21
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -2073,3 +2073,61 @@ would produce evidence nobody should trust. Half a grader is not a grader.
 
 Quant, which is the last mode and the smallest remaining grader: a dependency, an
 equivalence check, and the reasoning rubric it already shares with system design.
+
+---
+
+## Phase 2 (probe budget) — CI was the slow machine the probe had never met · 2026-08-21
+
+Every CI run since the coding grader landed failed on the same test:
+`test_the_probe_costs_the_quadratic_submission_a_quarter_of_its_score`. The quadratic
+impostor — the case the probe exists for — came back `inconclusive; probe run ended in
+timeout`. Locally the same test passes. Six pushes, identical failure, fully
+deterministic: not flake, a machine-speed dependency.
+
+```
+make check          185 passed (hermetic; +2 driver-budget tests)
+make test-sandbox   28 passed (real Docker, 72s — was 139s; smaller sweeps)
+verify-solutions    3/3 — slopes 1.07 / 1.02 / 1.08 against their targets
+CI                  the run carrying this commit is the verification; pending at writing
+```
+
+### SECURITY.md's "the wall is a backstop" was false on a slow machine
+
+The driver's budget stops repeating a run once one takes over a second, and stops
+growing n once the cumulative spend passes ~20s of process time — but both checks fire
+*between* runs. Nothing prevented **starting** a size whose first run alone was
+unaffordable. The bands were calibrated on this machine (arm64, the fastest thing this
+code will ever run on); GitHub's runners execute the impostor's inner loop at roughly
+2–3M iterations/s — several times slower — where `i.code.0002`'s n=16000 costs ~45–60s
+by itself. The probe blew through its 60s wall mid-measurement, the sandbox killed it,
+and "timeout" mapped to `inconclusive`: the most damning submission producing the least
+verdict, which is the exact failure the budget was added to prevent, recurring one
+level up.
+
+The executor's own sandbox suite (`SIZES = [2000…16000]`) was passing on CI only by
+landing on the cheap side of the same edge — the arithmetic puts its worst case right at
+the wall.
+
+### Two fixes: one defensive, one calibrated
+
+- **The driver refuses to start a size it cannot afford.** Before each size it projects
+  the first run's cost from the growth already measured (worst-case cubic when only one
+  point exists) and stops — `truncated`, keeping the points it has — when the projection
+  exceeds the remaining budget. Three points still judge, so the slow submission is
+  caught rather than timed out. Two new hermetic tests pin the arithmetic against a fake
+  `process_time` clock that the fake solution advances quadratically: the budget logic
+  no longer needs Docker to be tested.
+- **Corpus sweeps shrank to `[1000, 2000, 4000, 8000]`** (from `[4000…32000]` on 0001
+  and 0002, `[2000…16000]` on 0003). At CI's measured speed a quadratic impostor now
+  lands at least three sizes inside the budget, and every reference still measures
+  linear (slopes above). The schema's `sizes` description and CORPUS.md's checklist now
+  state the upper bound the field always had in practice, next to the noise floor it
+  already documented.
+
+### The lesson, stated once
+
+A budget checked between units of work bounds nothing when a single unit can exceed it;
+the check has to happen **before** the unit starts, from a prediction. And a probe
+calibrated only on the fastest machine it will ever meet has not been calibrated — the
+slow machine was always going to be the interesting one, because slow is what the probe
+measures.

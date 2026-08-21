@@ -46,7 +46,10 @@ PROBE_MARKER = "##LEARN-PROBE "
 # Generous relative to `/execute`'s 5s: the probe deliberately runs the solution at four
 # sizes with repeats, and its own internal budget (20s of process time) is what actually
 # bounds the work. A wall this short would cut the measurement off mid-sweep and report
-# `inconclusive` for a run that was about to produce a verdict.
+# `inconclusive` for a run that was about to produce a verdict. The budget stays the real
+# bound only because the driver refuses to *start* a size it cannot afford — the spend
+# check between sizes cannot interrupt a run already in flight, and CI's slower runners
+# proved a single unaffordable n will otherwise blow through this wall mid-measurement.
 PROBE_WALL_MS = 60_000
 PROBE_MEMORY_MB = 512
 
@@ -71,7 +74,7 @@ _MARGIN = 0.35
 _MIN_SIGNIFICANT_SECONDS = 2e-4
 
 _DRIVER = """
-import json, time, copy
+import json, time, copy, math
 _P = json.loads({payload!r})
 
 {generator}
@@ -91,6 +94,24 @@ else:
         _spent = 0.0
         _truncated = False
         for _n in _P["sizes"]:
+            if _pts and _pts[-1][1] > 0:
+                # Never START a size the budget cannot afford. The spend check at the
+                # bottom of this loop only fires between sizes, so without this a single
+                # unaffordable n burns through the wall clock mid-run and the whole probe
+                # comes back "timeout" -- the most damning submission producing the least
+                # verdict. Project this size's first run from the growth already
+                # measured; with one point, assume the worst class the bands recognise.
+                _pn, _pt = _pts[-1]
+                _g = 3.0
+                if len(_pts) >= 2 and _pts[-2][1] > 0:
+                    try:
+                        _g = math.log(_pt / _pts[-2][1]) / math.log(_pn / _pts[-2][0])
+                    except (ValueError, ZeroDivisionError):
+                        pass
+                    _g = min(max(_g, 1.0), 3.0)
+                if _pt * (_n / _pn) ** _g > _P["budget_s"] - _spent:
+                    _truncated = True
+                    break
             try:
                 _args = _maker(_n)
             except Exception as exc:

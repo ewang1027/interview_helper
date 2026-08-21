@@ -156,7 +156,7 @@
               "type": "array",
               "items": { "type": "integer", "minimum": 1 },
               "minItems": 3,
-              "description": "Ascending n values. Pick them so the largest run clears ~0.2ms, below which interpreter noise dominates and the probe reports inconclusive."
+              "description": "Ascending n values. Pick them so the largest run clears ~0.2ms, below which interpreter noise dominates and the probe reports inconclusive — and small enough that an impostor one class slower than the target still lands three sizes inside the probe's ~20s process-time budget on a machine several times slower than yours. CI's runners measured ~2-3M simple loop iterations/s, so a quadratic impostor needs its third size's n^2/2 to fit that budget; oversized sweeps get truncated to fewer than three points and the impostor escapes as inconclusive."
             },
             "repeats": {
               "type": "integer",

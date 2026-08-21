@@ -44,7 +44,11 @@ is not evidence about `two-pointers`; a passing hidden test is.
    `make_input(n)` generator plus ascending `sizes` — and the probe times the solution at
    each size and fits the growth exponent against `complexity_target`. This catches the
    accepted-but-quadratic solution that passes small tests, which is exactly what a real
-   interviewer would catch. Three things govern how much a verdict is allowed to mean:
+   interviewer would catch. The sweep runs under a ~20s process-time budget, and the
+   driver stops growing n — keeping the points it has, which still judge at three — rather
+   than start a size the budget cannot afford: the slow submission is the one being
+   measured, so timing the probe out on it would hand `inconclusive` to exactly the case
+   the probe exists for. Three things govern how much a verdict is allowed to mean:
    - **A `complexity_target` with no `complexity_probe` is inert.** Fixed test inputs
      cannot be grown, so nothing is measured. Nothing enforces the pairing — the verifier
      prints a notice and continues, and a grading says so in its `detail` rather than

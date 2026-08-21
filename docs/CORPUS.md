@@ -159,7 +159,13 @@ For each instance:
       whose generator is worst-case by construction** — a target with no probe is inert,
       since fixed test inputs cannot be grown, and a random generator lets the very defect
       the probe exists for walk straight through (measured: a naive scan reads 1.28 on
-      random input and 2.03 on adversarial)
+      random input and 2.03 on adversarial). Probe `sizes` are bounded on both ends: the
+      largest run must clear ~0.2ms of real work (below that, interpreter noise judges
+      instead of the algorithm), and an impostor one class slower than the target must
+      still land **three sizes** inside the probe's ~20s budget on a machine several
+      times slower than yours — CI's runners measured ~2–3M simple loop iterations/s, and
+      oversized sweeps come back `inconclusive` there (measured: [4000…32000] escaped the
+      quadratic impostor on CI that [1000…8000] catches)
 - [ ] Quant: exact and/or numeric answer, tolerance, plus a reasoning rubric — a right
       number with wrong reasoning is not a pass in a real quant interview
 - [ ] Design/behavioral: ≥3 criteria with score anchors, weights summing to 1.0

@@ -164,7 +164,7 @@
         "complexity_target": "O(n)",
         "complexity_probe": {
           "generator": "def make_input(n):\n    import random\n    r = random.Random(20260820)\n    # Alphabet size == k, so the whole run is one legal window and a naive\n    # per-start rescan degenerates to O(n^2). A wider alphabet hides it.\n    return [[r.randrange(4) for _ in range(n)], 4]\n",
-          "sizes": [4000, 8000, 16000, 32000],
+          "sizes": [1000, 2000, 4000, 8000],
           "repeats": 5
         },
         "reference_solutions": {
@@ -334,7 +334,7 @@
         "complexity_target": "O(n)",
         "complexity_probe": {
           "generator": "def make_input(n):\n    # Ascending is the worst case for a naive backward scan and free for a\n    # monotonic stack. A random log hides the quadratic entirely -- measured.\n    return [list(range(n))]\n",
-          "sizes": [4000, 8000, 16000, 32000],
+          "sizes": [1000, 2000, 4000, 8000],
           "repeats": 5
         },
         "reference_solutions": {
@@ -476,7 +476,7 @@
         "complexity_target": "O(n log S)",
         "complexity_probe": {
           "generator": "def make_input(n):\n    import random\n    r = random.Random(20260820)\n    return [[r.randrange(1, 500) for _ in range(n)], 8]\n",
-          "sizes": [2000, 4000, 8000, 16000],
+          "sizes": [1000, 2000, 4000, 8000],
           "repeats": 5
         },
         "reference_solutions": {

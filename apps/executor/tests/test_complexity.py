@@ -1,4 +1,6 @@
-"""Target parsing, slope fitting and the verdict rule. Pure — no Docker.
+"""Target parsing, slope fitting, the verdict rule, and the driver's budget. Pure — no
+Docker: the driver program is plain Python, so its budget arithmetic is exercised here by
+running it in-process against a fake `time.process_time` the solution itself advances.
 
 The end-to-end behaviour (does a quadratic submission actually get caught?) lives in
 `test_complexity_probe_sandbox.py`, marked `sandbox`.
@@ -6,9 +8,19 @@ The end-to-end behaviour (does a quadratic submission actually get caught?) live
 
 from __future__ import annotations
 
+import json
 import math
+import time
 
-from executor.complexity import classify_target, fit_slope, judge
+import pytest
+
+from executor.complexity import (
+    PROBE_MARKER,
+    build_probe_program,
+    classify_target,
+    fit_slope,
+    judge,
+)
 
 
 def _curve(exponent: float, sizes=(1000, 2000, 4000, 8000), scale: float = 1e-6):
@@ -83,3 +95,61 @@ def test_too_few_sizes_is_inconclusive_not_a_pass() -> None:
     result = judge([(1000, 1e-3), (2000, 2e-3)], "O(n)")
     assert result.verdict == "inconclusive"
     assert not result.penalises
+
+
+# --- The driver's budget -------------------------------------------------------------
+#
+# CI found the case these pin: the budget check between sizes cannot interrupt a run
+# already in flight, so on a machine slow enough that one size alone exceeds the budget,
+# the probe used to blow through its wall clock and report "timeout" — the most damning
+# submission producing the least verdict. The driver now projects each size's cost from
+# the growth it has already measured and stops *before* a size it cannot afford.
+
+_GENERATOR = "def make_input(n):\n    return [n]\n"
+
+
+def _solution_costing(seconds_per_n_squared: float) -> str:
+    """A 'solution' whose runtime is exact: it advances the fake clock quadratically."""
+    return (
+        "def probe_me(n):\n"
+        "    import time\n"
+        f"    time._fake_clock[0] += {seconds_per_n_squared!r} * n * n\n"
+    )
+
+
+def _run_driver(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], solution: str
+) -> dict:
+    clock = [0.0]
+    monkeypatch.setattr(time, "_fake_clock", clock, raising=False)
+    monkeypatch.setattr(time, "process_time", lambda: clock[0])
+    program = build_probe_program(
+        _GENERATOR, solution, "probe_me", [1000, 2000, 4000, 8000], repeats=1
+    )
+    exec(program, {})
+    line = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith(PROBE_MARKER))
+    payload: dict = json.loads(line[len(PROBE_MARKER) :])
+    return payload
+
+
+def test_the_driver_stops_before_a_size_the_budget_cannot_afford(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """At 2.5e-7·n² the sweep costs 0.25s, 1s, 4s, 16s: three sizes fit the 20s budget
+    and the fourth, projected at 16s against 14.75s remaining, must never start. Three
+    points are still a verdict — the impostor is caught, not timed out."""
+    payload = _run_driver(monkeypatch, capsys, _solution_costing(2.5e-7))
+
+    assert payload["truncated"] is True
+    assert [n for n, _ in payload["points"]] == [1000, 2000, 4000]
+    result = judge([(int(n), float(t)) for n, t in payload["points"]], "O(n)")
+    assert result.verdict == "slower_than_target", result.detail
+
+
+def test_the_driver_sweeps_every_size_it_can_afford(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    payload = _run_driver(monkeypatch, capsys, _solution_costing(1e-9))
+
+    assert payload["truncated"] is False
+    assert [n for n, _ in payload["points"]] == [1000, 2000, 4000, 8000]
