@@ -265,7 +265,7 @@ succeeding buys you very little.
 | `run_code` | `{ language, source }` | `{ outcome, passed, total, failures[], detail, gradeable }` | ✅ built |
 | `reveal_hint` | `{ level }` | `{ level, text, score_penalty, hints_remaining }` | ✅ built |
 | `end_round` | `{ reason }` | `{ ok, reason }` | ✅ built |
-| `check_answer` | `{ item_id, submitted }` | `{ correct, normalized, method }` | ✗ unblocked, not built |
+| `check_answer` | `{ submitted }` | `{ correct, normalized, method, checks_remaining }` | ✅ built |
 | `record_observation` | `{ concept_id, signal, confidence, span }` | `{ ok }` | ✗ lands with the rubric graders |
 
 **`run_code` does not take tests, and that is a deliberate departure from what this
@@ -282,12 +282,24 @@ name a different one would be a way to read ahead. Levels are enforced monotonic
 than trusted: skipping to the last hint is what a model trying to be helpful does, and it
 is the most expensive one.
 
-The two unbuilt tools are unbuilt for reasons rather than for time, and one of those
-reasons expired on 2026-08-21. `check_answer` is quant-only, and quant sessions can now be
-created, so it is **no longer blocked — just not built**; the grading-time check exists as
-`api.grading.quant.check_answer` and the tool would be a thin proxy onto it.
-`record_observation` writes `concept_evidence`, which has exactly one producer today — the
-grader — and a second producer risks counting one item's concept twice.
+**`check_answer` takes no `item_id` either, and this document used to say it did.** The
+argument above applies to it unchanged; the signature simply had not caught up. Corrected
+2026-08-21, when the tool was built.
+
+**`check_answer` is rationed, because it is the only tool that is an oracle.** Ask it about
+1, then 2, then 3, and you have the answer without the candidate having thought about
+anything — the same failure mode `reveal_hint`'s monotonic check exists for, and a model
+trying to be helpful is exactly who would do it. **Three successful checks per item per
+session**, counted from the turn record rather than held in memory, because a tool context
+is rebuilt every turn and an in-memory counter would reset with each thing the candidate
+says. A refused check does not spend one — it told the model nothing about the answer — and
+`checks_remaining` comes back with every result so the ration is visible rather than
+discovered. It is the same function grading runs: an interviewer saying "that is right" and
+a grader then scoring it zero would be two answers to one question.
+
+The one unbuilt tool is unbuilt for a reason rather than for time. `record_observation`
+writes `concept_evidence`, which has exactly one producer today — the grader — and a second
+producer risks counting one item's concept twice.
 
 There is deliberately **no** tool that writes the corpus, sends anything outbound, reads
 secrets, or edits mastery. Grading is not a tool — it runs after the turn loop, so the

@@ -1,27 +1,38 @@
 """The interviewer's entire capability surface, and what each tool actually does.
 
-docs/API.md lists five tools; three are implemented here and two are deferred with reasons
+docs/API.md lists five tools; four are implemented here and one is deferred with a reason
 below. The surface is deliberately small — docs/SECURITY.md's answer to prompt injection is
 not filtering, it is that succeeding buys the attacker almost nothing. There is no tool that
 writes the corpus, sends anything outbound, reads a secret, or touches mastery, and grading
 is not a tool at all, so the interviewer cannot score itself.
 
+Two tools deviate from the signature docs/API.md specifies, both in the same direction —
+taking away a parameter that let the model choose what it was measured against:
+
 **`run_code` does not take tests.** docs/API.md's signature has the caller passing
 `tests[]`; here the tests come from the corpus item and the model supplies only the source.
 Letting the model choose the tests would let it run a payload of its own devising *and*
 mark its own work, which are the two things this design spends the most effort preventing.
-The deviation is deliberate and this paragraph is the record of it.
+
+**`check_answer` does not take an `item_id`** (2026-08-21). docs/API.md specifies
+`{ item_id, submitted }`, and argues two paragraphs later that `reveal_hint` takes no item
+id because naming a different one would be a way to read ahead. That argument applies here
+unchanged and the signature had not caught up: there is exactly one item in play, so the
+tool reads it from the context.
+
+**`check_answer` is also the only tool that is an oracle**, and it is capped for it. Ask it
+about 1, then 2, then 3, and you have the answer without the candidate having thought about
+anything — which is precisely what a model trying to be helpful does, the same failure mode
+`reveal_hint`'s monotonic check exists for. `MAX_ANSWER_CHECKS` successful checks per item
+per session is enough for a candidate revising a stated answer and nowhere near enough to
+search. The count is recovered from the turn record, not held in memory, because a context
+is rebuilt every turn and an in-memory counter would cap nothing.
 
 Deferred, and why:
 
-- **`check_answer`** is quant-only. It was blocked because no quant session could be
-  created; since the quant grader landed (2026-08-21) that reason has expired, and it is
-  simply not built yet. The check itself exists as `api.grading.quant.check_answer`, so the
-  tool would be a thin proxy onto the same function grading uses — which is the point of
-  building it that way round.
 - **`record_observation`** writes `concept_evidence` mid-session. Evidence has exactly one
-  producer today — the grader — and adding a second before rubric grading exists risks
-  double-counting a concept from one item. It lands with the rubric graders.
+  producer today — the grader — and adding a second risks double-counting a concept from
+  one item.
 """
 
 from __future__ import annotations
@@ -33,9 +44,15 @@ from typing import Any
 
 from api.executor_client import CodeRunner, ExecutorProtocolError, ExecutorUnavailableError
 from api.grading.coding import hint_penalty
+from api.grading.quant import check_answer
 from corpus.models import Item
 
 logger = logging.getLogger(__name__)
+
+# How many times the interviewer may check an answer against one item. An oracle with no
+# limit is a way to read the answer off the grader; a candidate revising theirs needs two
+# or three. Chosen, not calibrated — the number is here to be raised if real sessions say so.
+MAX_ANSWER_CHECKS = 3
 
 # Ordered, and the order is load-bearing: `tools` renders above `system` in the cached
 # prefix, so a set iterated in hash order would invalidate the cache between processes.
@@ -75,6 +92,27 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "check_answer",
+        "description": (
+            "Check the answer the candidate has stated against this problem's own answer. "
+            "Pass their answer exactly as they gave it. Use this to find out whether they "
+            "are right before deciding what to ask next — not to explore what the answer "
+            f"might be: you may check at most {MAX_ANSWER_CHECKS} times on this problem, "
+            "and a check is not a hint."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "submitted": {
+                    "type": "string",
+                    "description": "The candidate's stated answer, in their own words.",
+                }
+            },
+            "required": ["submitted"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "end_round",
         "description": (
             "Finish with this problem — solved, abandoned, or out of time. Say why in one "
@@ -101,6 +139,7 @@ class ToolContext:
     item: Item
     runner: CodeRunner | None = None
     hints_revealed: int = 0
+    answer_checks: int = 0
     ended: bool = False
     end_reason: str | None = None
     hints_taken: list[int] = field(default_factory=list)
@@ -128,6 +167,8 @@ def dispatch(name: str, arguments: dict[str, Any], context: ToolContext) -> Tool
             return _run_code(arguments, context)
         if name == "reveal_hint":
             return _reveal_hint(arguments, context)
+        if name == "check_answer":
+            return _check_answer(arguments, context)
         if name == "end_round":
             return _end_round(arguments, context)
     except Exception as exc:  # pragma: no cover - the guard, not a path
@@ -205,6 +246,49 @@ def _reveal_hint(arguments: dict[str, Any], context: ToolContext) -> ToolOutcome
             "text": hints[level - 1],
             "score_penalty": round(hint_penalty(level), 4),
             "hints_remaining": len(hints) - level,
+        }
+    )
+
+
+def _check_answer(arguments: dict[str, Any], context: ToolContext) -> ToolOutcome:
+    """The same check grading runs, offered mid-interview and rationed.
+
+    A thin proxy onto `api.grading.quant.check_answer` on purpose: an interviewer told "that
+    is right" during the round and a grader that then scores it zero would be two different
+    answers to one question, and the candidate would have no way to tell which was real.
+    """
+    grading = context.item.grading or {}
+    if grading.get("type") != "answer":
+        return ToolOutcome(
+            {"error": f"{context.item.id} is not graded by an answer."}, is_error=True
+        )
+    submitted = str(arguments.get("submitted", "")).strip()
+    if not submitted:
+        return ToolOutcome(
+            {"error": "submitted must be the answer the candidate stated."}, is_error=True
+        )
+    if context.answer_checks >= MAX_ANSWER_CHECKS:
+        # The refusal says what to do instead, because a model that is only told "no" tends
+        # to rephrase and try again.
+        return ToolOutcome(
+            {
+                "error": (
+                    f"You have already checked {context.answer_checks} answers on this "
+                    "problem, which is the limit. Ask the candidate to commit to an answer "
+                    "and reason about it with them instead."
+                )
+            },
+            is_error=True,
+        )
+
+    context.answer_checks += 1
+    checked = check_answer(context.item, submitted)
+    return ToolOutcome(
+        {
+            "correct": checked.correct,
+            "normalized": checked.submitted,
+            "method": checked.method,
+            "checks_remaining": MAX_ANSWER_CHECKS - context.answer_checks,
         }
     )
 

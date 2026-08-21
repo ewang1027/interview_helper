@@ -19,6 +19,7 @@ from corpus.loader import load_items
 ITEMS = {item.id: item for item in load_items()}
 CODING = ITEMS["i.code.0001"]
 BEHAVIORAL = ITEMS["i.behav.0001"]
+QUANT = ITEMS["i.quant.0001"]  # exact answer "39"
 
 
 def context(**kwargs) -> tools.ToolContext:
@@ -32,6 +33,7 @@ def test_the_schemas_are_ordered_and_closed():
     assert [schema["name"] for schema in tools.TOOL_SCHEMAS] == [
         "run_code",
         "reveal_hint",
+        "check_answer",
         "end_round",
     ]
     for schema in tools.TOOL_SCHEMAS:
@@ -122,6 +124,67 @@ def test_a_nonsense_hint_level_is_refused(level):
     assert outcome.is_error
 
 
+# --- check_answer -------------------------------------------------------------------------
+
+
+def test_check_answer_names_no_item_and_reads_the_one_in_play():
+    """docs/API.md specifies `{ item_id, submitted }`, and argues two paragraphs later that
+    `reveal_hint` takes no item id because naming one would be a way to read ahead. The same
+    argument applies here; the signature had not caught up."""
+    schema = next(s for s in tools.TOOL_SCHEMAS if s["name"] == "check_answer")
+    assert set(schema["input_schema"]["properties"]) == {"submitted"}
+
+    outcome = tools.dispatch("check_answer", {"submitted": "39 presses"}, context(item=QUANT))
+    assert not outcome.is_error
+    assert outcome.output["correct"] and outcome.output["method"] == "exact"
+
+
+def test_check_answer_is_the_same_check_grading_runs():
+    """A thin proxy on purpose. An interviewer saying "that is right" and a grader then
+    scoring it zero would be two answers to one question, with no way to tell which is
+    real."""
+    from api.grading import quant
+
+    graded = quant.check_answer(QUANT, "I make it 27.")
+    outcome = tools.dispatch("check_answer", {"submitted": "I make it 27."}, context(item=QUANT))
+    assert outcome.output["correct"] is graded.correct is False
+    assert outcome.output["normalized"] == graded.submitted
+
+
+def test_check_answer_is_rationed_because_it_is_an_oracle():
+    """Ask it about 1, then 2, then 3, and you have the answer without the candidate having
+    thought about anything — which is exactly what a model trying to be helpful does."""
+    ctx = context(item=QUANT)
+    for _ in range(tools.MAX_ANSWER_CHECKS):
+        assert not tools.dispatch("check_answer", {"submitted": "40"}, ctx).is_error
+
+    refused = tools.dispatch("check_answer", {"submitted": "41"}, ctx)
+    assert refused.is_error
+    assert "limit" in refused.output["error"]
+    # The refusal says what to do instead: a model told only "no" rephrases and tries again.
+    assert "commit to an answer" in refused.output["error"]
+
+
+def test_a_check_counts_down_out_loud():
+    ctx = context(item=QUANT)
+    remaining = [
+        tools.dispatch("check_answer", {"submitted": "39"}, ctx).output["checks_remaining"]
+        for _ in range(tools.MAX_ANSWER_CHECKS)
+    ]
+    assert remaining == list(range(tools.MAX_ANSWER_CHECKS - 1, -1, -1))
+
+
+def test_check_answer_on_an_item_with_no_answer_is_an_error_not_a_crash():
+    outcome = tools.dispatch("check_answer", {"submitted": "39"}, context(item=CODING))
+    assert outcome.is_error and "not graded by an answer" in outcome.output["error"]
+
+
+def test_an_empty_answer_is_refused_without_spending_a_check():
+    ctx = context(item=QUANT)
+    assert tools.dispatch("check_answer", {"submitted": "  "}, ctx).is_error
+    assert ctx.answer_checks == 0
+
+
 def test_end_round_records_a_reason():
     ctx = context()
     outcome = tools.dispatch("end_round", {"reason": "solved with two hints"}, ctx)
@@ -143,10 +206,11 @@ def test_a_tool_that_does_not_exist_is_an_error_the_model_can_read():
     assert "No such tool" in outcome.output["error"]
 
 
-def test_the_surface_is_exactly_three_tools():
+def test_the_surface_is_exactly_four_tools():
     """docs/SECURITY.md: the defence against prompt injection is that succeeding buys very
-    little. Anything added here widens what it buys, so the count is pinned."""
-    assert set(tools.TOOL_NAMES) == {"end_round", "reveal_hint", "run_code"}
+    little. Anything added here widens what it buys, so the count is pinned — `check_answer`
+    joined 2026-08-21 and is the reason it is rationed rather than merely present."""
+    assert set(tools.TOOL_NAMES) == {"check_answer", "end_round", "reveal_hint", "run_code"}
 
 
 def test_a_tool_result_serialises_deterministically():

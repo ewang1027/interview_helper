@@ -92,6 +92,26 @@ def hints_revealed(db: Session, session_id: str, item_id: str) -> int:
     return max(levels, default=0)
 
 
+def answer_checks(db: Session, session_id: str, item_id: str) -> int:
+    """How many answers this session has already checked against this item.
+
+    Counted from the turn record for the same reason hints are, and for one more:
+    `ToolContext` is rebuilt every turn, so a cap held only in memory would reset with each
+    thing the candidate says — which is no cap at all against a model that asks again.
+
+    Errored calls do not count. A refused check told the model nothing about the answer,
+    and charging for it would spend the ration on the model's own mistakes.
+    """
+    return sum(
+        1
+        for row in transcript(db, session_id)
+        if row.tool_calls
+        and row.tool_calls.get("tool") == "check_answer"
+        and row.tool_calls.get("item_id") == item_id
+        and not row.tool_calls.get("is_error")
+    )
+
+
 def as_messages(rows: list[Turn]) -> list[dict[str, Any]]:
     """The stored transcript as an alternating message list.
 
@@ -182,6 +202,7 @@ def run_turn(
         item=item,
         runner=runner,
         hints_revealed=hints_revealed(db, session_row.id, item.id),
+        answer_checks=answer_checks(db, session_row.id, item.id),
     )
     system = prompts.system_prompt(session_row.mode, item)
     written = 1

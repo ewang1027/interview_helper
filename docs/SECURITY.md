@@ -236,7 +236,10 @@ Mitigations:
   the obvious moves: `run_code` cannot choose its own tests (the corpus owns them, so a
   successful injection cannot make the sandbox run an arbitrary payload *and* mark it), and
   `reveal_hint` takes no item id (there is one item in play, so it cannot be used to read
-  ahead). The worst outcome of a successful injection is a bad interview session, which is
+  ahead). `check_answer` joined on 2026-08-21 and is **rationed to three successful checks
+  per item**, counted from the turn record: it is the only tool that is an oracle, and
+  without a limit "is it 1? is it 2? is it 3?" reads the answer straight off the grader. The
+  worst outcome of a successful injection is a bad interview session, which is
   recoverable.
 
 That last point matters more than the first two. **Design the tool surface so injection

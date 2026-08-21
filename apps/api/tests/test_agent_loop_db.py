@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, col, delete, select
 
 from api import sessions as service
-from api.agent import loop
+from api.agent import loop, tools
 from api.db import get_engine
 from api.errors import ProblemError
 from api.main import app
@@ -107,7 +107,12 @@ def test_the_request_carries_the_cached_system_prompt_and_the_tools(created_sess
     request = model.requests[0]
     assert request["system"][0]["cache_control"] == {"type": "ephemeral"}
     assert ITEMS[FIRST_ITEM].statement_md in request["system"][0]["text"]
-    assert [tool["name"] for tool in request["tools"]] == ["run_code", "reveal_hint", "end_round"]
+    assert [tool["name"] for tool in request["tools"]] == [
+        "run_code",
+        "reveal_hint",
+        "check_answer",
+        "end_round",
+    ]
     assert request["messages"] == [{"role": "user", "content": "hello"}]
 
 
@@ -177,6 +182,46 @@ def test_hints_taken_in_the_interview_cost_score_at_grading(created_sessions):
         assert grading is not None and grading.score is not None
         assert grading.detail["hints_revealed"] == 2
         assert grading.score < 1.0
+
+
+def test_the_answer_check_ration_survives_the_turn_it_was_spent_in(created_sessions):
+    """`ToolContext` is rebuilt every turn, so a cap held only in memory resets with each
+    thing the candidate says — no cap at all against a model that simply asks again next
+    turn. The count is recovered from the turn record, which is already the authoritative
+    account of what happened in a session."""
+    client = sign_in(TestClient(app))
+    created = client.post("/api/v1/sessions", json={"mode": "quant", "budget_minutes": 45})
+    assert created.status_code == 201, created.text
+    session_id = created.json()["id"]
+    created_sessions.append(session_id)
+    item_id = created.json()["plan"]["items"][0]["item_id"]
+
+    def check(guess: str, tag: str):
+        return turn(
+            session_id,
+            f"is it {guess}?",
+            ScriptedModel(
+                model_response(tool_block("check_answer", {"submitted": guess}, use_id=tag)),
+                model_response(text_block("Talk me through how you got there.")),
+            ),
+        )
+
+    # One check per turn, so nothing carries over in memory between them.
+    for n in range(tools.MAX_ANSWER_CHECKS):
+        check(str(n), f"tu_{n}")
+    with Session(get_engine()) as db:
+        assert loop.answer_checks(db, session_id, item_id) == tools.MAX_ANSWER_CHECKS
+
+    check("999", "tu_over")
+    with Session(get_engine()) as db:
+        checks = [
+            row.tool_calls
+            for row in loop.transcript(db, session_id)
+            if row.tool_calls and row.tool_calls.get("tool") == "check_answer"
+        ]
+        assert checks[-1]["is_error"] is True, "the fourth check is refused, a turn later"
+        # And the refusal does not spend a check, so the ration cannot be burned by asking.
+        assert loop.answer_checks(db, session_id, item_id) == tools.MAX_ANSWER_CHECKS
 
 
 def test_the_first_turn_moves_the_session_out_of_briefing(created_sessions):

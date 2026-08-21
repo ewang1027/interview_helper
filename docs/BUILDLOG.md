@@ -22,7 +22,7 @@ detail behind it.
 | **0** Foundations | **complete** | workspace, 159-concept taxonomy, corpus schema + validator, CI | — |
 | **1** Corpus v1 | **partial** — thin slice | 24 items — 3 archetypes + 3 instances in each of four domains, verified | bulk authoring toward ~400/~150 |
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
-| **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, three tools, `turns` written), the **SSE stream** (deltas included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | two agent tools, a full session against a live provider |
+| **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, three tools, `turns` written), the **SSE stream** (deltas included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade, with `check_answer` as the interviewer's fourth tool | `record_observation`, a full session against a live provider |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within five sessions | weights are placeholders until real sessions calibrate them |
 | **5–8** Web, AWS, voice, hardening | **not started** | — | — |
 | **9** Practice log | **partial** — schema only | `practice_problems`, `practice_solves`, and `concept_evidence`'s two-producer shape — all migrated, landed with the Phase 3 slice | classification, endpoints, scheduling. No longer gated on the engine: `apply_evidence` already handles an evidence row with no item, so a logged solve would feed mastery today. It is gated on a **model call**, which nothing in this project has ever made |
@@ -2456,3 +2456,64 @@ nor `numeric`, rather than marking every submission wrong against nothing. The v
 errored on that shape since Phase 0, so it should never reach the grader — but a fabricated
 zero corrupts mastery permanently and a failed grading is merely visible, and that asymmetry
 is worth three lines of belt-and-braces.
+
+---
+
+## Phase 3 (`check_answer`) — the fourth tool, and the first one that is an oracle · 2026-08-21
+
+The interviewer can now check a stated answer mid-round. It is a thin proxy onto
+`api.grading.quant.check_answer` — the same function grading runs — and it is the first tool
+on this surface that had to be **rationed** rather than merely bounded.
+
+```
+make check       226 passed (hermetic; was 219 — seven tool tests)
+make test-db     119 passed (live Postgres; was 118 — the ration across turns)
+```
+
+### An oracle is a different kind of tool
+
+`run_code` runs what the candidate wrote. `reveal_hint` hands over text the item already
+contains, at a price. `check_answer` answers a question about the *answer*, and a question
+you may ask without limit about a value you may choose is a search:
+
+> is it 1? is it 2? is it 3?
+
+Three calls in and a model that was only trying to be helpful has read the answer off the
+grader and can hand it over. That is the same failure mode `reveal_hint`'s monotonic check
+exists for — skipping to the most revealing hint is what helpfulness looks like from the
+inside — and it is why docs/SECURITY.md's answer to prompt injection is the shape of the
+tool surface rather than a filter on it.
+
+So: **three successful checks per item per session.** Enough for a candidate revising a
+stated answer, nowhere near enough to search. A refused check does not spend one, because it
+told the model nothing about the answer, and charging for it would spend the ration on the
+model's own mistakes. `checks_remaining` comes back with every result, so the limit is
+visible rather than discovered.
+
+### A cap in memory is not a cap
+
+`ToolContext` is rebuilt every turn. A counter on it resets with each thing the candidate
+says, so a model that asks again next turn has an unlimited oracle and a reassuring constant
+in the source. The count is recovered from the **turn record**, which is already the
+authoritative account of what happened in a session — the same decision, for the same
+reason, as counting hints from turns rather than adding a column.
+
+The test drives one check per turn and asserts the fourth is refused *a turn later*. Removing
+the one line that restores the count makes it fail: the fourth check comes back clean.
+
+### The signature this document specified had the flaw it argues against
+
+docs/API.md listed `check_answer` as `{ item_id, submitted }`, and two paragraphs below
+explains that `reveal_hint` takes no item id because naming a different one would be a way to
+read ahead. The same argument applies unchanged and the signature had never caught up. The
+tool reads the item from the context; API.md is corrected, next to `run_code`'s
+already-recorded deviation of the same kind — both take away a parameter that let the model
+choose what it was measured against.
+
+### Next
+
+`record_observation` is the last of the five, and the only one still deferred for a live
+reason: it would make `concept_evidence` have a second producer, and a concept an item
+already measures could be counted twice from one round. That needs the double-count rule
+worked out first — which the projection now has an opinion about, since an item's rating
+moves once per attempt whatever writes the rows.
