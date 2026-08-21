@@ -24,6 +24,7 @@ import pytest
 from sqlmodel import Session, col, delete, select
 
 from api import llm
+from api.agent import prompts
 from api.db import get_engine
 from api.errors import ProblemError
 from api.model_router import ModelRouter
@@ -122,3 +123,62 @@ def test_an_identical_prefix_is_served_from_cache(settings, ledger):
         "the second identical-prefix call read nothing from cache — "
         f"wrote {first.usage.cache_write_tokens}, read {second.usage.cache_read_tokens}"
     )
+
+
+def test_a_real_interviewer_turn(settings, ledger):
+    """The whole thing, once, for real: a session, a planned item, one candidate message,
+    and a model that has to behave like an interviewer rather than a chatbot.
+
+    Asserted loosely on purpose. Pinning phrasing would make this a test of one model's
+    style; what matters is that it answered as the interviewer, that the turn was recorded,
+    and that the call is on the ledger with the session attached to it.
+    """
+    from conftest import sign_in
+    from fastapi.testclient import TestClient
+    from sqlmodel import select
+
+    from api import sessions as service
+    from api.agent import loop
+    from api.main import app
+    from api.models import Artifact, ConceptEvidence, Grading, InterviewSession, Turn
+
+    client = sign_in(TestClient(app))
+    created = client.post("/api/v1/sessions", json={"mode": "coding", "budget_minutes": 45})
+    assert created.status_code == 201, created.text
+    session_id = created.json()["id"]
+
+    try:
+        with Session(get_engine()) as db:
+            session_row = db.get(InterviewSession, session_id)
+            assert session_row is not None
+            item = service.current_item(db, session_row)
+            assert item is not None
+            try:
+                result = loop.run_turn(
+                    db, session_row, item, prompts.opening_instruction(item), settings=settings
+                )
+            except ProblemError as exc:  # pragma: no cover - depends on the account
+                if exc.status != 503:
+                    raise
+                pytest.skip(f"{settings.model_provider} did not answer: {exc.detail}")
+            except CREDENTIAL_ERRORS as exc:  # pragma: no cover - depends on the machine
+                pytest.skip(f"no usable {settings.model_provider} credentials: {exc}")
+
+        assert result.text.strip(), "the interviewer said nothing"
+        print(f"\n--- interviewer said:\n{result.text}\n")
+
+        with Session(get_engine()) as db:
+            turns = loop.transcript(db, session_id)
+            assert [row.role for row in turns][:2] == ["candidate", "interviewer"]
+            calls = db.exec(select(LlmCall).where(LlmCall.session_id == session_id)).all()
+            assert len(calls) >= 1
+            assert calls[0].job == "interviewing"
+            assert calls[0].output_tokens > 0
+    finally:
+        with Session(get_engine()) as db:
+            for model in (Turn, LlmCall, ConceptEvidence, Artifact, Grading):
+                if model is Grading:
+                    continue
+                db.exec(delete(model).where(col(model.session_id) == session_id))
+            db.exec(delete(InterviewSession).where(col(InterviewSession.id) == session_id))
+            db.commit()

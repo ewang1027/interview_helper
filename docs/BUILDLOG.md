@@ -22,17 +22,17 @@ detail behind it.
 | **0** Foundations | **complete** | workspace, 159-concept taxonomy, corpus schema + validator, CI | — |
 | **1** Corpus v1 | **partial** — thin slice | 24 items — 3 archetypes + 3 instances in each of four domains, verified | bulk authoring toward ~400/~150 |
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
-| **3** Runtime + API | **partial** — half built | schema + migrations, settings, `ModelRouter`, the **session layer** (`/api/v1`, plan → submit → grade → report, writing `artifacts`, `gradings`, `concept_evidence`), **auth** (GitHub OAuth, a signed session cookie, every `/api/v1` route behind it), and the **model-call path** — budget enforced, `llm_calls` written, `/costs` live | interviewer agent, SSE stream, rubric graders |
+| **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), and the **interviewer** — `POST /sessions/{id}/turns`, three tools, `turns` written | SSE stream, rubric graders, two agent tools, a full session against a live provider |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within five sessions | weights are placeholders until real sessions calibrate them |
 | **5–8** Web, AWS, voice, hardening | **not started** | — | — |
 | **9** Practice log | **partial** — schema only | `practice_problems`, `practice_solves`, and `concept_evidence`'s two-producer shape — all migrated, landed with the Phase 3 slice | classification, endpoints, scheduling. No longer gated on the engine: `apply_evidence` already handles an evidence row with no item, so a logged solve would feed mastery today. It is gated on a **model call**, which nothing in this project has ever made |
 
 One thing worth knowing before reading anything else as further along than it is:
-**nothing in the running system calls a model.** As of 2026-08-20 the *path* to one is
-built and the budgets are enforced, and real Bedrock calls have now been made from this
-machine — but no route, grader or planner makes one, so `turns` is still empty and every
-session still runs and grades without a model. The interviewer agent is what changes that,
-and rubric grading, the SSE stream and the practice log all queue behind it.
+**no full session has run against a live model.** The interviewer exists and is exercised
+end to end against a scripted one; real Bedrock calls have been made from this machine; and
+in between those two facts sits an AWS account whose Bedrock access is gated behind an
+Anthropic use-case form (docs/COST.md). Every gate below is green against a fake provider,
+and `make test-llm` skips with the provider's own words until that form is submitted.
 
 The auth gate this file carried since the session layer landed is **closed** as of
 2026-08-20: every `/api/v1` route requires a signed session cookie, and the only way to
@@ -1718,3 +1718,114 @@ after `aws login` is run it.
 
 The interviewer agent: the system prompt per mode, the turn loop, the five tools in
 docs/API.md, and `turns` finally getting rows. It is the first caller of everything above.
+
+---
+
+## Phase 3 (the interviewer) — a conversation that can run code · 2026-08-20
+
+`POST /sessions/{id}/turns`, a system prompt per mode, three tools, and `turns` finally
+getting rows. The first thing in this project that calls a model on purpose.
+
+```
+make check       174 passed, 102 deselected (hermetic; was 149)
+make test-db      70 passed (live Postgres; was 59)
+make test-llm      3 skipped — the account's Bedrock access is gated, see below
+```
+
+### What the interviewer is allowed to do
+
+Three tools, not the five docs/API.md listed, and the shape of two of them changed:
+
+- **`run_code` does not take tests.** The spec had the caller passing `tests[]`; the corpus
+  owns them and the model supplies only source. Letting the model choose the tests would
+  let it run a payload of its own devising *and* mark its own work, which are the two
+  things this design spends the most effort preventing.
+- **`reveal_hint` takes no item id.** There is exactly one item in play, and naming another
+  would be a way to read ahead. Levels are enforced monotonic rather than trusted: skipping
+  to the last hint is what a model trying to be helpful does, and it is the dearest one.
+- **`end_round`** finishes an item, not the session. The last one moves the session to
+  `wrapping`; grading still has to happen, and `_maybe_complete` is still what ends it.
+
+`check_answer` and `record_observation` are not built, for reasons rather than for time:
+the first is quant-only and no quant session can be created, and the second would make
+`concept_evidence` have two producers before rubric grading exists, which is how one item's
+concept gets counted twice.
+
+### The prompt is a cached prefix, so it is byte-stable by construction
+
+`api.agent.prompts.system_prompt` takes a mode and a corpus item and nothing else — no
+clock, no session id, no dict rendered without a fixed key order — because prompt caching
+is a prefix match and one changed byte re-bills everything after it. A test asserts two
+builds of the same item are identical, and another asserts two different items are not, so
+the first cannot pass by the builder ignoring its arguments.
+
+The corpus statement goes inside `<problem>…</problem>` under a paragraph saying that
+anything in it reading like a direction is content rather than an instruction. That is
+docs/SECURITY.md's structural defence, and it is worth being precise about what it buys:
+not immunity, but a tool surface where succeeding is worth very little.
+
+### Hints turned out not to need the column docs/GRADING.md said was owed
+
+`reveal_hint` writes a `turns` row carrying the tool, the item and the level; grading counts
+the highest level that session took on that item. The turns are already the authoritative
+account of what happened, and a column would be a second place for the same fact to live
+and the first to go stale. A test takes two hints in conversation, submits the reference
+solution, and asserts the recorded score is below the perfect one it would otherwise be.
+
+### Three seams, and the third was found by a test spending real money
+
+The executor arrives as a FastAPI dependency; so, now, does the model client. The first
+draft of the route test reached into `api.llm` and replaced `complete` on the module — and
+the replacement's `kwargs.setdefault("client", model)` did nothing, because `run_turn`
+passes `client=None` explicitly and `setdefault` only fills a *missing* key. So the test
+called Bedrock for real, and the failure that surfaced was a 503 from the provider rather
+than an assertion about the route. `get_model_client` is a dependency now, overridden the
+way `get_runner` already was.
+
+### The `**overrides` trap, for the third time
+
+`app.dependency_overrides[get_settings] = make_settings`, where `make_settings(**overrides)`
+builds a test configuration. FastAPI reads an override's signature like any other
+dependency, so `**overrides` becomes a *required query parameter* and every route answers
+`400 malformed-request` — an error about nothing the test was checking. It has now cost
+three debugging sessions across three files.
+
+Fixed by removing the shape rather than remembering it: `conftest.use_settings(**changes)`
+closes over a built object and installs a zero-argument callable, and it is the only way
+the suite installs settings. In the same pass, `sign_in` stopped *assigning* the settings
+override and started using `setdefault` — it had been silently replacing a test's model
+configuration with the plain auth one, which is why two earlier tests passed despite
+carrying the same trap.
+
+### Bedrock answered, then stopped answering
+
+The measurements in the previous entry were real: `us.anthropic.claude-sonnet-4-6` and
+`us.anthropic.claude-sonnet-4-5-...` both answered. A handful of calls later, both began
+returning `404 Model use case details have not been submitted for this account`. Nothing in
+this repo changed in between. So the account gets a few calls through and then hits a
+console gate — worth knowing before reading that 404 as a regression, and the reason
+`make test-llm` skips today with the provider's own words.
+
+Everything in this wave is therefore verified against a **scripted** model: the request
+shape including the cache breakpoint and the tool list, the tool round trip, the transcript
+rebuilt from the database on every turn, the state transitions, hints reaching the grader,
+the budget refusal leaving the candidate's message recorded, and the tool-round cap. The
+live test exists, runs one real turn, and is one form submission away from running.
+
+### Deferred deliberately
+
+- **No SSE.** A turn is one request and one response. The stream is the next wave and it is
+  what makes `agent.message.delta` and `hint.revealed` real.
+- **Tool results are replayed as text, not as `tool_result` blocks.** Faithful replay means
+  storing every `tool_use_id` and reconstructing the block structure; the model gets the
+  same information as text, and a transcript that cannot be malformed is worth more here.
+- **Five tool rounds per turn, then a sentence in the transcript.** Each round is a paid
+  call the candidate is waiting on. The cap is reported (`truncated`), not hidden.
+- **The interviewer cannot end the session**, only a round. Ending an interview early is
+  `POST /end`, which is the candidate's decision.
+
+### Next
+
+The SSE stream, so a turn arrives as it is generated rather than all at once — and with it
+`agent.message.delta`, `hint.revealed` carrying its price, and `grading.result`. After
+that, rubric grading, which is what unlocks the other three modes.

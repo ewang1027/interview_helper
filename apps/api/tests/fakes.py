@@ -8,6 +8,7 @@ to drift away from the Protocol the real client implements.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from types import SimpleNamespace
 from typing import Any
 
 from api.executor_client import ProbeOutcome, RunFailure, RunResult
@@ -87,3 +88,53 @@ class ScriptedRunner(FakeRunner):
             )
             return RunResult(outcome="ok", passed=passed, total=total, failures=failures)
         return RunResult(outcome="ok", passed=total, total=total)
+
+
+# --- The model -----------------------------------------------------------------------------
+
+
+def text_block(text: str) -> SimpleNamespace:
+    return SimpleNamespace(type="text", text=text)
+
+
+def tool_block(name: str, arguments: dict[str, Any], use_id: str = "tu_1") -> SimpleNamespace:
+    return SimpleNamespace(type="tool_use", name=name, input=arguments, id=use_id)
+
+
+def model_response(
+    *blocks: SimpleNamespace, input_tokens: int = 500, output_tokens: int = 60
+) -> SimpleNamespace:
+    """A `messages.create` response, shaped like the SDK's and no more."""
+    return SimpleNamespace(
+        content=list(blocks),
+        stop_reason="tool_use" if any(b.type == "tool_use" for b in blocks) else "end_turn",
+        usage=SimpleNamespace(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_input_tokens=0,
+            cache_creation_input_tokens=0,
+        ),
+    )
+
+
+class ScriptedModel:
+    """Answers a fixed sequence of responses, and records what it was asked.
+
+    A script rather than a canned single response, because the thing under test is a
+    *loop*: the interesting cases are "asks for a tool, then answers" and "keeps asking".
+    Running past the end of the script is an error, not a repeat — a loop that calls one
+    more time than the test expected is exactly the bug this catches.
+    """
+
+    def __init__(self, *responses: SimpleNamespace) -> None:
+        self.responses = list(responses)
+        self.requests: list[dict[str, Any]] = []
+        self.messages = SimpleNamespace(create=self._create)
+
+    def _create(self, **kwargs: Any) -> SimpleNamespace:
+        self.requests.append(kwargs)
+        if not self.responses:
+            raise AssertionError(
+                f"the model was called {len(self.requests)} times; the script ran out"
+            )
+        return self.responses.pop(0)

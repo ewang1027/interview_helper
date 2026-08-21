@@ -9,9 +9,9 @@
 > the root deliberately — see below.
 > **Not built:** the SSE stream and every agent tool (there is no interviewer agent, so no
 > model call has ever been made), the cost routes, `GET /corpus/items/{id}`,
-> `Idempotency-Key`, and rate limiting. The cost routes and the model-call path underneath
-> them **are** built (2026-08-20) — nothing calls a model yet, but everything around the
-> call does. Vapi in **Phase 7**.
+> `Idempotency-Key`, and rate limiting. The cost routes and the model-call path are built
+> (2026-08-20), and so is **the interviewer**: `POST /sessions/{id}/turns` runs a real turn
+> with three of the five tools. Vapi in **Phase 7**.
 > (The executor's `POST /execute` and `POST /probe` are built on their own contract — see
 > [SECURITY](SECURITY.md) — and `api.executor_client` is what speaks to them.)
 > Related: [ARCHITECTURE](ARCHITECTURE.md) · [GRADING](GRADING.md) (what the graders do with submissions) · [ADAPTIVE](ADAPTIVE.md) (where the planner gets its input) · [VOICE](VOICE.md) (the second transport) · [WEB](WEB.md) (the first consumer)
@@ -71,6 +71,12 @@ Two rules that matter:
 Transitions are server-driven. Clients observe them via SSE; they never set state
 directly.
 
+Built today: `planning` → `briefing` on creation, `briefing` → `interviewing` on the first
+**turn** (the interview has started when someone speaks, not when they submit),
+`→ wrapping` when the interviewer calls `end_round` on the last planned item, and
+`→ complete` when every planned item has a terminal grading. `grading` is still not a state
+anything can observe, and `POST /end` still gives `abandoned` from anywhere.
+
 ## REST endpoints
 
 Base path `/api/v1`. The router exists, and `/corpus/status` moved under it as this
@@ -87,7 +93,7 @@ errors are `application/problem+json`.
 | `POST` | `/sessions` | Create and plan | ✅ built |
 | `GET` | `/sessions/{id}` | Current state, plan, per-item grading status, elapsed time | ✅ built |
 | `GET` | `/sessions/{id}/events` | **SSE stream** — the live channel (below) | ✗ needs the agent loop |
-| `POST` | `/sessions/{id}/turns` | Candidate says something | ✗ needs the agent loop |
+| `POST` | `/sessions/{id}/turns` | Candidate says something | ✅ built |
 | `POST` | `/sessions/{id}/submissions` | Candidate submits code or an answer | ✅ built |
 | `POST` | `/sessions/{id}/end` | End early → `abandoned` | ✅ built |
 | `GET` | `/sessions/{id}/report` | Full report; 409 until `complete` or `abandoned` | ✅ built |
@@ -124,6 +130,21 @@ adaptation.
 The state in that response is `briefing`, not `planning`: planning is expected to take a
 model call, and the placeholder planner is synchronous, so it is already finished by the
 time the response is written.
+
+**`POST /sessions/{id}/turns`**
+
+```jsonc
+{ "content": "I'd use a sliding window here — is that the right shape?" }
+```
+
+→ `200` with `{ item_id, state, message, tool_calls[], hints_revealed, round_ended,
+end_reason, truncated }`.
+
+Synchronous, unlike a submission: a turn is a conversation and the candidate is waiting for
+the reply. The tools the interviewer used are reported rather than hidden, for the same
+reason the plan is — you should be able to see that it ran your code before telling you
+something about it. `truncated` says the interviewer hit the per-turn tool-round cap, which
+is a cost control and is reported rather than silently swallowed.
 
 **`POST /sessions/{id}/submissions`**
 
@@ -226,13 +247,33 @@ The agent's entire capability surface. Deliberately small — see
 [SECURITY.md](SECURITY.md#prompt-injection): the defence against injection is that
 succeeding buys you very little.
 
-| Tool | Input | Returns | Notes |
+| Tool | Input | Returns | State |
 |---|---|---|---|
-| `run_code` | `{ language, source, entrypoint, tests[], test_selection?, wall_ms?, memory_mb? }` | `{ outcome, passed, total, failures[], wall_ms, peak_rss_kb, detail }` | Proxied to the executor's `POST /execute` via `api.executor_client`. The **only** way code runs. `outcome` is load-bearing — only `ok` yields scorable counts. Passes are a count; only *failures* are enumerated. `peak_rss_kb` is always 0, nothing measures it yet. The executor's other endpoint, `POST /probe`, is deliberately **not** exposed as a tool: it is a grading step, and the agent does not grade |
-| `check_answer` | `{ item_id, submitted }` | `{ correct, normalized, method }` | sympy equivalence, then numeric tolerance, then `accept_forms` |
-| `reveal_hint` | `{ item_id, level }` | `{ text, score_penalty }` | Monotonic — level N implies N−1 was given |
-| `record_observation` | `{ concept_id, signal, confidence, span }` | `{ ok }` | Mid-session evidence. `span` cites the transcript |
-| `end_round` | `{ reason }` | `{ ok }` | Moves to the next item or to `wrapping` |
+| `run_code` | `{ language, source }` | `{ outcome, passed, total, failures[], detail, gradeable }` | ✅ built |
+| `reveal_hint` | `{ level }` | `{ level, text, score_penalty, hints_remaining }` | ✅ built |
+| `end_round` | `{ reason }` | `{ ok, reason }` | ✅ built |
+| `check_answer` | `{ item_id, submitted }` | `{ correct, normalized, method }` | ✗ quant only, and no quant session can be created |
+| `record_observation` | `{ concept_id, signal, confidence, span }` | `{ ok }` | ✗ lands with the rubric graders |
+
+**`run_code` does not take tests, and that is a deliberate departure from what this
+document used to specify.** The tests come from the corpus item; the model supplies only
+the source. Letting the model choose the tests would let it run a payload of its own
+devising *and* mark its own work — the two things this design spends the most effort
+preventing. Everything else about it holds: it is proxied to the executor's `POST /execute`,
+it is the only way code runs, `outcome` is load-bearing, and passes are a count while only
+failures are enumerated. `POST /probe` is still not a tool: it is a grading step, and the
+agent does not grade.
+
+`reveal_hint` takes no `item_id` — there is exactly one item in play, and letting the model
+name a different one would be a way to read ahead. Levels are enforced monotonic rather
+than trusted: skipping to the last hint is what a model trying to be helpful does, and it
+is the most expensive one.
+
+The two unbuilt tools are unbuilt for reasons rather than for time. `check_answer` is
+quant-only and `POST /sessions` refuses every mode but `coding`, so no reachable session
+can call it. `record_observation` writes `concept_evidence`, which has exactly one producer
+today — the grader — and a second producer before rubric grading exists risks counting one
+item's concept twice.
 
 There is deliberately **no** tool that writes the corpus, sends anything outbound, reads
 secrets, or edits mastery. Grading is not a tool — it runs after the turn loop, so the

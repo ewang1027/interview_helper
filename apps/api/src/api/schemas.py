@@ -26,6 +26,13 @@ class CreateSessionRequest(BaseModel):
     difficulty_bias: float = Field(default=0.0, ge=-1, le=1)
 
 
+class TurnRequest(BaseModel):
+    """What the candidate says. Capped because it lands in a model request: an unbounded
+    field is an unbounded bill, and a 400 naming the limit beats a budget refusal."""
+
+    content: str = Field(min_length=1, max_length=20_000)
+
+
 class SubmissionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

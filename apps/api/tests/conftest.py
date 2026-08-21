@@ -15,6 +15,7 @@ value assertions assume the concepts they touch start unmeasured.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -24,7 +25,7 @@ from api.auth import SESSION_COOKIE, session_token
 from api.db import get_engine
 from api.main import app
 from api.mastery import recompute
-from api.models import Artifact, ConceptEvidence, Grading, InterviewSession, LlmCall
+from api.models import Artifact, ConceptEvidence, Grading, InterviewSession, LlmCall, Turn
 from api.settings import Settings, get_settings
 from api.users import LOCAL_GITHUB_ID, single_user
 
@@ -42,6 +43,21 @@ def auth_settings() -> Settings:
     )
 
 
+def use_settings(**changes: Any) -> Settings:
+    """Install a settings override for the app, and return what it will resolve to.
+
+    Exists because assigning the builder itself — `dependency_overrides[get_settings] =
+    make_settings`, where `make_settings(**overrides)` — has now cost three debugging
+    sessions: FastAPI reads an override's signature like any other dependency, so
+    `**overrides` becomes a *required query parameter* and every route answers
+    `400 malformed-request` instead of anything to do with what the test was checking.
+    A helper that closes over a built object cannot be called that way.
+    """
+    settings = auth_settings().model_copy(update=changes)
+    app.dependency_overrides[get_settings] = lambda: settings
+    return settings
+
+
 def sign_in(
     client: TestClient, user_id: str | None = None, *, github_id: int = LOCAL_GITHUB_ID
 ) -> TestClient:
@@ -54,7 +70,9 @@ def sign_in(
     if user_id is None:
         with Session(get_engine()) as db:
             user_id = single_user(db).id
-    app.dependency_overrides[get_settings] = auth_settings
+    # `setdefault`, not assignment: a test that installed richer settings — a model id, a
+    # lowered budget — must not have them silently replaced by signing a client in.
+    app.dependency_overrides.setdefault(get_settings, auth_settings)
     client.cookies.set(
         SESSION_COOKIE,
         session_token(user_id=user_id, github_id=github_id, secret=TEST_SESSION_SECRET),
@@ -76,9 +94,11 @@ def _cleanup(session_ids: list[str]) -> None:
             ]
             if artifacts:
                 db.exec(delete(Grading).where(col(Grading.artifact_id).in_(artifacts)))
-            # Before the sessions themselves: `llm_calls.session_id` is a foreign key, so a
-            # test whose session made a model call cannot have its session deleted first.
+            # Before the sessions themselves: `llm_calls.session_id` and `turns.session_id`
+            # are foreign keys, so a session that took a turn or made a model call cannot
+            # be deleted first.
             db.exec(delete(LlmCall).where(col(LlmCall.session_id).in_(session_ids)))
+            db.exec(delete(Turn).where(col(Turn.session_id).in_(session_ids)))
             db.exec(delete(ConceptEvidence).where(col(ConceptEvidence.session_id).in_(session_ids)))
             db.exec(delete(Artifact).where(col(Artifact.session_id).in_(session_ids)))
             db.exec(delete(InterviewSession).where(col(InterviewSession.id).in_(session_ids)))

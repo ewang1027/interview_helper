@@ -144,11 +144,14 @@ remaining score in order — the schedule `api.grading.coding.hint_penalty` expo
 is paid rather than in the report afterwards. Items with more hints keep paying the last,
 steepest rate. Taking all four leaves 58% of what was earned.
 
-The grader applies the schedule; **nothing records the hints yet**. `turns` carries
-`role`, `content` and `tool_calls` and nothing hint-shaped, so the count arrives as an
-argument from the caller and the column is owed with the session layer. A problem solved
-after three hints is real evidence — just weaker, and about a lower ability level, than
-the same problem solved cold.
+The grader applies the schedule, and **the hints are now recorded** (2026-08-20). This
+document called a column owed; there is none. `reveal_hint` writes a `turns` row carrying
+the tool, the item and the level, and grading counts the highest level that session took on
+that item. The turns are already the authoritative account of what happened in a session,
+and a second place to record it is a second place to disagree with the first.
+
+A problem solved after three hints is real evidence — just weaker, and about a lower
+ability level, than the same problem solved cold.
 
 ## Grader versioning and calibration
 

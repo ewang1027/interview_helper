@@ -25,7 +25,7 @@ from api.auth import CurrentPrincipal, Principal
 from api.db import get_session
 from api.executor_client import CodeRunner, ExecutorClient
 from api.models import InterviewSession
-from api.schemas import CreateSessionRequest, SubmissionRequest
+from api.schemas import CreateSessionRequest, SubmissionRequest, TurnRequest
 
 router = APIRouter(tags=["sessions"])
 
@@ -41,8 +41,19 @@ def get_runner() -> CodeRunner:
     return _client()
 
 
+def get_model_client() -> Any:
+    """The provider client for interviewer turns, or None to let `ModelRouter` build one.
+
+    A dependency for the same reason `get_runner` is: a test drives the whole route with a
+    scripted model and no network, and the alternative — reaching into `api.llm` and
+    replacing a module attribute — patches a global that other tests share.
+    """
+    return None
+
+
 DbSession = Annotated[Session, Depends(get_session)]
 Runner = Annotated[CodeRunner, Depends(get_runner)]
+ModelClient = Annotated[Any, Depends(get_model_client)]
 
 
 def _owned(db: Session, session_id: str, principal: Principal) -> InterviewSession:
@@ -104,6 +115,26 @@ def get_session_detail(
     session_id: str, db: DbSession, principal: CurrentPrincipal
 ) -> dict[str, Any]:
     return service.session_view(db, _owned(db, session_id, principal))
+
+
+@router.post("/sessions/{session_id}/turns")
+def create_turn(
+    session_id: str,
+    body: TurnRequest,
+    db: DbSession,
+    runner: Runner,
+    model: ModelClient,
+    principal: CurrentPrincipal,
+) -> dict[str, Any]:
+    """One exchange with the interviewer.
+
+    Synchronous, unlike a submission: a turn is a conversation and the candidate is waiting
+    for the reply. The SSE stream docs/API.md specifies would let the text arrive as it is
+    generated; until it exists, this returns the finished message. What it costs is on the
+    `llm_calls` ledger either way.
+    """
+    session_row = _owned(db, session_id, principal)
+    return service.take_turn(db, session_row, body.content, runner=runner, client=model)
 
 
 @router.post("/sessions/{session_id}/submissions", status_code=202)

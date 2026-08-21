@@ -218,16 +218,24 @@ model**.
 
 Mitigations:
 
-- **Structural, not lexical.** Untrusted content is placed in clearly delimited user-turn
-  blocks; instructions live in the system prompt. We do not attempt to filter injection
-  strings, because that is a losing game.
+- **Structural, not lexical.** Untrusted content is placed in clearly delimited blocks and
+  the surrounding instructions describe it as reference material — `api.agent.prompts` puts
+  the corpus statement inside `<problem>…</problem>` under a paragraph saying that anything
+  in it that reads like a direction is content, not an instruction. We do not attempt to
+  filter injection strings, because that is a losing game.
 - **Corpus content is reviewed before merge.** A research run produces a diff a human
   reads. This is the main defence, and it is a strong one — the corpus is not
   attacker-controlled at runtime.
-- **Capability limits on what injection can achieve.** The interviewer agent's tools are
-  `run_code`, `check_answer`, `reveal_hint`, `record_observation`, `end_round`. There is
-  no tool that writes to the corpus, sends anything outbound, or reads secrets. The worst
-  outcome of a successful injection is a bad interview session, which is recoverable.
+- **Capability limits on what injection can achieve.** *Built 2026-08-20.* The interviewer
+  agent's tools are `run_code`, `reveal_hint` and `end_round` — three, not the five this
+  document listed, and the two absent ones are absent for reasons in
+  [API.md](API.md#interviewer-agent-tools). There is no tool that writes to the corpus,
+  sends anything outbound, or reads secrets. Two limits are worth naming because they close
+  the obvious moves: `run_code` cannot choose its own tests (the corpus owns them, so a
+  successful injection cannot make the sandbox run an arbitrary payload *and* mark it), and
+  `reveal_hint` takes no item id (there is one item in play, so it cannot be used to read
+  ahead). The worst outcome of a successful injection is a bad interview session, which is
+  recoverable.
 
 That last point matters more than the first two. **Design the tool surface so injection
 is not worth much**, rather than trying to prevent every injection.

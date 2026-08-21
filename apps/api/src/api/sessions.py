@@ -32,6 +32,7 @@ from typing import Any, Literal
 
 from sqlmodel import Session, col, select
 
+from api.agent import loop as agent_loop
 from api.db import get_engine
 from api.errors import not_found, unavailable, unprocessable, wrong_state
 from api.executor_client import (
@@ -42,7 +43,7 @@ from api.executor_client import (
 )
 from api.grading.coding import GRADER_VERSION, CodingGrade, grade_coding
 from api.mastery import apply_evidence, lock_projection
-from api.models import Artifact, ConceptEvidence, Grading, InterviewSession, Item
+from api.models import Artifact, ConceptEvidence, Grading, InterviewSession, Item, Turn
 from api.planner import build_plan, eligible_items, plan_item_ids
 from corpus.loader import load_items
 from corpus.models import Item as CorpusItem
@@ -194,6 +195,92 @@ def list_sessions(
     return list(db.exec(query).all())
 
 
+# --- Turns ------------------------------------------------------------------------------
+
+
+def current_item(db: Session, session_row: InterviewSession) -> CorpusItem | None:
+    """The planned item the interview is on, or None when every one is finished.
+
+    Derived rather than stored: an item is finished when it has a submission or when the
+    interviewer called `end_round` on it, and both of those are already recorded. A
+    `current_item_id` column would be a third place for the same fact to live, and the
+    first to go stale.
+    """
+    submitted = {
+        artifact.item_id
+        for artifact in db.exec(select(Artifact).where(Artifact.session_id == session_row.id)).all()
+    }
+    ended = {
+        row.tool_calls["item_id"]
+        for row in db.exec(select(Turn).where(Turn.session_id == session_row.id)).all()
+        if row.tool_calls
+        and row.tool_calls.get("tool") == "end_round"
+        and not row.tool_calls.get("is_error")
+        and row.tool_calls.get("item_id")
+    }
+    for item_id in plan_item_ids(session_row.plan):
+        if item_id not in submitted and item_id not in ended:
+            item = corpus_item(item_id)
+            if item is not None:
+                return item
+    return None
+
+
+def take_turn(
+    db: Session,
+    session_row: InterviewSession,
+    content: str,
+    *,
+    runner: CodeRunner | None = None,
+    client: Any = None,
+) -> dict[str, Any]:
+    """One exchange with the interviewer.
+
+    The state moves `briefing` -> `interviewing` here rather than on the first submission:
+    the interview has started when someone speaks, and a session that takes turns while
+    still reporting `briefing` is a state machine describing something that is not
+    happening.
+    """
+    if session_row.status not in OPEN_STATES:
+        raise wrong_state(
+            f"Session is {session_row.status!r}; turns are only taken while it is one of "
+            f"{sorted(OPEN_STATES)}.",
+            state=session_row.status,
+        )
+    item = current_item(db, session_row)
+    if item is None:
+        raise wrong_state(
+            "Every planned item is finished; submit or end the session.",
+            state=session_row.status,
+        )
+
+    if session_row.status == "briefing":
+        session_row.status = "interviewing"
+        db.add(session_row)
+        db.commit()
+
+    result = agent_loop.run_turn(db, session_row, item, content, runner=runner, client=client)
+
+    # `end_round` finishes the item, not the session. If it was the last one, there is
+    # nothing left to interview about and the session is wrapping — grading still has to
+    # happen, and `_maybe_complete` is what ends it.
+    if result.ended and current_item(db, session_row) is None:
+        session_row.status = "wrapping"
+        db.add(session_row)
+        db.commit()
+
+    return {
+        "item_id": item.id,
+        "state": session_row.status,
+        "message": result.text,
+        "tool_calls": result.tool_calls,
+        "hints_revealed": result.hints_revealed,
+        "round_ended": result.ended,
+        "end_reason": result.end_reason,
+        "truncated": result.truncated,
+    }
+
+
 # --- Submissions ----------------------------------------------------------------------
 
 
@@ -308,8 +395,18 @@ def _grade(artifact_id: str, runner: CodeRunner | None) -> None:
             )
             return
 
+        # Hints taken during the interview cost score (docs/GRADING.md), counted from the
+        # turn record. Zero when the session never used the agent, which is every session
+        # this project has run so far.
+        hints = agent_loop.hints_revealed(db, artifact.session_id, artifact.item_id)
         try:
-            grade = grade_coding(item, artifact.content, runner=runner, language=language)
+            grade = grade_coding(
+                item,
+                artifact.content,
+                runner=runner,
+                language=language,
+                hints_revealed=hints,
+            )
         except ExecutorUnavailableError as exc:
             # The submission is not at fault and must not be scored for it. The artifact
             # stays on disk, so re-running the grader later is all it takes.

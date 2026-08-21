@@ -3,9 +3,10 @@
 > **Status:** Built (2026-08-20), except the measurements. `api.llm` is the one path to a
 > model: it checks the budget, makes the call, and writes the `llm_calls` row — so the
 > ledger has a producer and the hard budgets have teeth (`429`, refused, never downgraded).
-> `GET /costs` and `GET /costs/budget` are live. **What is not built:** any *caller* — the
-> interviewer agent is the next wave — so the per-session cost table below is still empty,
-> and its numbers are what Phase 3's gate actually asks for. AWS alarms in **Phase 6**.
+> `GET /costs` and `GET /costs/budget` are live, and the **interviewer agent calls it** —
+> `job="interviewing"` is a real row. The per-session cost table below is still empty
+> because no full session has been run against a live provider: this account's Bedrock
+> access is gated behind a use-case form (below). AWS alarms in **Phase 6**.
 > Related: [ARCHITECTURE](ARCHITECTURE.md#model-routing) · [OPERATIONS](OPERATIONS.md#monitoring) · [RESEARCH](RESEARCH.md#where-it-runs-and-why-that-matters) (why research is free) · [PRACTICE_LOG](PRACTICE_LOG.md) (uses the existing classification job)
 
 This is a designed-in subsystem, not a dashboard bolted on later. A previous project
@@ -58,12 +59,23 @@ Two things follow. Bedrock ids for current models are **cross-region inference p
 four months were never callable. And the four jobs all default to Sonnet 4.6 today, which
 is a deliberate, documented substitution rather than the design.
 
+**Then it stopped working, a few calls later.** The same two ids that answered began
+returning `404 Model use case details have not been submitted for this account. Fill out
+the Anthropic use case details form before using the model.` So the account got a handful
+of calls through and then hit the gate. Nothing in this repo changed between the call that
+worked and the one that did not — which is worth knowing before reading a `404` here as a
+regression.
+
 ### Getting the routing table back
 
-In the Bedrock console for the account, under **Model access**, request access to the
-Claude models the table names, and submit the Anthropic use-case details form the Haiku
-error points at. Then set the four `MODEL_*` variables in `.env` back to their intended
+In the Bedrock console for the account, under **Model access**: submit the **Anthropic use
+case details** form — that is what currently gates even Sonnet 4.6, so it is the one that
+unblocks live model calls at all — and request access to the Claude 5 models the table
+names. Then set the four `MODEL_*` variables in `.env` back to their intended
 inference-profile ids. Nothing in the code changes: that is what `ModelRouter` is for.
+
+Until then `make test-llm` skips with the provider's own words, which is the right
+behaviour for an environment condition, and every other gate runs against a scripted model.
 
 ## Hard budgets
 

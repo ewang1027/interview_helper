@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from conftest import auth_settings, sign_in
+from conftest import auth_settings, sign_in, use_settings
 from fastapi.testclient import TestClient
 from sqlmodel import Session, col, delete, select
 
@@ -24,7 +24,7 @@ from api.errors import ProblemError
 from api.main import app
 from api.model_router import ModelRouter
 from api.models import LlmCall
-from api.settings import Settings, get_settings
+from api.settings import Settings
 
 pytestmark = pytest.mark.db
 
@@ -68,16 +68,18 @@ class FakeAnthropic:
         return self._response
 
 
+MODEL_OVERRIDES: dict[str, Any] = {
+    "model_interviewer": MODEL,
+    "model_grader": MODEL,
+    "model_planner": MODEL,
+    "model_utility": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+}
+
+
 def llm_settings(**overrides: Any) -> Settings:
-    return auth_settings().model_copy(
-        update={
-            "model_interviewer": MODEL,
-            "model_grader": MODEL,
-            "model_planner": MODEL,
-            "model_utility": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-            **overrides,
-        }
-    )
+    """A `Settings` value for a direct call. Never install this as a dependency override —
+    `conftest.use_settings` is what does that, and its docstring says why."""
+    return auth_settings().model_copy(update={**MODEL_OVERRIDES, **overrides})
 
 
 @pytest.fixture
@@ -283,7 +285,7 @@ def _a_session(created_sessions: list[str]) -> str:
 
 
 def test_the_budget_route_reports_what_the_enforcement_uses(ledger):
-    app.dependency_overrides[get_settings] = llm_settings
+    use_settings(**MODEL_OVERRIDES)
     client = sign_in(TestClient(app))
     llm.complete(
         job="interviewing",
@@ -299,7 +301,7 @@ def test_the_budget_route_reports_what_the_enforcement_uses(ledger):
 
 
 def test_the_costs_route_splits_by_job_and_model(ledger):
-    app.dependency_overrides[get_settings] = llm_settings
+    use_settings(**MODEL_OVERRIDES)
     client = sign_in(TestClient(app))
     llm.complete(
         job="grading",
@@ -315,7 +317,7 @@ def test_the_costs_route_splits_by_job_and_model(ledger):
 
 
 def test_the_cost_routes_need_a_session_cookie():
-    app.dependency_overrides[get_settings] = auth_settings
+    use_settings()
     anonymous = TestClient(app)
     assert anonymous.get("/api/v1/costs").status_code == 401
     assert anonymous.get("/api/v1/costs/budget").status_code == 401

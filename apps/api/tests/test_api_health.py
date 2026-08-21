@@ -88,6 +88,7 @@ SURFACE = {
     ("POST", "/api/v1/sessions"),
     ("GET", "/api/v1/sessions"),
     ("GET", "/api/v1/sessions/{session_id}"),
+    ("POST", "/api/v1/sessions/{session_id}/turns"),
     ("POST", "/api/v1/sessions/{session_id}/submissions"),
     ("POST", "/api/v1/sessions/{session_id}/end"),
     ("GET", "/api/v1/sessions/{session_id}/report"),
