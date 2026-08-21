@@ -59,13 +59,12 @@ item_elo -= K_item * (score - expected)
   same drift the rule above fixed, arriving by a different route. The row that moves an item
   is now the attempt's **first**, in the `(ts, id)` order `recompute` replays in, so the
   live path and a rebuild agree by construction rather than by coincidence.
-- **Known, not fixed: an item whose rubric never names its primary concept never moves at
-  all.** `i.design.0003` is the one on disk — its four criteria name `rate-limiting`
-  nowhere, so its rating stays at its author's prior however many times it is attempted.
-  That is a corpus-shape question rather than a projection bug, so **the validator warns**
-  about it ([CORPUS.md](CORPUS.md#validator-checks)) instead of the projection guessing at a
-  concept the author did not choose. Quant items are exempt: their answer writes that row
-  whatever the reasoning rubric names.
+- **An item whose rubric never names its primary concept never moves at all** — the mirror
+  image of the same assumption, and a corpus-shape question rather than a projection bug. So
+  **the validator warns** about it ([CORPUS.md](CORPUS.md#validator-checks)) instead of the
+  projection guessing at a concept the author did not choose. `i.design.0003` was the one
+  instance and is fixed; the corpus validates clean. Quant items are exempt: their answer
+  writes that row whatever the reasoning rubric names.
 
 A concept with fewer than five observations is flagged `calibrating`, and the API says so
 rather than presenting an estimate built on one data point as if it were settled.

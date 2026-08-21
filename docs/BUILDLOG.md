@@ -2517,3 +2517,73 @@ reason: it would make `concept_evidence` have a second producer, and a concept a
 already measures could be counted twice from one round. That needs the double-count rule
 worked out first — which the projection now has an opinion about, since an item's rating
 moves once per attempt whatever writes the rows.
+
+---
+
+## Phase 1 (`i.design.0003`) — the tagging gap and the rubric gap were the same gap · 2026-08-21
+
+The validator warning added earlier today had exactly one subject: `i.design.0003`, whose
+four criteria named every concept the item lists **except** `rate-limiting`, the one it is
+chiefly a measurement of. Closed by authoring, not by retagging.
+
+```
+corpus validate    159 concepts · 24 items · 0 errors, 0 warnings
+make check         226 passed · make test-db 119 passed (both unchanged — this is content)
+```
+
+### Retagging was the cheap fix and the wrong one
+
+The obvious move is to point `counter_sharing_error` at `rate-limiting` and be done. That
+criterion is about reconciling approximate counters across 40 locations and quantifying the
+overshoot, which is `consistency-models` and is **already tagged correctly**. Retagging it
+would have made a true tag less true to satisfy a projection rule, and left
+`consistency-models` unmeasured in its place — moving the hole rather than filling it.
+
+### Reading the archetype explained why the gap was there
+
+`a.design.0003` says it outright:
+
+> The weak answer names an algorithm and stops. The strong answer names the algorithm in a
+> sentence and spends the remaining time on where the state lives and what happens when it
+> is gone.
+
+So the rubric spends its weight on locality, counter error, billing durability and outage
+policy **on purpose**. The concept `rate-limiting` — "token bucket or sliding window limits,
+applied at the right granularity" — is the topic, not the discriminator, and the author let
+it fall off the rubric for a good reason.
+
+But it fell all the way off, and it should not have. The instance's plan table gives every
+plan **two** numbers — a steady rate and a burst ceiling — and **no criterion mentioned
+burst anywhere**. A candidate who enforces one flat rate per key has misread the product,
+and nothing in the rubric noticed. That is a measurement gap on its own terms, and it is the
+same gap as the tagging one: the thing `rate-limiting` names here is precisely the thing the
+rubric was not asking about.
+
+### What landed
+
+A fifth criterion, `algorithm_and_granularity`, tagged `rate-limiting` and weighted **0.1** —
+the smallest on the rubric, because the archetype is right that naming the algorithm is the
+weak answer's whole contribution, and its level-4 anchor says so explicitly ("does not spend
+the rest of the answer on the algorithm"). The anchors turn on whether the mechanism admits
+a burst above the steady rate and whether the two plan numbers become its two parameters.
+
+The other four weights were scaled by exactly 0.9 rather than re-ranked, so the author's
+relative emphasis survives intact: `store_outage_policy` is still the heaviest, the two
+0.25s are still equal, billing is still the lightest of the original four.
+
+### Found while reading, not fixed
+
+The archetype lists four questions it measures, and the instance's rubric covers three of
+them plus a billing criterion the archetype does not mention. The one it drops is *"what
+does one enormous caller do to whichever key the counters live under?"* — which the
+instance's statement also asks, in its fifth bullet, and which no criterion grades. That is
+a real gap of the same kind, but it is a different one, and a sixth criterion would thin
+every weight again. Recorded here for the authoring pass rather than folded in silently.
+
+### The lesson, stated once
+
+A build-time warning is worth adding even when its only subject looks like a tagging
+oversight. Chasing this one down meant reading the archetype, the instance and the rubric
+against each other, and what turned up was not a mis-tag at all — it was a question the item
+asks in its statement and never grades. **The cheap fix would have silenced the warning and
+kept the defect.**

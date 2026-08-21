@@ -395,9 +395,20 @@
         "type": "rubric",
         "criteria": [
           {
+            "id": "algorithm_and_granularity",
+            "description": "Names an enforcement mechanism that admits the plan's burst ceiling above its steady rate, and applies it at the granularity the product actually sells on.",
+            "weight": 0.1,
+            "concept": "rate-limiting",
+            "levels": {
+              "0": "Names no mechanism, or enforces a single flat rate per key with no notion of the burst ceiling sitting above the steady rate.",
+              "2": "Names a mechanism that can admit a burst — a token bucket, or a window with a separate burst allowance — but leaves the granularity vague, or never connects it to the two numbers each plan carries.",
+              "4": "Names the mechanism in a sentence and pins it to this product: a bucket per key refilling at that plan's steady rate with its depth set by the burst ceiling, saying which plan number each parameter comes from, and does not spend the rest of the answer on the algorithm."
+            }
+          },
+          {
             "id": "decision_locality",
             "description": "Places the accept-or-refuse decision somewhere that can meet the stated 2 ms p99 and counts the round trips it costs, rather than treating a counter lookup as free.",
-            "weight": 0.25,
+            "weight": 0.225,
             "concept": "latency-budget",
             "levels": {
               "0": "Routes every request to one central store with no mention of the distance to it, or offers no latency reasoning anywhere.",
@@ -408,7 +419,7 @@
           {
             "id": "counter_sharing_error",
             "description": "Explains how counters are reconciled across the 40 locations and quantifies the resulting overshoot, instead of asserting the limit holds exactly.",
-            "weight": 0.25,
+            "weight": 0.225,
             "concept": "consistency-models",
             "levels": {
               "0": "Claims exact fleet-wide enforcement with no mechanism behind it, or ignores that one key is seen at several locations at once.",
@@ -419,7 +430,7 @@
           {
             "id": "billing_record_separation",
             "description": "Keeps the approximate enforcement counter apart from the durable record the invoice is built from, and says how the durable one is written and checked.",
-            "weight": 0.2,
+            "weight": 0.18,
             "concept": "data-model-design",
             "levels": {
               "0": "Invoices straight from the in-memory enforcement counters, or never says how monthly volume is captured at all.",
@@ -430,7 +441,7 @@
           {
             "id": "store_outage_policy",
             "description": "Names an allow-through or refuse-all policy for the 90-second counter-store outage, ties the reason to this product's consequences, and says what each location runs on meanwhile.",
-            "weight": 0.3,
+            "weight": 0.27,
             "concept": "failure-modes",
             "levels": {
               "0": "Never considers the store being unreachable, or waves it away as highly available and moves on.",

@@ -113,13 +113,17 @@ editorial choice and neither corrupts anything on its own:
   between runs; the grader copes by saying so ([GRADING.md](GRADING.md#system-design-and-behavioral)).
 - **A rubric that names its item's `primary_concept` nowhere** (added 2026-08-21). An item's
   rating moves on the attempt's first evidence row naming that concept
-  ([ADAPTIVE.md](ADAPTIVE.md#two-numbers-per-you-concept)), so a rubric that never names it writes no such
-  row and the rating stays at the author's prior however many times the item is attempted —
-  and a rating that never moves looks exactly like a well-calibrated one. `i.design.0003` is
-  the one on disk: its four criteria name every concept the item lists *except*
-  `rate-limiting`, the one it is chiefly a measurement of. **The corpus currently emits this
-  warning**; retagging a criterion is an authoring decision, not a validator's. Quant items
-  are exempt — their answer writes that row whatever the reasoning rubric names.
+  ([ADAPTIVE.md](ADAPTIVE.md#two-numbers-per-you-concept)), so a rubric that never names it
+  writes no such row and the rating stays at the author's prior however many times the item
+  is attempted — and a rating that never moves looks exactly like a well-calibrated one.
+  Quant items are exempt: their answer writes that row whatever the reasoning rubric names.
+
+  **The corpus validates clean.** `i.design.0003` was the one instance — its four criteria
+  named every concept the item lists *except* `rate-limiting`, the one it is chiefly a
+  measurement of — and it was fixed by authoring rather than by retagging, because the
+  criterion nearest to `rate-limiting` was already tagged correctly. See the buildlog wave;
+  the short version is that the gap in the rubric and the gap in the tagging turned out to
+  be the same gap.
 
 Checks 2–8 each have a test in `packages/corpus/tests/test_validate.py` proving the check
 *catches* its failure, not merely that it passes. **Check 1 is the exception: JSON Schema
