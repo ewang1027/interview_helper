@@ -103,6 +103,33 @@ def forbidden(detail: str) -> ProblemError:
     )
 
 
+def budget_exceeded(detail: str, **extra: Any) -> ProblemError:
+    """429 — a token budget is spent (docs/COST.md).
+
+    Refused, never silently downgraded to a cheaper model or a shorter context: a session
+    that stops and says why is recoverable, and one that quietly degrades writes bad
+    evidence into mastery, which is not."""
+    return ProblemError(
+        status=429,
+        slug="budget-exceeded",
+        title="Token budget exceeded",
+        detail=detail,
+        **extra,
+    )
+
+
+def provider_rate_limited(detail: str) -> ProblemError:
+    """429 — the *model provider* is throttling us, which is not the same as being out of
+    budget. Same status, different slug, because the client's response differs: wait and
+    retry, rather than stop for the day."""
+    return ProblemError(
+        status=429,
+        slug="provider-rate-limited",
+        title="The model provider is rate limiting us",
+        detail=detail,
+    )
+
+
 def not_configured(detail: str) -> ProblemError:
     """503 — the server is missing configuration the request needs.
 

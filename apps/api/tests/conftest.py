@@ -24,7 +24,7 @@ from api.auth import SESSION_COOKIE, session_token
 from api.db import get_engine
 from api.main import app
 from api.mastery import recompute
-from api.models import Artifact, ConceptEvidence, Grading, InterviewSession
+from api.models import Artifact, ConceptEvidence, Grading, InterviewSession, LlmCall
 from api.settings import Settings, get_settings
 from api.users import LOCAL_GITHUB_ID, single_user
 
@@ -76,6 +76,9 @@ def _cleanup(session_ids: list[str]) -> None:
             ]
             if artifacts:
                 db.exec(delete(Grading).where(col(Grading.artifact_id).in_(artifacts)))
+            # Before the sessions themselves: `llm_calls.session_id` is a foreign key, so a
+            # test whose session made a model call cannot have its session deleted first.
+            db.exec(delete(LlmCall).where(col(LlmCall.session_id).in_(session_ids)))
             db.exec(delete(ConceptEvidence).where(col(ConceptEvidence.session_id).in_(session_ids)))
             db.exec(delete(Artifact).where(col(Artifact.session_id).in_(session_ids)))
             db.exec(delete(InterviewSession).where(col(InterviewSession.id).in_(session_ids)))

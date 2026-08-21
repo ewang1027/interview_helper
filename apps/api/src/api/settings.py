@@ -22,11 +22,18 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://interview:interview@localhost:5432/interview_helper"
 
     model_provider: ModelProvider = "bedrock"
-    aws_region: str = "us-east-1"
-    model_planner: str = "anthropic.claude-opus-5"
-    model_interviewer: str = "anthropic.claude-sonnet-5"
-    model_grader: str = "anthropic.claude-opus-5"
-    model_utility: str = "anthropic.claude-haiku-4-5"
+    aws_region: str = "us-east-2"
+
+    # Measured 2026-08-20, not assumed. Bedrock ids for current models are cross-region
+    # inference profiles (`us.` prefixed); the undecorated ids shipped here since Phase 3
+    # never worked. These four default to the one model this account can reach today —
+    # docs/ARCHITECTURE.md's routing table (Opus 5 planning and grading, Sonnet 5
+    # interviewing, Haiku 4.5 utility) is the target, and docs/COST.md says what to enable
+    # in the Bedrock console to restore it.
+    model_planner: str = "us.anthropic.claude-sonnet-4-6"
+    model_interviewer: str = "us.anthropic.claude-sonnet-4-6"
+    model_grader: str = "us.anthropic.claude-sonnet-4-6"
+    model_utility: str = "us.anthropic.claude-sonnet-4-6"
     anthropic_api_key: str | None = None
 
     max_tokens_per_session: int = Field(default=400_000, gt=0)

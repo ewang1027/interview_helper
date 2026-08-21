@@ -22,16 +22,17 @@ detail behind it.
 | **0** Foundations | **complete** | workspace, 159-concept taxonomy, corpus schema + validator, CI | — |
 | **1** Corpus v1 | **partial** — thin slice | 24 items — 3 archetypes + 3 instances in each of four domains, verified | bulk authoring toward ~400/~150 |
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
-| **3** Runtime + API | **partial** — half built | schema + migrations, settings, `ModelRouter`, the **session layer** (`/api/v1`, plan → submit → grade → report, writing `artifacts`, `gradings`, `concept_evidence`), and **auth** — GitHub OAuth, a signed session cookie, every `/api/v1` route behind it | interviewer agent, SSE stream, rubric graders, budget middleware |
+| **3** Runtime + API | **partial** — half built | schema + migrations, settings, `ModelRouter`, the **session layer** (`/api/v1`, plan → submit → grade → report, writing `artifacts`, `gradings`, `concept_evidence`), **auth** (GitHub OAuth, a signed session cookie, every `/api/v1` route behind it), and the **model-call path** — budget enforced, `llm_calls` written, `/costs` live | interviewer agent, SSE stream, rubric graders |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within five sessions | weights are placeholders until real sessions calibrate them |
 | **5–8** Web, AWS, voice, hardening | **not started** | — | — |
 | **9** Practice log | **partial** — schema only | `practice_problems`, `practice_solves`, and `concept_evidence`'s two-producer shape — all migrated, landed with the Phase 3 slice | classification, endpoints, scheduling. No longer gated on the engine: `apply_evidence` already handles an evidence row with no item, so a logged solve would feed mastery today. It is gated on a **model call**, which nothing in this project has ever made |
 
 One thing worth knowing before reading anything else as further along than it is:
-**no model call has ever been made.** `ModelRouter` resolves config and builds a client,
-nothing calls it, and the token budgets in `.env.example` are read into settings but
-enforced nowhere. Everything downstream of a model — the interviewer agent, rubric
-grading, the SSE stream, the cost ledger, the practice log — is waiting on that one thing.
+**nothing in the running system calls a model.** As of 2026-08-20 the *path* to one is
+built and the budgets are enforced, and real Bedrock calls have now been made from this
+machine — but no route, grader or planner makes one, so `turns` is still empty and every
+session still runs and grades without a model. The interviewer agent is what changes that,
+and rubric grading, the SSE stream and the practice log all queue behind it.
 
 The auth gate this file carried since the session layer landed is **closed** as of
 2026-08-20: every `/api/v1` route requires a signed session cookie, and the only way to
@@ -1590,3 +1591,130 @@ refused. With `SESSION_SECRET` unset in the environment, `/health` still 200 and
 
 The interviewer agent — the first model call in this project's history, and the point where
 `llm_calls` stops being an empty table and the budget middleware stops being a paragraph.
+
+---
+
+## Phase 3 (the model-call path) — the ids in `.env.example` had never worked · 2026-08-20
+
+Everything around a model call, built before the thing that makes one: the budget check in
+front of it, the ledger row behind it, and `/costs` over the top. The interviewer agent is
+the next wave and this is what it will call.
+
+The wave was supposed to be routine. It was not, because making the first real call in this
+project's history is what discovered that **the model ids this repo has shipped since
+2026-08-16 were never callable** — a four-month-old configuration that no test could fail
+on, because nothing had ever tried it.
+
+```
+make check       149 passed, 90 deselected (hermetic; was 138)
+make test-db      59 passed (live Postgres; was 48)
+make test-llm      2 skipped — real calls, see below
+```
+
+### What landed
+
+- **`api.llm.complete`** — the one path to a model. Budget checked, call made, `llm_calls`
+  row written, in that order and without exception.
+- **`api.pricing`** — a rate table keyed on model *family*, so a Bedrock inference-profile
+  id prices the same as its first-party name. Anthropic list rates; Bedrock is partner-
+  priced, so the dollar figure is an estimate and the AWS bill is authoritative.
+- **Budget enforcement** — `429 budget-exceeded`, refused before the provider is called.
+- **`GET /costs` and `GET /costs/budget`** — specified in docs/API.md since Phase 3, unbuilt
+  until there was a row to report.
+- **Per-job `effort`** — docs/COST.md asked for this ("grading high, utility classification
+  low") and `ModelRouter` carried no per-job parameters. It does now, and omits `effort`
+  for a model family that would reject it rather than making that model unusable.
+
+### The first real calls, and what they found
+
+Four probes against Bedrock, in order, each one answering the previous failure:
+
+| Attempt | Result |
+|---|---|
+| `AnthropicBedrockMantle` + `anthropic.claude-haiku-4-5` | `MissingDependencyException` — the login credential provider needs `botocore[crt]` |
+| the same, with `botocore[crt]` installed | `403 not available for this account` |
+| `AnthropicBedrockMantle` + `anthropic.claude-opus-5` (the shipped id) | `404 the model does not exist` |
+| `AnthropicBedrock` (InvokeModel) + `anthropic.claude-haiku-4-5-20251001-v1:0` | `400 on-demand throughput isn't supported. Retry with an inference profile` |
+| `AnthropicBedrock` + `us.anthropic.claude-haiku-4-5-20251001-v1:0` | **`ok`** |
+
+So: current Bedrock models are reachable only as **cross-region inference profiles**, the
+`us.`-prefixed ids, and only on the classic InvokeModel client — the newer Mantle client
+the SDK recommends for new code answers `404` for every id this account can serve. None of
+the four `MODEL_*` values this repo shipped were in that shape.
+
+A second sweep found what the account can actually reach: `us.anthropic.claude-sonnet-4-6`
+and `us.anthropic.claude-sonnet-4-5-...` answer; every Claude 5 model returns *not available
+for this account*; Haiku 4.5 returns *model use case details have not been submitted*. So
+the routing table in docs/ARCHITECTURE.md — Opus 5 for planning and grading, Sonnet 5 for
+turns — **is a design that cannot run here yet.** All four jobs now default to Sonnet 4.6,
+which is a substitution recorded in three places rather than a quiet downgrade, and
+docs/COST.md carries the measurements and the console steps that undo it.
+
+### What the docs claimed and the wire said
+
+Three specifics that would have been wrong if written from memory, and were checked against
+the provider's own documentation before the code was:
+
+- **Automatic (top-level) `cache_control` is not available on Bedrock.** The breakpoint is
+  placed by hand on the system block, and a test pins the request shape — the failure mode
+  is a larger bill and nothing else.
+- **`output_config.effort` is rejected by model families older than 4.6.** Model ids are
+  configuration here, so the router treats effort as a capability rather than a constant.
+- **`budget_tokens` is gone** on every model this project routes to. Nothing in the new code
+  reaches for it.
+
+### The ledger row is written in its own transaction
+
+The same reasoning as a failed grading, and for the same reason it was learned the hard
+way: the caller's work can fail after the call, and a rollback that erases the record of
+money already spent leaves a bill nothing explains. A test drives the caller into an
+exception after a successful call and asserts the row is still there.
+
+The budget check is deliberately "already spent", not "would this call fit". The input size
+is not known before the call and asking the provider would itself be a call, so the last
+call before a refusal can overshoot its ceiling by at most its own `max_tokens`. Bounded
+and honest beat precise and expensive. Both scopes are tested by setting the limit *below*
+what the ledger already holds, so neither test depends on what else is in the database.
+
+### A paid test that `make test-db` was about to run
+
+`test_llm_live.py` was marked `llm` **and** `db`, which reads as "needs both". Markers are
+selection, not requirements: `make test-db` selects `-m db`, so the suite that runs after
+every change would have made real model calls and spent real money. It is `llm` only now,
+with `make test-llm` as its gate, and the docstring says it needs Postgres too.
+
+### The cache assertion docs/COST.md asked for, and why it is not in CI
+
+Two calls with an identical prefix; the second must report a non-zero
+`cache_read_input_tokens`. It runs under `make test-llm` rather than in CI, because CI has
+no credentials and a cache assertion against a fake provider asserts nothing at all.
+
+### What is verified, and what is not
+
+Verified: everything around the call, against a fake provider — the request shape including
+the cache breakpoint, per-job effort, the ledger row and its cost, budget refusals in both
+scopes, the routes, and the row surviving a caller that fails afterwards. Also verified:
+that Bedrock answers this machine at all, by five raw SDK calls that cost about a cent.
+
+**Not verified:** `complete()` end to end against a live provider. The AWS login session
+expired between the probes and the test being written, and refreshing it is an interactive
+command. `make test-llm` skips with the provider's own words rather than failing, which is
+the correct behaviour for an environment condition — and it means the first thing to do
+after `aws login` is run it.
+
+### Deferred deliberately
+
+- **No streaming.** The SSE stream is the interviewer's wave; `complete()` is one request
+  and one response.
+- **No tool loop.** Also the interviewer's — this layer makes a call, it does not decide
+  what to do with a `tool_use` block.
+- **No retry beyond the SDK's.** It already retries 429s and 5xx twice.
+- **No `count_tokens` pre-check.** It would make the budget exact and cost a round trip per
+  call to do it.
+- **`botocore[crt]` is a dev dependency**, not a runtime one: it is needed by the *local*
+  login credential provider, and a Fargate task role does not use it.
+
+### Next
+
+The interviewer agent: the system prompt per mode, the turn loop, the five tools in
+docs/API.md, and `turns` finally getting rows. It is the first caller of everything above.

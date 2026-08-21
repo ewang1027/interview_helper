@@ -1,10 +1,11 @@
 # Cost governance
 
-> **Status:** Policy set. The `llm_calls` ledger table and `make cost-report` **exist and
-> work** — the table is empty because no model call has ever been made, and nothing writes
-> to it yet. Budget enforcement is **not built**: the limits are read into settings and
-> consumed by nothing. AWS alarms in **Phase 6**. The per-session cost table below is empty
-> because no session calls a model — sessions run, and grade, without one.
+> **Status:** Built (2026-08-20), except the measurements. `api.llm` is the one path to a
+> model: it checks the budget, makes the call, and writes the `llm_calls` row — so the
+> ledger has a producer and the hard budgets have teeth (`429`, refused, never downgraded).
+> `GET /costs` and `GET /costs/budget` are live. **What is not built:** any *caller* — the
+> interviewer agent is the next wave — so the per-session cost table below is still empty,
+> and its numbers are what Phase 3's gate actually asks for. AWS alarms in **Phase 6**.
 > Related: [ARCHITECTURE](ARCHITECTURE.md#model-routing) · [OPERATIONS](OPERATIONS.md#monitoring) · [RESEARCH](RESEARCH.md#where-it-runs-and-why-that-matters) (why research is free) · [PRACTICE_LOG](PRACTICE_LOG.md) (uses the existing classification job)
 
 This is a designed-in subsystem, not a dashboard bolted on later. A previous project
@@ -27,32 +28,68 @@ the expensive half of the workload and it costs nothing.
 
 Set in `.env`, resolved by `ModelRouter`; call sites never name a model.
 
-| Job | Model | Rationale |
-|---|---|---|
-| Session planning | Opus 5 | Once per session |
-| Interviewing turns | Sonnet 5 | The hot loop |
-| Grading | Opus 5 | Errors compound into mastery |
-| Classification, extraction | Haiku 4.5 | Mechanical |
+| Job | Model | `effort` | Rationale |
+|---|---|---|---|
+| Session planning | Opus 5 | `high` | Once per session |
+| Interviewing turns | Sonnet 5 | `medium` | The hot loop; dialogue, not a judgement that compounds |
+| Grading | Opus 5 | `high` | Errors compound into mastery |
+| Classification, extraction | Haiku 4.5 | `low` | Mechanical |
 
-`effort` **is intended to be** tuned per job rather than left at the default — grading
-high, utility classification low. Not implemented: `ModelRouter` resolves a model id and a
-provider client, and carries no per-job parameters.
+`effort` is now resolved per job by `ModelRouter.effort_for`, as this document asked. It is
+**omitted** rather than sent for a model whose family predates 4.6, because those reject
+`output_config.effort` outright and an unusable model is a worse failure than a default
+effort.
+
+### What actually runs today
+
+The routing table above is the *design*. Measured against this project's AWS account on
+2026-08-20, by making the calls:
+
+| Model id | Result |
+|---|---|
+| `us.anthropic.claude-sonnet-4-6` | **answers** |
+| `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | answers |
+| `us.anthropic.claude-opus-5`, `us.anthropic.claude-sonnet-5`, `us.anthropic.claude-opus-4-8` | `403 not available for this account` |
+| `us.anthropic.claude-haiku-4-5-20251001-v1:0` | `404 model use case details have not been submitted for this account` |
+| `anthropic.claude-opus-5` (the id shipped here since Phase 3) | `404 does not exist` on the Mantle endpoint; `on-demand throughput isn't supported` on InvokeModel |
+
+Two things follow. Bedrock ids for current models are **cross-region inference profiles** —
+`us.` prefixed, often dated and versioned — and the undecorated ids this repo shipped for
+four months were never callable. And the four jobs all default to Sonnet 4.6 today, which
+is a deliberate, documented substitution rather than the design.
+
+### Getting the routing table back
+
+In the Bedrock console for the account, under **Model access**, request access to the
+Claude models the table names, and submit the Anthropic use-case details form the Haiku
+error points at. Then set the four `MODEL_*` variables in `.env` back to their intended
+inference-profile ids. Nothing in the code changes: that is what `ModelRouter` is for.
 
 ## Hard budgets
 
-**Designed, not yet enforced.** Two limits. They are read into `Settings` today as `max_tokens_per_session` and
-`max_tokens_per_day`, and **nothing consumes them** — no middleware exists, and no model
-call has ever been made, so there is nothing yet to refuse. The design, for when the agent
-loop lands:
+**Enforced.** Two limits, checked by `api.llm.enforce_budget` before every call:
 
 ```
 MAX_TOKENS_PER_SESSION=400000
 MAX_TOKENS_PER_DAY=3000000
 ```
 
-On breach the request is **refused with a clear error**, not silently truncated and not
-downgraded to a cheaper model. A session that stops and says why is recoverable; one
-that quietly degrades produces bad evidence, which corrupts mastery.
+On breach the request is **refused** — `429 budget-exceeded`, carrying the scope, what was
+consumed and the limit — not silently truncated and not downgraded to a cheaper model. A
+session that stops and says why is recoverable; one that quietly degrades produces bad
+evidence, which corrupts mastery. The refusal happens *before* the provider is called, so a
+spent budget costs nothing to hit.
+
+Three properties worth stating, because each is a choice:
+
+- **A token is a token.** Input, output, cache reads and cache writes all count toward a
+  limit. Cache reads are cheap, not free, and they are still context the model processed.
+- **The check is "already spent", not "would this fit".** The input size is not known before
+  the call, and asking the provider would itself be a call. So the last call before a
+  refusal can overshoot its ceiling by at most its own `max_tokens`, and the next one is
+  refused. Bounded and honest beats precise and expensive.
+- **The day resets at UTC midnight**, not on a rolling 24-hour window. A rolling window is
+  kinder to a late-night session and impossible to reconcile against a bill.
 
 ## The ledger
 
@@ -67,15 +104,28 @@ Every model call appends to `llm_calls`:
 | `latency_ms` | Cost/latency tradeoffs need both numbers |
 | `session_id`, `job` | Per-session and per-job attribution |
 
-`make cost-report` reads it. A `/costs` view in the web app will render it — `apps/web` is
-an empty directory until Phase 5.
+`make cost-report` reads it, and `GET /api/v1/costs` returns the same rollup split by job
+and by model — by job says what is expensive to do, by model says what the routing table is
+costing. `GET /api/v1/costs/budget` answers the other question: will the next call be
+refused, and why. A `/costs` view in the web app will render both — `apps/web` is an empty
+directory until Phase 5.
+
+**`cost_usd` is computed once, at call time, and never recomputed on read.** Rates change,
+and a ledger that silently re-prices last month's calls cannot be reconciled against a
+bill. Two consequences: the rates in `api.pricing` are Anthropic **first-party list
+prices**, so on Bedrock — partner-operated, separately priced — the dollar figure is an
+estimate and the AWS bill is authoritative; and a model with no entry in the rate table is
+recorded at `$0` with a warning rather than a guess, because the token counts are worth
+keeping even when the price is not known.
 
 [PRACTICE_LOG](PRACTICE_LOG.md)'s problem-classification calls (Phase 9) log here with
 `job="practice_log_classify"`, riding the existing "Classification, extraction" routing
 row above rather than adding a new one.
 
-The table and `make cost-report` are built and match column for column; **nothing writes a
-row**, because nothing calls a model.
+`api.llm.record_call` writes the row, **in its own transaction**, before the caller sees the
+completion. The spend happened whatever the caller does next, and a caller that raises
+afterwards would otherwise roll back the only record of it — the same reasoning that puts a
+failed grading in a fresh session.
 
 ## Prompt caching
 
@@ -83,13 +133,18 @@ The frozen per-mode system prompt and item context sit above the `cache_control`
 breakpoint; volatile turn content sits below. Opus 5's 512-token cache minimum means
 even short prefixes are cacheable.
 
-**When the agent loop lands, a CI assertion should check that repeated identical-prefix
-requests report a non-zero `cache_read_input_tokens`. That assertion does not exist —
-there is no prompt-construction code to assert against.** Cache invalidation is silent — a
-timestamp interpolated into a system prompt, a tool list that reorders, a dict serialized
-without sorted keys — and the only symptom is the bill. Catching it in CI is much cheaper
-than catching it monthly, which is why the `llm_calls.cache_read_tokens` column exists
-already.
+**The assertion this document asked for now exists**, as
+`test_an_identical_prefix_is_served_from_cache` in `apps/api/tests/test_llm_live.py`: two
+calls with an identical prefix, and the second must report a non-zero
+`cache_read_input_tokens`. It is marked `llm` and runs via `make test-llm`, not in CI —
+CI has no credentials, and a cache assertion against a fake provider asserts nothing.
+Cache invalidation is silent — a timestamp interpolated into a system prompt, a tool list
+that reorders, a dict serialized without sorted keys — and the only symptom is the bill.
+
+One implementation note that is easy to get wrong: **automatic (top-level) `cache_control`
+is not available on Bedrock**, which is the default provider here. `api.llm.cached_system`
+places the breakpoint on the system block by hand, and the shape of that request is pinned
+by a test, because the failure mode is a larger bill and nothing else.
 
 ## AWS-side guards
 
@@ -103,6 +158,8 @@ already.
 
 Phase 3's gate records real measured cost per session, per mode, in this file. Every
 optimization after that is judged against those numbers rather than against intuition.
+**Still empty, and now for a smaller reason than before:** the machinery to measure exists
+and is exercised, but no session calls a model yet, so there is nothing to average.
 
 | Mode | Measured $/session | Recorded |
 |---|---|---|

@@ -9,7 +9,9 @@
 > the root deliberately — see below.
 > **Not built:** the SSE stream and every agent tool (there is no interviewer agent, so no
 > model call has ever been made), the cost routes, `GET /corpus/items/{id}`,
-> `Idempotency-Key`, and rate limiting. Vapi in **Phase 7**.
+> `Idempotency-Key`, and rate limiting. The cost routes and the model-call path underneath
+> them **are** built (2026-08-20) — nothing calls a model yet, but everything around the
+> call does. Vapi in **Phase 7**.
 > (The executor's `POST /execute` and `POST /probe` are built on their own contract — see
 > [SECURITY](SECURITY.md) — and `api.executor_client` is what speaks to them.)
 > Related: [ARCHITECTURE](ARCHITECTURE.md) · [GRADING](GRADING.md) (what the graders do with submissions) · [ADAPTIVE](ADAPTIVE.md) (where the planner gets its input) · [VOICE](VOICE.md) (the second transport) · [WEB](WEB.md) (the first consumer)
@@ -175,11 +177,15 @@ correct the evidence and replay — never hand-patch the projection.
 |---|---|---|
 | `GET` | `/corpus/status` | Counts by domain and kind — **built**, now under `/api/v1` |
 | `GET` | `/corpus/items/{id}` | One item, statement redacted if unseen |
-| `GET` | `/costs` | Ledger rollups: per session, per day, per model |
-| `GET` | `/costs/budget` | Remaining session and daily token budget |
+| `GET` | `/costs` | Ledger rollups: totals, by job, by model over the last `days` — **built** |
+| `GET` | `/costs/budget` | Remaining session and daily token budget — **built** |
 
 `GET /corpus/items/{id}` redacts the statement of an item you have not been served yet.
 Reading ahead defeats the measurement.
+
+`GET /costs/budget` is the more useful of the two cost routes while the agent is being
+built: it answers "will the next call be refused, and why" without making one. Both are
+scoped by the session cookie like everything else under `/api/v1`.
 
 ## SSE event stream
 
@@ -302,7 +308,7 @@ slug a client can branch on; matching on prose is how error handling rots:
 | `404` | Unknown session or item — including one belonging to somebody else |
 | `409` | Wrong state — e.g. report requested before `complete` |
 | `422` | Well-formed but invalid, e.g. submission for an item not in the plan |
-| `429` | **Token budget exceeded** — refused, never silently downgraded ([COST.md](COST.md#hard-budgets)). Not reachable: nothing meters tokens, because nothing calls a model |
+| `429` | **Token budget exceeded** (`budget-exceeded`) — refused, never silently downgraded ([COST.md](COST.md#hard-budgets)), and refused *before* the provider is called. Also `provider-rate-limited`, when the throttling is the provider's rather than ours: same status, different slug, because one means wait and the other means stop |
 | `503` | Executor or model provider unavailable, or the server is missing configuration the request needs (`not-configured`) |
 
 `429` on budget is a refusal by design. A session that stops and says why is recoverable;

@@ -186,20 +186,29 @@ and verified by an escape test.
 ## Cost
 
 **Ledger (`llm_calls`)** — one row per model call: tokens in/out/cache, computed dollars,
-latency, session, job.
+latency, session, job. Written in its own transaction, so a caller failing afterwards
+cannot erase the record of money already spent.
 
 **Model routing** — job-to-model mapping resolved by `ModelRouter`, so call sites never
-name a model.
+name a model. It resolves the per-job `effort` too, and omits it for a model family that
+would reject the parameter.
+
+**Inference profile** — the `us.`-prefixed Bedrock model id (`us.anthropic.claude-sonnet-4-6`)
+that routes a request across a region group. Current models are only callable this way; the
+undecorated `anthropic.`-prefixed id answers "does not exist" or demands a profile.
+→ [COST](COST.md#what-actually-runs-today)
 
 **Prompt caching** — the frozen prefix (system prompt + item context) sits above the
-`cache_control` breakpoint. A silent invalidation shows up only as a bill, so the intent
-is that CI assert non-zero cache reads. **No such assertion exists, and no model call has
-ever been made.** → [COST](COST.md#prompt-caching)
+`cache_control` breakpoint. A silent invalidation shows up only as a bill, so an
+`llm`-marked test asserts that a repeated identical prefix reports non-zero cache reads —
+run by `make test-llm`, not in CI, which has no credentials.
+→ [COST](COST.md#prompt-caching)
 
-**Hard budget** — the per-session and per-day token ceilings in `.env.example`. The design
-is that a breach **refuses** the request rather than silently downgrading it. **Not
-enforced today:** the values are read into `Settings` and consumed by nothing; no
-middleware exists. → [COST](COST.md)
+**Hard budget** — the per-session and per-day token ceilings in `.env.example`. A breach
+**refuses** the request (`429 budget-exceeded`) rather than silently downgrading it, and
+refuses before the provider is called. Enforced by `api.llm` since 2026-08-20; every token
+counts toward it, cache reads included, and the daily ceiling resets at UTC midnight.
+→ [COST](COST.md#hard-budgets)
 
 ## Outside terms used narrowly
 

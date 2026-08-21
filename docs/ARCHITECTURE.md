@@ -6,9 +6,10 @@
 > **session layer** (`/api/v1` — plan, submit, grade, report) writing `artifacts`,
 > `gradings` and `concept_evidence`, the **adaptive engine** (Elo, FSRS, the replayable
 > `mastery` projection, and a planner that ranks by weakness priority), **auth** (GitHub
-> OAuth and a signed session cookie every `/api/v1` route requires), and a 24-item corpus.
-> Not built: the interviewer agent and its SSE stream — so **no model call has ever been
-> made** — rubric grading, and the budget middleware.
+> OAuth and a signed session cookie every `/api/v1` route requires), the **model-call path**
+> (`api.llm` — budget checked, call made, `llm_calls` row written) with `/costs` and
+> `/costs/budget` over it, and a 24-item corpus. Not built: the interviewer agent and its
+> SSE stream — so **nothing in the running system calls a model yet** — and rubric grading.
 > `docs/BUILDLOG.md` is authoritative.
 > Related: [GLOSSARY](GLOSSARY.md) · [API](API.md) · [SECURITY](SECURITY.md) · [INFRA](INFRA.md) · [BUILDLOG](BUILDLOG.md) (what is actually built) · [PRACTICE_LOG](PRACTICE_LOG.md)
 
@@ -134,7 +135,7 @@ worse, would *not* raise inside Phase 4's date arithmetic.
 | `gradings` | One row per graded artifact: `status`, a **nullable** score, detail, grader version. A grader that crashed or timed out is recorded as `failed` with no score — a CHECK keeps "failed but scored 0.0" from existing. |
 | `concept_evidence` | **Immutable.** The source of truth for mastery. Written by graded sessions and, from Phase 9, by the practice log — `item_id`/`session_id` are nullable, and a `source` column plus `practice_problem_id` distinguish the two producers. |
 | `mastery` | Derived projection: ability, observations, stability, due_at, last_seen, and the scheduler's own card. Rebuilt from `concept_evidence` by `POST /mastery/recompute`, never hand-edited. |
-| `llm_calls` | Cost ledger: model, tokens in/out/cache, computed $, latency, session. |
+| `llm_calls` | Cost ledger: model, tokens in/out/cache, computed $, latency, session. Written by `api.llm` in its own transaction, so a caller that fails afterwards cannot erase the record of spend. |
 | `research_runs` | Provenance for corpus builds. |
 | `practice_problems`, `practice_solves` | Phase 9. External (LeetCode/Codeforces) problems logged manually, their classification against the corpus taxonomy, and their spaced re-solve schedule. See [PRACTICE_LOG](PRACTICE_LOG.md). |
 
@@ -146,24 +147,30 @@ column, and nothing embeds anything. It lands with the code that needs it.
 
 ## Model routing
 
-| Job | Model | Why |
-|---|---|---|
-| Session planning | Opus 5 | Runs once per session; quality matters more than cost |
-| Interviewing turns | Sonnet 5 | The hot loop; near-Opus quality on dialogue at lower cost |
-| Grading | Opus 5 | Directly determines mastery, so errors compound |
-| Classification, extraction | Haiku 4.5 | Mechanical work |
+| Job | Model | `effort` | Why |
+|---|---|---|---|
+| Session planning | Opus 5 | `high` | Runs once per session; quality matters more than cost |
+| Interviewing turns | Sonnet 5 | `medium` | The hot loop; near-Opus quality on dialogue at lower cost |
+| Grading | Opus 5 | `high` | Directly determines mastery, so errors compound |
+| Classification, extraction | Haiku 4.5 | `low` | Mechanical work |
+
+**This table is the design; it is not what runs today.** Measured 2026-08-20, the AWS
+account behind this project can reach `us.anthropic.claude-sonnet-4-6` and cannot reach any
+Claude 5 model, so all four jobs are configured to Sonnet 4.6 until Bedrock model access is
+granted. The substitution is configuration, not code —
+[COST.md](COST.md#what-actually-runs-today) records the measurements and how to undo it.
 
 All calls go through `ModelRouter`, so provider (Bedrock vs Anthropic direct) and model
 choice are config, not call-site decisions. [PRACTICE_LOG](PRACTICE_LOG.md)'s problem
 classification (Phase 9) uses the existing "Classification, extraction" row above — it
 does not need a new job type.
 
-Prompt construction **will be** cache-shaped: the frozen per-mode system prompt and the
-item context above the `cache_control` breakpoint, volatile turn content below. **No
-prompt-construction code exists yet.** When it lands it owes a CI assertion that repeated
-identical-prefix requests report a non-zero `cache_read_input_tokens` — silent cache
-invalidation is expensive and invisible, and the `llm_calls.cache_read_tokens` column
-exists to make it visible. That assertion is not written.
+Prompt construction is cache-shaped: `api.llm.cached_system` puts the frozen system prompt
+in a block carrying the `cache_control` breakpoint, and everything volatile goes in
+`messages`, after it. Automatic top-level caching is unavailable on Bedrock, so the
+breakpoint is placed by hand. The assertion this section asked for — repeated
+identical-prefix requests reporting a non-zero `cache_read_input_tokens` — is written, as
+an `llm`-marked test run by `make test-llm` rather than in CI, which has no credentials.
 
 ## What is deliberately not here
 

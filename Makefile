@@ -4,7 +4,7 @@ COMPOSE := docker compose -f infra/compose/docker-compose.yml
 
 .PHONY: help setup dev dev-api down check lint typecheck test fmt \
         corpus-validate seed test-sandbox test-e2e test-db cost-report secret-scan \
-        doc-links doc-check hygiene verify-solutions login clean
+        doc-links doc-check hygiene verify-solutions login test-llm clean
 
 help: ## Show this help
 	@# [a-zA-Z0-9_-] not [a-z-]: the narrower class silently dropped `test-e2e`
@@ -85,6 +85,9 @@ test-e2e: ## One scripted coding session against a live stack — needs Postgres
 
 test-db: ## DB-backed tests against a live Postgres (make dev first)
 	uv run pytest apps/api/tests -q -m db
+
+test-llm: ## The only tests that call a real model — costs money, needs credentials and Postgres
+	uv run pytest -q -m llm -rs
 
 cost-report: ## Per-session token and dollar spend from the llm_calls ledger
 	uv run python -m api.cost_report

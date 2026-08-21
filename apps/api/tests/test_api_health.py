@@ -78,6 +78,8 @@ SURFACE = {
     ("GET", "/auth/me"),
     ("POST", "/auth/logout"),
     ("GET", "/api/v1/corpus/status"),
+    ("GET", "/api/v1/costs"),
+    ("GET", "/api/v1/costs/budget"),
     ("GET", "/api/v1/mastery"),
     ("GET", "/api/v1/mastery/weaknesses"),
     ("GET", "/api/v1/mastery/{concept_id}"),

@@ -67,7 +67,7 @@ breakdown, because adaptation you cannot inspect is adaptation you cannot trust.
 
 | Path | What it is |
 |---|---|
-| `apps/api/` | FastAPI — `/health` and `/auth/*` at the root, and behind a session cookie under `/api/v1` the **session layer** (plan → submit → grade → report), mastery and `corpus/status`. The deterministic coding grader and GitHub OAuth live here too; the interviewer agent and its SSE stream do not |
+| `apps/api/` | FastAPI — `/health` and `/auth/*` at the root, and behind a session cookie under `/api/v1` the **session layer** (plan → submit → grade → report), mastery, costs and `corpus/status`. The deterministic coding grader, GitHub OAuth and the model-call path live here too; the interviewer agent and its SSE stream do not |
 | `apps/web/` | *Empty placeholder.* Next.js 15 app, Phase 5 |
 | `apps/executor/` | Sandboxed code runner (no network, non-root, resource-capped) — isolation, `POST /execute` and `POST /probe` (the complexity probe) are built |
 | `packages/corpus/` | Versioned question corpus + JSON Schema + validator (24 items today) |
@@ -119,6 +119,7 @@ make test-db    # schema and session tests against the live Postgres
 
 make test-sandbox     # every test needing real Docker: escapes, /execute, /probe, grading
 make test-e2e         # one scripted coding session — needs Postgres AND Docker
+make test-llm         # the only tests that call a real model — costs money, needs credentials
 make verify-solutions # every reference solution through the same harness candidates get
 make down             # tear down the local stack
 ```
@@ -149,9 +150,11 @@ for what actually exists and what each phase still owes.
       model routing landed early (2026-08-16); the **session layer** landed 2026-08-20 —
       `/api/v1`, plan → submit → grade → report, writing real `concept_evidence`, verified
       end to end against a live stack. **Auth landed 2026-08-20**: GitHub OAuth, a signed
-      session cookie, and no route under `/api/v1` reachable without one. The interviewer
-      agent, the SSE stream, rubric grading and budget enforcement remain — no model call
-      has been made yet*
+      session cookie, and no route under `/api/v1` reachable without one. **The model-call
+      path landed 2026-08-20**: budget enforced, ledger written, `/costs` live, and the
+      first real Bedrock calls of the project's history made — which found that the model
+      ids shipped since Phase 3 were never callable. The interviewer agent, the SSE stream
+      and rubric grading remain — nothing in the running system calls a model yet*
 - [x] **4 — Adaptive engine** — *Elo, FSRS, the replayable projection, the weakness
       priority and the planner landed 2026-08-20, verified against both gates in
       [ADAPTIVE](docs/ADAPTIVE.md). Weights are placeholders until real sessions calibrate
