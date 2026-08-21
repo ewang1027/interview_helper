@@ -211,9 +211,29 @@ def apply_evidence(db: Session, evidence: ConceptEvidence, *, user_id: str) -> M
     # against a K_ITEM of 4. An item's rating is a fact about *the attempt*, so it moves
     # once per attempt, and tying that to the primary concept's row keeps it derivable
     # from evidence alone — which is what a replay needs.
+    #
+    # **And only the first such row.** "One row per concept" was the only evidence shape
+    # that existed when the rule above was written, so naming the primary concept and being
+    # the attempt's one reading of it were the same condition. They stopped being the same
+    # when the quant grader landed: it writes a deterministic row for the answer *and* a
+    # rubric row per criterion, and a criterion may name the primary concept too —
+    # `i.quant.0002` produces three rows naming `expected-value-decision`. Each satisfied
+    # the test above, so the rating moved three times per attempt: the same drift, by a
+    # different route. The row that moves it is the attempt's first, in the `(ts, id)` order
+    # `recompute` replays in, so the live path and a rebuild agree by construction.
     if item is not None and evidence.concept_id == item.primary_concept_id:
-        item.elo -= K_ITEM * delta * evidence.confidence
-        db.add(item)
+        first = db.exec(
+            select(col(ConceptEvidence.id))
+            .where(
+                col(ConceptEvidence.session_id) == evidence.session_id,
+                col(ConceptEvidence.item_id) == evidence.item_id,
+                col(ConceptEvidence.concept_id) == evidence.concept_id,
+            )
+            .order_by(col(ConceptEvidence.ts), col(ConceptEvidence.id))
+        ).first()
+        if first is None or first == evidence.id:
+            item.elo -= K_ITEM * delta * evidence.confidence
+            db.add(item)
 
     # `CardDict` is a TypedDict and the column is plain JSONB, so the two need a cast in
     # each direction. The round trip itself is the library's own, which is the point of

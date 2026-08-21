@@ -50,6 +50,20 @@ item_elo -= K_item * (score - expected)
   submission writes one evidence row per concept the item names — four, for the coding
   items on disk — so the item update is tied to the *primary* concept's row. Without that
   tie, an item drifted four times faster for the crime of naming four concepts.
+- **And once per attempt means once, even when several rows name that concept**
+  (corrected 2026-08-21). Tying the update to the primary concept's row was the same thing
+  as tying it to one row per attempt *only while one row per concept was the only evidence
+  shape there was*. The quant grader writes a deterministic row for the answer and a rubric
+  row per criterion, and a criterion may name the primary concept too — `i.quant.0002`
+  produces three rows naming `expected-value-decision`, and all three moved the rating: the
+  same drift the rule above fixed, arriving by a different route. The row that moves an item
+  is now the attempt's **first**, in the `(ts, id)` order `recompute` replays in, so the
+  live path and a rebuild agree by construction rather than by coincidence.
+- **Known, not fixed: an item whose rubric never names its primary concept never moves at
+  all.** `i.design.0003` is the one on disk — its four criteria name `rate-limiting`
+  nowhere, so its rating stays at its author's prior however many times it is attempted.
+  That is a corpus-shape question rather than a projection bug, and the fix belongs in the
+  validator, not here.
 
 A concept with fewer than five observations is flagged `calibrating`, and the API says so
 rather than presenting an estimate built on one data point as if it were settled.

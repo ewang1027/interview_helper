@@ -2343,3 +2343,75 @@ rounded decimal is accepted, and why silence writes nothing at all.
 Phase 3's remaining owings are `record_observation`, `check_answer` as a tool, and the one
 that has been pending since the model-call path landed: **a full session against a live
 provider**, still gated on the Bedrock use-case form in docs/COST.md.
+
+---
+
+## Phase 4 (item ratings) — the same drift, arriving by a different route · 2026-08-21
+
+Found by self-review of the quant grader an hour after it was pushed, by reading what
+`apply_evidence` does with the evidence shape the new grader produces rather than by
+anything failing.
+
+```
+make check       217 passed (hermetic; unchanged — this is a projection rule)
+make test-db     118 passed (live Postgres; was 117)
+CI               green on the quant commit before this one
+```
+
+### A condition that was two conditions
+
+The Phase 4 review fixed an item's rating drifting four times faster than it should, and
+recorded the rule as "an item's rating moves once per attempt". The code that implements it
+reads:
+
+```python
+if item is not None and evidence.concept_id == item.primary_concept_id:
+```
+
+That is not the rule. It is "once per **row naming the primary concept**", and it was the
+same thing as the rule only because one row per concept was the only evidence shape that
+existed. The quant grader writes a deterministic row for the answer *and* a rubric row per
+criterion, and a criterion may name the primary concept too:
+
+| Item | Rows naming its primary concept |
+|---|---|
+| `i.quant.0001` | 2 |
+| `i.quant.0002` | **3** |
+| `i.quant.0003` | 2 |
+
+Each one satisfied the test, so `i.quant.0002`'s rating moved three times per attempt.
+Measured on a coding item with three synthetic rows: **5.78 points against a `K_ITEM` of
+4**, which is the drift the original fix was about, back at a comparable size.
+
+Nothing failed. Every gate was green when this shipped, CI included, because no test
+asserted the invariant on an item that could violate it — the coding items cannot, and
+`test_an_items_rating_drifts_from_its_seed` measures exactly one of them.
+
+### The fix, and why it is a query rather than a flag
+
+The row that moves an item is the attempt's **first**, in the `(ts, id)` order `recompute`
+already replays in. A flag from the caller would have been simpler and wrong: `recompute`
+applies the same rows through the same function with no caller to set it, and a rule that
+holds in the live path only makes the projection unreproducible — which is the one thing
+this design cannot survive. Deriving it from the rows means both paths agree by
+construction. The test asserts the rebuild reaches the same number, not just that the live
+path does.
+
+### Found while looking, not fixed
+
+`i.design.0003`'s four criteria name `rate-limiting` — its primary concept — nowhere, so
+under this rule its rating never moves at all, however many times it is attempted. It is
+the mirror image of the same assumption: the rule presumes an attempt produces exactly one
+reading of the primary concept, and the corpus can produce two or zero. The fix belongs in
+the corpus validator as a warning, not in the projection, and it is recorded here rather
+than done because it is a different change.
+
+### The lesson, stated once
+
+**A rule written down in prose and a condition written in code are two artifacts, and this
+repo checks the prose against the code by reading.** The prose here was right the whole
+time. What drifted was the set of inputs the condition was equivalent to it over — and
+nothing in a green suite can notice that, because the shape that breaks the equivalence had
+not been built yet when the tests were written. The generalisable habit is the one that
+caught it: after adding a producer, go and read the consumers, particularly the ones whose
+comments describe the *old* producer's shape.

@@ -19,7 +19,7 @@ from sqlmodel import Session, select
 from api.db import get_engine
 from api.executor_client import RunResult
 from api.main import app
-from api.mastery import DEFAULT_ABILITY, K_ITEM
+from api.mastery import DEFAULT_ABILITY, K_ITEM, apply_evidence, lock_projection
 from api.models import ConceptEvidence, Item, Mastery
 from api.routes.sessions import get_runner
 
@@ -194,6 +194,63 @@ def test_an_items_rating_drifts_from_its_seed_and_rebuilds_from_evidence(created
     drift_snapshot = snapshot(user_id)
     client.post("/api/v1/mastery/recompute")
     assert snapshot(user_id)["items"][ITEM] == pytest.approx(drift_snapshot["items"][ITEM])
+
+
+def test_an_items_rating_moves_once_however_many_rows_name_its_primary_concept(
+    created_sessions, user_id
+):
+    """The rule above is "one move per attempt"; the code said "one move per row naming the
+    primary concept". Those were the same condition only while one row per concept was the
+    only evidence shape there was.
+
+    The quant grader broke that: it writes a deterministic row for the answer *and* a rubric
+    row per criterion, and a criterion may name the primary concept too — `i.quant.0002`
+    produces three rows naming `expected-value-decision`. Each satisfied the old test, so
+    the rating moved three times per attempt. Written against a coding item because the
+    invariant is the projection's, not any one grader's."""
+    client = client_for()
+    session = client.post("/api/v1/sessions", json={"mode": "coding", "budget_minutes": 90})
+    session_id = session.json()["id"]
+    created_sessions.append(session_id)
+
+    with Session(get_engine()) as db:
+        item = db.get(Item, ITEM)
+        assert item is not None
+        before = item.elo
+
+        lock_projection(db)
+        rows = [
+            ConceptEvidence(
+                concept_id=PRIMARY,
+                source="session_grading",
+                item_id=ITEM,
+                session_id=session_id,
+                score=1.0,
+                confidence=0.9,
+                grader_version="test.three-rows@1",
+            )
+            for _ in range(3)
+        ]
+        for row in rows:
+            db.add(row)
+        db.flush()
+        for row in rows:
+            apply_evidence(db, row, user_id=user_id)
+        db.commit()
+
+    with Session(get_engine()) as db:
+        item = db.get(Item, ITEM)
+        assert item is not None
+        moved = item.elo
+    assert abs(moved - before) <= K_ITEM, "three readings of one attempt, one rating move"
+
+    # And a rebuild has to reach the same number, or the rule holds in the live path only
+    # and the projection stops being reproducible — which is the whole design.
+    client.post("/api/v1/mastery/recompute")
+    with Session(get_engine()) as db:
+        item = db.get(Item, ITEM)
+        assert item is not None
+        assert item.elo == pytest.approx(moved)
 
 
 def test_a_failed_grading_leaves_the_projection_untouched(created_sessions, user_id):
