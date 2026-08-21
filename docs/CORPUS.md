@@ -1,11 +1,14 @@
 # The corpus and how it gets built
 
 > **Status:** Contract built and enforced (**Phase 0**) — schema and validator ship with
-> tests. A **thin Phase 1 slice is authored and verified**: 3 archetypes in each of the
-> four domains, with 6 coding and 6 quant instances (2026-08-21) and 3 in each other
-> domain. Every coding reference solution passes its own tests in a real sandbox and
-> measures inside its declared complexity band; every quant answer was checked twice, by
-> exact reasoning and by simulation. Bulk authoring toward the ~400/~150 target has not started.
+> tests. A **thin Phase 1 slice is authored and verified**: 3 archetypes and 6 instances in
+> every one of the four domains (widened 2026-08-21). Every coding reference solution passes
+> its own tests in a real sandbox and measures inside its declared complexity band; every
+> quant answer was checked twice, by exact reasoning and by simulation. **Design and
+> behavioral items carry no comparable check** — nothing executes a rubric, so the validator
+> and a careful reading are the whole of it, and each has been graded once against a
+> scripted model only to prove that it grades at all. Bulk authoring toward the ~400/~150
+> target has not started.
 > Related: [RESEARCH](RESEARCH.md) (how items get made) · [CONCEPTS](CONCEPTS.md) (what they tag against) · [GRADING](GRADING.md) (what the grading contracts mean) · [GLOSSARY](GLOSSARY.md) · [PRACTICE_LOG](PRACTICE_LOG.md) (why its ingestion is manual-entry-only, not URL-fetch)
 
 The corpus is the question bank. It is **researched and authored at build time** by

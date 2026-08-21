@@ -453,6 +453,315 @@
       },
       "corpus_version": 1,
       "created_at": "2026-08-20"
+    },
+    {
+      "id": "i.design.0004",
+      "kind": "instance",
+      "domain": "system_design",
+      "modality": "design",
+      "archetype_id": "a.design.0001",
+      "title": "Price alerts for a watchlist service at the opening bell",
+      "statement_md": "A brokerage lets customers put instruments on a watchlist and set a price alert on any of\nthem. When a price crosses a customer's threshold they get a push notification.\n\nThe shape of the data:\n\n| | |\n|---|---|\n| instruments quoted | 9,000 |\n| customers | 6 million |\n| watchlist entries | 140 million, so about 23 per customer |\n| the most-watched instrument | on 4.1 million watchlists |\n| the median instrument | on 900 watchlists |\n\nPrices arrive as a stream of ticks, roughly 30,000 a second through the session. In the\nfirst ninety seconds after the open that rises to about 400,000 a second, and the crossings\ncluster: a single instrument moving through a round number can put several hundred thousand\ncustomers over their threshold within a second or two.\n\nCustomers also open the app. A watchlist view is one screen showing all 23 of their\ninstruments with current prices, and it is read far more often than any alert fires.\n\nAn alert that arrives four minutes late is worthless — the price has moved. A duplicate is\nworse than late.\n\nDesign the alerting path. Cover at least:\n\n- how a tick becomes the set of customers to notify, and how many of those evaluations\n  happen per second at the open;\n- where the fanout for the most-watched instrument happens, and what you do differently for\n  it than for the median one;\n- what the watchlist screen reads, and whether it shares anything with the alert path;\n- what the whole thing does when notification delivery backs up for two minutes.",
+      "concepts": [
+        "pubsub-fanout",
+        "capacity-estimation",
+        "cache-strategies",
+        "sharding-partitioning"
+      ],
+      "primary_concept": "pubsub-fanout",
+      "difficulty": {
+        "band": "hard",
+        "elo": 1690
+      },
+      "expected_minutes": 40,
+      "sources": [
+        {
+          "url": "https://www.techinterview.org/post/3233476400/designing-a-news-feed-where-fanout-falls-apart/",
+          "title": "Designing a news feed, and where fanout falls apart (techinterview.org)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A prep publisher devotes a whole post to the point at which write-time delivery stops working, and describes the signal an interviewer watches for as holding two delivery strategies at once and routing between them by the shape of the audience. It also names the mid-day threshold crossing as the follow-up that separates a memorised answer from an understood one."
+        },
+        {
+          "url": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/fb-news-feed",
+          "title": "Design Facebook's News Feed (Hello Interview)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A coaching site's worked breakdown states outright that the hard part is skew in both directions — accounts with enormous audiences and readers subscribed to enormous numbers of accounts — and its answer carries a precomputed table with an opt-out flag for the largest producers. Vendor material for a paid product, written by people who say they have run these loops."
+        },
+        {
+          "url": "https://github.com/donnemartin/system-design-primer/blob/master/solutions/system_design/twitter/README.md",
+          "title": "Design the Twitter timeline and search (system-design-primer)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A long-standing open-source prep repository carries a worked timeline solution that marks the delivery service as the bottleneck for accounts with millions of subscribers, and quotes a read-to-write ratio near sixteen to one. Independent of the paid prep vendors, and old enough to predate most of them."
+        }
+      ],
+      "hints": [
+        "Start with the number the design has to survive. At the open, how many customer-threshold comparisons does one second of ticks imply if you do the obvious thing?",
+        "The most-watched instrument and the median one are four thousand times apart. Is one mechanism going to be right for both?",
+        "A threshold is a number per customer per instrument. What structure lets one tick find the customers who just crossed without touching the ones who did not?",
+        "The watchlist screen is 23 reads of the same prices everyone else is reading. What does that let you cache that the alert path cannot?"
+      ],
+      "follow_ups": [
+        "A customer sets an alert on the most-watched instrument at a price it is currently sitting on. What happens, and how do you avoid notifying them once a second?",
+        "The product wants alerts on a two-instrument condition — one above, one below. What breaks?",
+        "How would you tell, in production, that a customer's alert did not fire when it should have?"
+      ],
+      "grading": {
+        "type": "rubric",
+        "criteria": [
+          {
+            "id": "crossing_arithmetic",
+            "description": "Turns the tick rate and the watchlist skew into the number of threshold evaluations per second, and names the worst single instrument rather than reasoning about an average one.",
+            "weight": 0.25,
+            "concept": "capacity-estimation",
+            "levels": {
+              "0": "No arithmetic at all, or a single average-case number that never mentions the 4.1-million-watchlist instrument.",
+              "2": "Computes a rate from ticks times average watchers, but treats the most-watched instrument as a larger version of the same case rather than a different one.",
+              "4": "Derives the evaluation rate at the open, computes what one tick on the most-watched instrument costs on its own, and uses the gap between that and the median to justify the design that follows."
+            }
+          },
+          {
+            "id": "fanout_placement",
+            "description": "Decides where the fan-out from one tick to many customers happens, and treats the head of the distribution differently from the tail rather than picking one mechanism for both.",
+            "weight": 0.3,
+            "concept": "pubsub-fanout",
+            "levels": {
+              "0": "One mechanism for every instrument, with no acknowledgement that the top one is thousands of times wider than the median.",
+              "2": "Splits head from tail, but the boundary is asserted with no reasoning about where it should sit, or the head's path is described without saying what makes it cheaper.",
+              "4": "Head and tail handled by different mechanisms, with the boundary derived from the numbers given, the cost of each path stated, and the reason the head's mechanism would be wrong for the tail made explicit."
+            }
+          },
+          {
+            "id": "threshold_index",
+            "description": "Describes a structure that finds the customers a tick just moved past without scanning the ones it did not, and says how that structure is partitioned and kept current.",
+            "weight": 0.25,
+            "concept": "sharding-partitioning",
+            "levels": {
+              "0": "Scans every watcher of the instrument on every tick, or leaves the lookup unspecified.",
+              "2": "Names an ordered structure per instrument so only crossings are touched, but says nothing about how it is partitioned or what updating it costs when a customer edits an alert.",
+              "4": "Names the structure, says what it is keyed and ordered by, partitions it in a way that keeps one instrument's traffic from one place, and states the cost of an alert being added or moved."
+            }
+          },
+          {
+            "id": "read_path_and_backpressure",
+            "description": "Says what the watchlist screen reads and whether it shares state with the alert path, and what the system does when notification delivery falls behind.",
+            "weight": 0.2,
+            "concept": "cache-strategies",
+            "levels": {
+              "0": "Never distinguishes the read path from the alert path, or assumes delivery never backs up.",
+              "2": "Caches prices for the screen and notes that delivery could back up, but does not say what is dropped or delayed when it does, given that a late alert is worthless.",
+              "4": "States what the screen reads and how stale it may be, and gives a policy for a delivery backlog that follows from 'four minutes late is worthless' — shedding rather than queueing, and what the customer sees as a result."
+            }
+          }
+        ]
+      },
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
+    },
+    {
+      "id": "i.design.0005",
+      "kind": "instance",
+      "domain": "system_design",
+      "modality": "design",
+      "archetype_id": "a.design.0002",
+      "title": "Handheld pick scans into a warehouse stock count",
+      "statement_md": "Pickers in a warehouse carry handheld scanners. Each time an item is taken from a shelf the\nscanner posts a `pick` event to a service that decrements that item's on-hand count.\n\nWhat the scanners do, and nothing more:\n\n- a scan is retried until the service answers 2xx — over patchy warehouse wifi that regularly\n  means several deliveries of the same scan;\n- each scan carries a `scan_id` generated on the device, stable across retries;\n- a scanner that loses the network buffers locally and posts the backlog when it reconnects,\n  which is routinely a few hundred scans at once and occasionally two hours' worth;\n- about 90 scans a second across the site, several thousand in the minutes after a shift\n  change.\n\nThe on-hand count feeds picking instructions and the replenishment trigger. A count that is\ntoo low sends someone to restock a full shelf; a count that is too high sends a picker to an\nempty one and stalls an order.\n\nDesign the receiving service. Cover at least:\n\n- what must be true before the service answers 2xx, and what it answers when it cannot\n  accept the scan right now;\n- what makes a scan a duplicate, where that is stored, how big that store gets, and when an\n  entry may be dropped;\n- what happens to a two-hour backlog arriving at once from one scanner;\n- how you would find out that the count has drifted from what is physically on the shelf.",
+      "concepts": [
+        "idempotency",
+        "delivery-semantics",
+        "queues-backpressure",
+        "failure-modes"
+      ],
+      "primary_concept": "idempotency",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1620
+      },
+      "expected_minutes": 30,
+      "sources": [
+        {
+          "url": "https://systemdesignschool.io/problems/webhook/solution",
+          "title": "Webhook system design — worked solution (System Design School)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "An interview-prep site publishes a full worked answer for a service that receives third-party callbacks, and puts at-least-once processing in its non-functional requirements rather than in a footnote. Its expected mechanism is a stored event identifier checked before the effect runs, which shows the question is about duplicates and retries, not the happy path."
+        },
+        {
+          "url": "https://bugfree.ai/knowledge-hub/idempotency-ordering-webhook-handlers",
+          "title": "Idempotency and ordering in webhook handlers (bugfree.ai)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A system-design interview guide keeps a standalone entry pairing repeat-safe effects with event sequencing, and frames both as things a candidate is expected to demonstrate. It names no employers and offers no sample prompts, so treat it as a weak attestation whose value is being a second, unrelated publisher covering the same pairing."
+        },
+        {
+          "url": "https://algomaster.io/learn/system-design-interviews/design-notification-service",
+          "title": "Design a notification service (AlgoMaster)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "An interview curriculum marks its asynchronous-delivery problem high priority and builds the expected answer on queues, exponential backoff and a dead-letter path, with the choice between at-least-once and exactly-once presented as something the candidate must resolve aloud. Corroborates the same line of questioning from a different problem statement."
+        }
+      ],
+      "hints": [
+        "The scanner retries until it gets a 2xx. What does that guarantee, and what does it emphatically not guarantee?",
+        "Exactly-once processing is not on offer from a sender that retries. An effect that can run twice and leave the same count is — what would you key that on?",
+        "Check-then-decrement is a race the moment two deliveries of the same scan arrive together. What makes it one step instead of two?",
+        "The backlog is the interesting case: it is a burst from one device, all of it old. Does it need to be fast, and what should the service answer if it cannot take it now?"
+      ],
+      "follow_ups": [
+        "A picker scans an item, then puts it back and scans a `return`. Does that change how you key duplicates?",
+        "Two scanners pick the last unit of the same item within a second of each other. What does the count do, and what should the second picker see?",
+        "The device clock is wrong by three hours. Does anything in your design depend on it?"
+      ],
+      "grading": {
+        "type": "rubric",
+        "criteria": [
+          {
+            "id": "dedup_key_and_commit",
+            "description": "Names the exact field duplicates are collapsed on and puts the duplicate record and the count change in one atomic commit, rather than checking and then writing.",
+            "weight": 0.35,
+            "concept": "idempotency",
+            "levels": {
+              "0": "Keys on something that changes between attempts — arrival time, a hash including headers — or does not deduplicate at all.",
+              "2": "Keys on the scan identifier, but the check and the decrement are separate steps and nothing is said about two deliveries arriving at once.",
+              "4": "Keys on the scan identifier, commits the duplicate record and the decrement together or lets a unique constraint reject the second writer, and says what the loser of that race returns to the device."
+            }
+          },
+          {
+            "id": "ack_contract",
+            "description": "States what must be durable before the service answers 2xx, and what it answers when it cannot accept the scan, given that the device will retry either way.",
+            "weight": 0.25,
+            "concept": "delivery-semantics",
+            "levels": {
+              "0": "Answers 2xx before anything is durable without saying what a crash loses, or never says what a refusal looks like.",
+              "2": "Names what is durable before the acknowledgement, but treats a lost acknowledgement as impossible or gives no retryable failure response.",
+              "4": "States exactly what is durable before 2xx, returns a status that keeps the device retrying under pressure rather than one that makes it give up, and says what a lost acknowledgement costs — nothing, because the redelivery is a duplicate."
+            }
+          },
+          {
+            "id": "backlog_burst",
+            "description": "Handles a reconnecting scanner dumping hours of old scans at once, without letting it displace live traffic or lose the backlog.",
+            "weight": 0.2,
+            "concept": "queues-backpressure",
+            "levels": {
+              "0": "Treats the backlog as ordinary traffic, or drops it, or assumes the service simply absorbs it.",
+              "2": "Notices the burst and buffers it, but says nothing about what happens when the buffer fills or about the backlog competing with live scans.",
+              "4": "Separates or paces the backlog so a live scan is not stuck behind two hours of old ones, bounds what is accepted at once, and says why the old scans can afford to be slow while the live ones cannot."
+            }
+          },
+          {
+            "id": "drift_detection",
+            "description": "Names how a divergence between the counted stock and the physical shelf would be discovered, rather than assuming the ledger is the truth.",
+            "weight": 0.2,
+            "concept": "failure-modes",
+            "levels": {
+              "0": "Treats the stored count as correct by construction, or offers no way to find out it is wrong.",
+              "2": "Mentions cycle counts or an audit but gives no signal, cadence or threshold, and no account of what is done with a discrepancy.",
+              "4": "Gives a concrete detection route — a periodic physical count on the fastest-moving items, or an alert on a pick against a zero count — with a cadence tied to how quickly a wrong count causes a stalled order, and says what correcting it does to the event history."
+            }
+          }
+        ]
+      },
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
+    },
+    {
+      "id": "i.design.0006",
+      "kind": "instance",
+      "domain": "system_design",
+      "modality": "design",
+      "archetype_id": "a.design.0003",
+      "title": "Throttling failed sign-ins for a consumer app",
+      "statement_md": "A consumer app has 30 million accounts and takes sign-ins at 12 points of presence. Steady\ntraffic is about 3,000 sign-in attempts a second, and roughly 6% of them fail.\n\nYou need to throttle failed attempts so that guessing a password is not practical, without\nlocking real people out of their own accounts.\n\nWhat is known about the traffic:\n\n- credential-stuffing runs arrive in bursts: one campaign was 40,000 attempts a minute\n  against 12,000 distinct accounts, from 9,000 distinct addresses, spread across all 12\n  points of presence;\n- a real person who has forgotten their password typically gets it wrong three or four times\n  in a couple of minutes, from one address;\n- a shared office or a mobile carrier puts thousands of unrelated people behind one address.\n\nThe sign-in path has an 80 ms budget at the 99th percentile, and the throttle check sits\ninside it.\n\nDesign the throttle. Cover at least:\n\n- what the limit is counted against, and why that choice does not lock out a carrier's whole\n  customer base;\n- where the accept-or-refuse decision is made, and how many network round trips it costs;\n- how the counters are shared across the 12 points of presence, or deliberately not, and how\n  far a determined attacker gets as a result;\n- what each point of presence does during a 90-second outage of whatever holds the counters.",
+      "concepts": [
+        "rate-limiting",
+        "latency-budget",
+        "consistency-models",
+        "failure-modes"
+      ],
+      "primary_concept": "rate-limiting",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1500
+      },
+      "expected_minutes": 25,
+      "sources": [
+        {
+          "url": "https://www.systemdesignhandbook.com/guides/design-a-rate-limiter/",
+          "title": "Design a rate limiter — a complete guide (System Design Handbook)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A guide devoted to this single problem calls it a favourite interview question and gives the reason: it forces speed, accuracy, scale and fault tolerance to be traded against one another inside one answer. It also treats the choice of what to do when the limiter's own store is unreachable as the central failure question, which is the part this item grades hardest."
+        },
+        {
+          "url": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/distributed-rate-limiter",
+          "title": "Design a distributed rate limiter (Hello Interview)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A coaching site's worked breakdown pins concrete non-functional targets onto the problem — a check costing under ten milliseconds, eventual consistency tolerated across nodes, a million requests a second — and grades expected depth by candidate seniority. Vendor material for a paid product, so an interested but unusually specific attestation."
+        },
+        {
+          "url": "https://www.tryexponent.com/blog/rate-limiter-system-design",
+          "title": "System design interview: design a rate limiter (Exponent)",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A recorded mock interview led by a serving engineering manager works this problem end to end, arguing about where the check belongs and whether one shared counter store spanning data centres is affordable. A mock is closer to the real event than a question list, though the page names no employer that asks it."
+        }
+      ],
+      "hints": [
+        "What is the thing you are actually protecting — an account, or the service? The answer decides what the counter is keyed on.",
+        "Counting per address punishes a carrier's whole customer base; counting per account lets an attacker spread across accounts freely. Does it have to be one or the other?",
+        "The 80 ms budget includes this check. Where does the counter have to live for that to hold at twelve locations?",
+        "Now the counter store is gone for 90 seconds. This is a sign-in path — is allowing everything through or refusing everything the safer failure here, and is that the same answer you would give for a metered API?"
+      ],
+      "follow_ups": [
+        "The attacker switches to one attempt per account per hour across two million accounts. Does your throttle see it?",
+        "A real customer is locked out at the airport on the morning of a flight. What does your design give them?",
+        "How would you tell a credential-stuffing campaign from a broken client retrying in a loop?"
+      ],
+      "grading": {
+        "type": "rubric",
+        "criteria": [
+          {
+            "id": "what_the_limit_counts",
+            "description": "Chooses what the counter is keyed on and defends it against both failure modes named in the brief — a shared address punishing innocents, and an attacker spreading thinly across accounts.",
+            "weight": 0.3,
+            "concept": "rate-limiting",
+            "levels": {
+              "0": "One limit per address, or one per account, with no acknowledgement of what that choice gives away.",
+              "2": "Uses more than one key, but does not say what each is for, or picks per-account only and never addresses an attacker who spreads across many accounts.",
+              "4": "Names each key and the attack or accident it exists for — per account against guessing one password, per address against a single source, and something broader against a distributed campaign — with thresholds tied to the traffic given rather than round numbers."
+            }
+          },
+          {
+            "id": "decision_locality",
+            "description": "Places the accept-or-refuse decision where the 80 ms budget can hold across twelve locations, and counts what it costs rather than treating a counter lookup as free.",
+            "weight": 0.25,
+            "concept": "latency-budget",
+            "levels": {
+              "0": "Sends every attempt to one central store with no mention of the distance to it, or offers no latency reasoning at all.",
+              "2": "Keeps state near the request because a cross-region hop is slow, but never compares the resulting cost against the 80 ms figure.",
+              "4": "Says where the decision is made, counts the hops on the hot path, argues the total against the budget, and says what happens on a local miss or a cold process."
+            }
+          },
+          {
+            "id": "counter_sharing_error",
+            "description": "Explains how counters are reconciled across the twelve points of presence and quantifies how many extra attempts an attacker gets, instead of asserting the limit holds exactly.",
+            "weight": 0.2,
+            "concept": "consistency-models",
+            "levels": {
+              "0": "Claims exact fleet-wide enforcement with no mechanism, or ignores that one campaign hits all twelve locations at once.",
+              "2": "Proposes local counters with periodic synchronisation but cannot say how many attempts slip through before a sync catches up.",
+              "4": "Names the scheme, derives the worst-case overshoot in attempts from the sync interval and the number of locations, and argues whether that number is acceptable for guessing a password specifically."
+            }
+          },
+          {
+            "id": "store_outage_policy",
+            "description": "Picks an allow-through or refuse-all policy for the 90-second counter outage and ties it to this product's consequence, which is not the same consequence a metered API has.",
+            "weight": 0.25,
+            "concept": "failure-modes",
+            "levels": {
+              "0": "Never considers the store being unreachable, or waves it away as highly available.",
+              "2": "Names the choice between allowing and refusing but picks one without connecting it to what an unthrottled sign-in path costs.",
+              "4": "Picks a policy justified by the actual consequence — ninety unthrottled seconds is a free guessing window, which is a different trade from an unmetered API's — falls back to a conservative local cap for the duration, and says how counters settle up afterwards."
+            }
+          }
+        ]
+      },
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
     }
   ]
 }

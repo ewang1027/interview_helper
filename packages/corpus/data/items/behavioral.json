@@ -438,6 +438,315 @@
       ],
       "corpus_version": 1,
       "created_at": "2026-08-20"
+    },
+    {
+      "id": "i.behav.0004",
+      "kind": "instance",
+      "domain": "behavioral",
+      "modality": "behavioral",
+      "archetype_id": "a.behav.0001",
+      "title": "Disagreeing with someone who could simply overrule you",
+      "statement_md": "Tell me about a time you thought a technical decision was wrong and the person making it\noutranked you — a manager, a staff engineer, an architect — so that you had no way to block\nit and every way to be ignored.\n\nTake me through it. What was decided, and what did you think would happen instead? What did\nyou actually do about it, in order, and what did you decide not to do? Where did it land,\nand what did you do once it had landed?\n\nI am interested in the mechanics — what you said, what you wrote down, who else you brought\nin, what evidence you produced — rather than in whether you turned out to be right.",
+      "concepts": [
+        "conflict-resolution",
+        "handling-pushback",
+        "listening-clarifying",
+        "technical-decision-defense"
+      ],
+      "primary_concept": "conflict-resolution",
+      "difficulty": {
+        "band": "easy",
+        "elo": 1400
+      },
+      "expected_minutes": 8,
+      "sources": [
+        {
+          "url": "https://www.techinterviewhandbook.org/behavioral-interview-questions/",
+          "title": "The 30 most common Software Engineer behavioral interview questions",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A compiled list of the questions most often reported across large technology employers puts three separate variants of this prompt in its top thirty — friction with a co-worker, friction that required persuading somebody, and a clash with one's own manager — and then repeats company-specific versions of it under several individual employers."
+        },
+        {
+          "url": "https://github.com/ashishps1/awesome-behavioral-interviews",
+          "title": "awesome-behavioral-interviews",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A widely forked preparation repository that gives this pattern four distinct entries — clashing with a manager, clashing with a teammate, clashing with a colleague, and defusing friction inside a team — each with a worked answer, which is a strong signal that candidates meet it repeatedly rather than once."
+        },
+        {
+          "url": "https://www.cookd.ai/blog/jane-street-interview-questions-firm",
+          "title": "Jane Street Interview Questions: How to Ace Them",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A firm-specific guide for a quantitative trading loop lists, among a handful of non-technical prompts, one asking for a collaboration in which a technical dispute arose and had to be resolved — attesting the pattern on the trading side, not only in large-tech loops."
+        }
+      ],
+      "hints": [
+        "One occasion, not a policy. Pick the one you remember in the most detail, even if it is not the one you came out of best.",
+        "Before the disagreement: what did they know that you did not? Decisions that look wrong from below are often right from a seat with more information.",
+        "What was the smallest thing you could have produced that would have changed the decision if you were right — and did you produce it?",
+        "Finish with afterwards. What did you do on the morning after the decision went the way you did not want?"
+      ],
+      "follow_ups": [
+        "Suppose you had been wrong. At what point in the story would you have found out, and would you have?",
+        "The same disagreement, but the decision is irreversible and ships tomorrow. What changes?",
+        "Has this made you decide differently when you are the one being disagreed with?"
+      ],
+      "grading": {
+        "type": "rubric",
+        "criteria": [
+          {
+            "id": "their_reasoning_reconstructed",
+            "description": "States what the decider was optimising for in terms they would recognise — a constraint, a deadline, a risk they carried — rather than as authority, inertia or not listening.",
+            "weight": 0.25,
+            "concept": "listening-clarifying",
+            "levels": {
+              "0": "The decision is never given a reason beyond the decider's position or disposition ('he had already decided', 'that is just how architecture worked there').",
+              "2": "A reason is attributed, but a thin one, and there is no sign the candidate checked whether it was really the reason.",
+              "4": "The decider's case is put the way they would have put it, including what they were accountable for that the candidate was not, and the candidate says how they found that out."
+            }
+          },
+          {
+            "id": "what_they_actually_did",
+            "description": "Describes the specific actions taken to change the decision, in order, including the ones deliberately not taken — going around the person, escalating, letting it go.",
+            "weight": 0.3,
+            "concept": "conflict-resolution",
+            "levels": {
+              "0": "No actions, or a single conversation described in the abstract; or the story is about being right rather than about doing anything.",
+              "2": "Some actions described, but as a general approach rather than a sequence, and nothing is said about options considered and rejected.",
+              "4": "A concrete sequence — what was raised, where, with whom, and what was produced — with at least one route explicitly considered and not taken, and a reason for not taking it."
+            }
+          },
+          {
+            "id": "evidence_offered",
+            "description": "Brings something checkable to the disagreement — a measurement, a prototype, a written comparison, a prior incident — rather than an argument from experience or preference.",
+            "weight": 0.25,
+            "concept": "technical-decision-defense",
+            "levels": {
+              "0": "The case rests on assertion, seniority of opinion or general principle; nothing was measured, built or written.",
+              "2": "Something was produced but it is described vaguely ('I showed them some benchmarks') with no numbers, scope or result.",
+              "4": "Names what was produced, what it showed with figures, how long it took to produce, and whether it moved the decision — including if it did not."
+            }
+          },
+          {
+            "id": "conduct_after_the_decision",
+            "description": "Says what they did once the decision was fixed against them, and reports the eventual outcome even where it shows they were wrong.",
+            "weight": 0.2,
+            "concept": "handling-pushback",
+            "levels": {
+              "0": "The story stops at the decision, or describes continuing to relitigate it, or quiet non-compliance.",
+              "2": "Says they went along with it, but reports no consequences and no later check on how it turned out.",
+              "4": "Describes committing to the decision concretely — what they built, what they told others, what they wrote down so it could be revisited — and reports the eventual outcome, volunteered rather than extracted."
+            }
+          }
+        ]
+      },
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
+    },
+    {
+      "id": "i.behav.0005",
+      "kind": "instance",
+      "domain": "behavioral",
+      "modality": "behavioral",
+      "archetype_id": "a.behav.0002",
+      "title": "A mistake that took months to become visible",
+      "statement_md": "Tell me about a decision of yours that turned out badly, where the damage accumulated slowly\nenough that there was no single moment it went wrong — a design that aged badly, a shortcut\nthat compounded, a process you introduced that quietly made something worse.\n\nWalk me through it. What did you decide and what were you weighing at the time? What was the\nfirst sign, and how long after the decision did it come? How did you establish that it was\nyour decision rather than something else causing it? What did you do about it, and what is\ndifferent now because of it?\n\nI want the specifics — dates or durations, what the cost actually was, who else was affected\n— rather than a general lesson.",
+      "concepts": [
+        "failure-and-learning",
+        "contribution-attribution",
+        "ownership-initiative",
+        "situation-framing"
+      ],
+      "primary_concept": "failure-and-learning",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1620
+      },
+      "expected_minutes": 10,
+      "sources": [
+        {
+          "url": "https://spacecomplexity.ai/blog/optiver-behavioral-interview-questions",
+          "title": "Optiver Behavioral Interview Questions: Five Themes, Every Answer",
+          "retrieved_at": "2026-08-20",
+          "evidence": "A firm-specific breakdown that makes being wrong its first recurring theme and lists several phrasings the round uses. It argues the scoring is on the debrief rather than the delivery, and flags the over-polished failure answer as a negative signal, which is precisely the discrimination this archetype needs."
+        },
+        {
+          "url": "https://www.efinancialcareers.com/news/the-questions-most-candidates-neglect-in-quant-trading-job-interviews",
+          "title": "The questions most candidates neglect in quant trading job interviews",
+          "retrieved_at": "2026-08-20",
+          "evidence": "Trade-press piece reporting that candidates over-prepare the maths and under-prepare this half of the loop, with a recruiter recommending a bank of six to eight rehearsed episodes. It maps themes onto named trading firms, several of which centre on decisions taken under uncertainty and how the candidate handled the aftermath."
+        },
+        {
+          "url": "https://www.techinterviewhandbook.org/behavioral-interview-questions/",
+          "title": "The 30 most common Software Engineer behavioral interview questions",
+          "retrieved_at": "2026-08-20",
+          "evidence": "The same question appears under multiple large technology employers in this compilation — one asks outright for a recent failure and the lesson drawn, another for the worst misstep of a career, another for something the candidate would now do differently — showing the pattern is not confined to trading loops."
+        }
+      ],
+      "hints": [
+        "A slow failure, not an outage. If your example has a single dramatic moment, it is probably the wrong example for this question.",
+        "What were you weighing at the time? A decision that looks obviously wrong now was usually reasonable against what was known then — say what was known.",
+        "How did you rule out the other explanations? A slow problem always has several plausible causes, and picking your own decision out of them is the hard part.",
+        "What is actually different now — in the system, or in how a decision like that gets made? 'We were more careful afterwards' is not a change."
+      ],
+      "follow_ups": [
+        "How much earlier could it have been caught, and what would have had to exist for that?",
+        "Is the same decision still the wrong one with what you know now, or was it right and just unlucky?",
+        "Who else could have noticed before you did, and why did they not?"
+      ],
+      "grading": {
+        "type": "rubric",
+        "criteria": [
+          {
+            "id": "decision_and_its_reasoning",
+            "description": "Says what was decided and what was being traded off at the time, so the decision is judged against what was knowable then rather than against the outcome.",
+            "weight": 0.25,
+            "concept": "situation-framing",
+            "levels": {
+              "0": "The decision is described only as a mistake, with no account of why it seemed right, or the framing is so vague the decision cannot be located.",
+              "2": "The decision is stated and some context given, but the alternatives are not, so there is no way to tell whether it was a reasonable call.",
+              "4": "Names the decision, the alternatives, and what was being optimised for, with enough of the situation that a listener could say whether they would have chosen the same."
+            }
+          },
+          {
+            "id": "the_delay_and_the_first_sign",
+            "description": "Gives the shape of the delay — how long between the decision and the first symptom, and what that symptom was — rather than collapsing it into 'eventually we realised'.",
+            "weight": 0.25,
+            "concept": "failure-and-learning",
+            "levels": {
+              "0": "No sense of time at all; the failure and the discovery are described as one event.",
+              "2": "A rough duration is given, but the first sign is generic ('things got slower', 'people complained') with nothing that would have been actionable.",
+              "4": "Names the interval with a figure, describes the first concrete signal and who saw it, and says why it was not read correctly at the time."
+            }
+          },
+          {
+            "id": "attribution_to_own_decision",
+            "description": "Establishes that this decision was the cause rather than assuming it, and separates the candidate's own contribution from everything else that changed over the same months.",
+            "weight": 0.3,
+            "concept": "contribution-attribution",
+            "levels": {
+              "0": "Blames circumstances or other people, or claims the failure with no argument that it was theirs, which is the same absence of evidence in the other direction.",
+              "2": "Takes responsibility clearly but does not say how the cause was established; other plausible explanations over that period are not mentioned.",
+              "4": "Names the competing explanations, says what distinguished them — a measurement, a reverted change, a comparable system that did not have the problem — and is precise about which part was their own decision and which was not."
+            }
+          },
+          {
+            "id": "what_changed_afterwards",
+            "description": "Reports a durable change that came out of it, at a level that would catch a different instance of the same mistake.",
+            "weight": 0.2,
+            "concept": "ownership-initiative",
+            "levels": {
+              "0": "The lesson is a disposition ('I am more careful about tech debt now') with nothing that would catch it again.",
+              "2": "A concrete fix to this instance is described, but nothing that would surface the next one earlier.",
+              "4": "Describes both the repair and a change that outlives it — a check, a review step, a measurement now watched — and is honest about whether it has actually caught anything since."
+            }
+          }
+        ]
+      },
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
+    },
+    {
+      "id": "i.behav.0006",
+      "kind": "instance",
+      "domain": "behavioral",
+      "modality": "behavioral",
+      "archetype_id": "a.behav.0003",
+      "title": "Requirements that moved while you were building",
+      "statement_md": "Tell me about something you were part-way through building when what it was supposed to do\nchanged — not a small adjustment, but enough that some of the work already done no longer\nmade sense.\n\nTake me through it. What were you building and how far in were you? What changed, and how\ndid you find out? What did you do with the work already done, and how did you decide? What\ndid you end up shipping, and how did it compare with either version of the plan?\n\nConcrete details please — how long you had been at it, what was thrown away, what the change\ncost — rather than a description of how you generally cope with change.",
+      "concepts": [
+        "ambiguity-navigation",
+        "ownership-initiative",
+        "prioritization-tradeoffs",
+        "quantified-impact"
+      ],
+      "primary_concept": "ambiguity-navigation",
+      "difficulty": {
+        "band": "easy",
+        "elo": 1430
+      },
+      "expected_minutes": 8,
+      "sources": [
+        {
+          "url": "https://interviewing.io/blog/how-software-engineering-behavioral-interviews-are-evaluated-meta",
+          "title": "How software engineering behavioral interviews are evaluated at Meta",
+          "retrieved_at": "2026-08-20",
+          "evidence": "Written by a former engineer and manager at a large employer who says he ran over a hundred and fifty of these interviews. It enumerates the graded dimensions, one of which is operating without clear direction, and sets out how the expected story scales from a couple of stakeholders at junior level to several teams at staff level."
+        },
+        {
+          "url": "https://github.com/ashishps1/awesome-behavioral-interviews",
+          "title": "awesome-behavioral-interviews",
+          "retrieved_at": "2026-08-20",
+          "evidence": "The repository carries this pattern as several separate prompts: spotting a problem and fixing it instead of waiting for an assignment, exceeding what a project asked for, and an explicit item on how a candidate would resolve ambiguity when handed an under-specified design task."
+        },
+        {
+          "url": "https://www.techinterviewhandbook.org/behavioral-interview-questions/",
+          "title": "The 30 most common Software Engineer behavioral interview questions",
+          "retrieved_at": "2026-08-20",
+          "evidence": "Among the company-specific sets it lists, one large employer asks whether the candidate has shipped work without their manager's sign-off and another asks what they did when the person holding the information they needed went silent — both are this pattern from the initiative side."
+        }
+      ],
+      "hints": [
+        "One project. If you find yourself saying 'usually what happens is', pick a specific one instead.",
+        "How did you find out? Being told, noticing, or discovering it in a review are three different stories about how the work was set up.",
+        "The interesting decision is what happened to the work already done. What did you keep, and how did you decide what to keep?",
+        "Was there anything you could have done earlier that would have made the change cheaper when it came?"
+      ],
+      "follow_ups": [
+        "Was the change avoidable, or was it new information that genuinely could not have arrived sooner?",
+        "If the same change arrived today on your current work, what would be different?",
+        "What did you tell the people depending on the original date?"
+      ],
+      "grading": {
+        "type": "rubric",
+        "criteria": [
+          {
+            "id": "what_changed_and_how_they_learned",
+            "description": "Describes the change concretely and says how it reached them, since being told, noticing, and finding out in a review are three different accounts of how the work was set up.",
+            "weight": 0.25,
+            "concept": "ambiguity-navigation",
+            "levels": {
+              "0": "The change is described only as 'requirements changed' or 'the business shifted', with no content and no route by which it arrived.",
+              "2": "The change is specific but how it was learned is not, or it arrived by accident and that is not remarked on.",
+              "4": "States what changed in enough detail to see why the existing work no longer fitted, says how and when they learned it, and is candid about whether that was late and why."
+            }
+          },
+          {
+            "id": "what_was_kept_and_why",
+            "description": "Says what happened to the work already done and on what basis — what was kept, what was thrown away, and what was kept only because throwing it away was expensive.",
+            "weight": 0.3,
+            "concept": "prioritization-tradeoffs",
+            "levels": {
+              "0": "No account of the existing work, or an implication that everything simply carried over or was all discarded.",
+              "2": "Says roughly what was kept and dropped, but the basis is not given, so the decision reads as whatever was easiest.",
+              "4": "Separates the work by whether it still served the new goal, names at least one thing kept for a bad reason or discarded despite the sunk effort, and gives the criterion used."
+            }
+          },
+          {
+            "id": "acting_without_a_settled_spec",
+            "description": "Describes what they did to make progress possible while the target was still moving, rather than waiting for the new requirements to be fixed.",
+            "weight": 0.25,
+            "concept": "ownership-initiative",
+            "levels": {
+              "0": "Work stopped until someone else resolved the ambiguity, and that is presented as the only option.",
+              "2": "Some interim action is described, but it is chasing a decision rather than reducing what the decision could break.",
+              "4": "Names something they did that made the remaining uncertainty cheaper — a written statement of assumptions, a seam put in where the answer was unknown, a smaller thing shipped first to find out — and says whether it paid off."
+            }
+          },
+          {
+            "id": "cost_and_outcome_in_figures",
+            "description": "Puts numbers on it — how far in, what was lost, what the final thing did — rather than leaving the scale of the change to be imagined.",
+            "weight": 0.2,
+            "concept": "quantified-impact",
+            "levels": {
+              "0": "Entirely qualitative; the same story would fit a two-day change or a two-quarter one.",
+              "2": "Some figures given, but not for the part that matters — a duration without a scope, or a ship date without what was shipped.",
+              "4": "Gives how long the original work had run, what of it was lost, what the change cost in time, and what the delivered thing actually did, specific enough to be checkable by someone who was there."
+            }
+          }
+        ]
+      },
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
     }
   ]
 }

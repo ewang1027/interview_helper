@@ -20,7 +20,7 @@ detail behind it.
 | Phase | State | What exists | What it still owes |
 |---|---|---|---|
 | **0** Foundations | **complete** | workspace, 159-concept taxonomy, corpus schema + validator, CI | — |
-| **1** Corpus v1 | **partial** — thin slice | 30 items — 3 archetypes in each of four domains, with 6 coding and 6 quant instances and 3 in each other domain, all verified | design and behavioral second instances, bulk authoring toward ~400/~150, and archetypes for concepts nothing measures as a primary |
+| **1** Corpus v1 | **partial** — thin slice | 36 items — 3 archetypes **and 6 instances** in every one of the four domains, so the planner can choose between items in all four modes | bulk authoring toward ~400/~150, and archetypes for concepts nothing measures as a primary |
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | a full session against a live provider — gated on Bedrock access, not on code |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within five sessions | weights are placeholders until real sessions calibrate them |
@@ -2975,3 +2975,63 @@ Design and behavioral, three instances each, which brings all four domains to tw
 archetype. Then the expensive half — new **archetypes**, which need research rather than
 authoring against a pattern already attested, and which are what the prerequisite gate is
 waiting for.
+
+---
+
+## Phase 1 (design and behavioral) — every domain has a choice now · 2026-08-21
+
+Six more instances, three in each of the two rubric-graded domains. **Every domain now
+carries 3 archetypes and 6 instances**, so the planner can choose between items rather than
+only between concepts in all four modes.
+
+```
+corpus validate    159 concepts · 36 items (12 archetypes, 24 instances) · 0 errors, 0 warnings
+make check 249 · make test-db 139 · make test-e2e 1 · verify-solutions 6/6
+```
+
+| New item | Archetype | Rating | The angle it takes that the sibling does not |
+|---|---|---|---|
+| `i.design.0004` | fan-out | hard 1690 | a 4,500× skew between the widest and the median audience, so head and tail cannot share a mechanism |
+| `i.design.0005` | idempotency | medium 1620 | a device that buffers offline and dumps two hours of old events on reconnect |
+| `i.design.0006` | rate limiting | medium 1500 | failed sign-ins — where the outage answer **flips**, and refusing is safer than allowing |
+| `i.behav.0004` | conflict | easy 1400 | disagreeing with someone who could simply overrule you |
+| `i.behav.0005` | failure | medium 1620 | a mistake with no single moment, where attributing the cause is the hard part |
+| `i.behav.0006` | ambiguity | easy 1430 | requirements that moved mid-build, and what happened to the work already done |
+
+`i.design.0006` is deliberately the mirror of `i.design.0003`. Both enforce a fleet-wide
+quota inside a latency budget, and the archetype says outright that throttling failed logins
+is "the variant where the availability-versus-protection answer flips": ninety unthrottled
+seconds on a metered API is lost revenue, and on a sign-in path it is a free guessing window.
+The two items' `store_outage_policy` anchors reward opposite answers, which is the pair
+doing work no single item could.
+
+### What "verified" does and does not mean here
+
+Worth stating plainly, because the word has been carrying more weight in earlier entries
+than it can carry in this one. A coding item is verified by **running** it: the reference
+passes its own tests in a sandbox and the probe measures its growth. A quant answer is
+verified by arithmetic and by simulation. **Nothing executes a rubric.** For these six the
+whole check is the validator, a careful reading, and one scripted grading each — which
+proves the item *grades*, not that its anchors discriminate.
+
+That is not a gap to be closed with more effort at authoring time; it is what
+docs/GRADING.md's calibration harness is for, and that is still blocked on having real
+transcripts. The status header in docs/CORPUS.md now says so rather than letting "authored
+and verified" cover both cases.
+
+### The validator warning earned its keep
+
+Every one of the six was written with `make corpus-validate` in the loop, and the check
+added this morning — no rubric criterion naming the item's primary concept — is the reason
+each of them has one. Authoring `i.design.0005` I reached first for four criteria about
+delivery, retries, backpressure and reconciliation, none of which is `idempotency`, which is
+what the item is *for*. The same shape as `i.design.0003`'s original gap, caught at authoring
+time instead of a month later by a rating that never moved.
+
+### Next
+
+The expensive half. Every instance so far has been authored against an archetype already on
+disk, which is why none of this needed research: the pattern was already attested. New
+**archetypes** need sources — two independent ones each, read and then closed — and they are
+what the prerequisite gate is waiting for, since it substitutes only toward a concept some
+item carries as its primary and there are still twelve of those across 159 concepts.
