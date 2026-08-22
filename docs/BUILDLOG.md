@@ -3557,3 +3557,151 @@ routes. The complexity probe gives the *slowest* submissions a free pass, so a c
 solution outscores a quadratic one. The corpus validator accepts two arbitrary sentences
 as two independent sources. And `recompute` rebases item ratings onto a prior the live
 path never used, so a corpus re-rating silently breaks the replay invariant.
+
+---
+
+## Audit wave 3 — the grader that was wrong in both directions · 2026-08-22
+
+Third batch. This one is about the oracle: a grader that scores wrong writes immutable
+`concept_evidence`, and `POST /mastery/recompute` reproduces the mistake faithfully
+forever. Four confirmed mis-scorings, one of which also hung the API worker.
+
+```
+make check 249 · test-db 144 · test-sandbox 28 · test-e2e 1 · verify-solutions 8/8
+```
+
+### A comma destroyed a correct answer, at the highest confidence in the system
+
+`_TERM`'s `\d[\d,]*` swallowed a trailing comma, so `Answer: 39, which must exceed 27`
+extracted the span `39,` — which `ALLOWED_CHARS` then refuses, because a comma is not an
+allowed character. The answer scored **0.0 at confidence 0.9**, writing evidence of a
+weakness against `markov-chain-absorption` that the candidate had just disproved.
+
+The sentence is not adversarial. It is nearly verbatim the one docs/GRADING.md holds up as
+the case the grader handles — that version only works because it happens to put a word
+between the digit and the comma. Decimals escaped (`7.45,` strips fine), so this bit
+exactly the half of the quant corpus whose answers are integers.
+
+### "The naive answer is 27" outranked "So E0 = 39 presses"
+
+`closing_statement` scanned every line in reverse for a declaration marker, so a
+*retrospective mention* three lines above the conclusion won:
+
+```
+Let E0 be the expected presses from an empty run.
+The naive answer is 27, since (1/3)^3 = 1/27.     <- read as the declaration
+But a silver clears the run, so I condition: E0 = 3 + 9 + 27.
+So E0 = 39 presses.                                <- never looked at
+```
+
+Scored 0.0 at 0.9. And that sentence is not a corner case — it is the natural way to write
+the decoy for the item whose entire design is that 27 is the trap. A marker now counts
+only at or below the last line carrying arithmetic. The existing decoy test passed
+throughout, because it phrases the decoy as "the naive **value** is 27".
+
+### A declared wrong answer was rescued by the right one appearing later in the sentence
+
+`expressions` splits on non-operator words and the check accepted **any** of up to twelve
+spans. So:
+
+```
+"Final answer: 0, since with 1 in 9 chance per guest it rounds to 0."
+   candidates: 0, 1, 9   ->  1 matches  ->  score 1.0 at confidence 0.9
+```
+
+The candidate declared `0`. The answer is `1`. It scored full marks and wrote evidence of
+mastery. The same mechanism was a free hedge: `Answer: 30 or 31 or ... or 39` is twelve
+guesses priced as one.
+
+**A declaration is now graded on what was declared** — the first span after the marker,
+nothing else. The undeclared path still considers every span, and that is what confidence
+`0.75` exists to express. Worth being exact about the residual, because it cannot be
+fixed by reading harder: "So I'd pay at most 6 dollars, comfortably under the 7 dollar
+pot" and "There are 8 flavours, so the probability is 63/128" are the same shape with
+opposite right answers. Any rule that fixes one breaks the other. The first is still
+scored correct, at 0.75, and the derivation rubric carries 0.6 of the score regardless.
+
+### Fifteen characters that never returned
+
+docs/SECURITY.md's parser wall claims "every bound is checked against the *text*, before
+the parse that would be expensive", and names `9**9**9` as the case it stops. It does —
+but `_EXPONENT`'s `[^\s()]+` stops at a parenthesis, so parenthesising the tower splits it
+into individually-legal exponents:
+
+```
+(2)**(63)**(63)   ->  _EXPONENT.findall -> ['63', '63']   both under the limit of 64
+                  ->  means 2**(63**63)
+                  ->  parse_expr had not returned after 90 seconds
+```
+
+`MAX_NODES` is checked *after* the parse, so it never ran. This is reachable from any
+quant submission — the span is extracted from an ordinary closing statement — and it hangs
+a worker inside the API process, leaving the item in `grading` forever with a retry
+refused 409. That is precisely the failure docs/GRADING.md's "failure is a failure"
+section was written to stop. An answer form needs at most one exponent; more than one is
+now refused outright, in microseconds.
+
+### A curly apostrophe cost the candidate the criterion
+
+`_normalise` folded whitespace and case but not punctuation. A candidate's text comes from
+a browser textarea, a paste, or a phone — all of which produce U+2019 and U+2014 — and a
+model quoting that text back emits the ASCII equivalents:
+
+```
+verified=True   'We won’t shard the write path'
+verified=False  "We won't shard the write path"
+```
+
+An unverified citation forces `demonstrated` to False, so the criterion scores zero **and
+writes no evidence** — indistinguishable from the candidate never having addressed it.
+The doc already argued that "a model that reflows a quotation has still quoted it"; the
+same argument covers punctuation, and now the code does too.
+
+Also: the 12-character citation floor was real, load-bearing, and **never disclosed to the
+model**. A compliant grader quoting the ten decisive characters of a formula was demoted
+exactly as far as one that fabricated its citation. The system prompt now states it.
+
+### Full SQL, with bound parameters, returned in an API response
+
+`grade_artifact`'s blanket handler formatted `f"{type(exc).__name__}: {exc}"` into
+`gradings.detail`, which `GET /sessions/{id}` and the report return unfiltered. Measured
+body content:
+
+```
+'detail': 'grading crashed: IntegrityError: ... violates foreign key constraint ...
+[SQL: INSERT INTO concept_evidence (id, concept_id, source, item_id, session_id, ...)]
+[parameters: {'id': '01M0K...', 'concept_id': 'not-a-seeded-concept', ...}]'
+```
+
+The same channel would carry a psycopg `OperationalError` (host, port, role) or an
+executor `httpx` error (an internal URL). It records the exception **type** now. The test
+that covered this asserted the message *was* present, so the suite was pinning the leak.
+
+### Three unbounded inputs
+
+- `SubmissionRequest.content` had no cap, while `TurnRequest.content` is capped at 20,000
+  with the comment "an unbounded field is an unbounded bill". The oversight is
+  understandable — a coding submission goes to a sandbox — but design, behavioral and
+  quant submissions are the *prompt* to a model grader, and neither truncates. A 5 MB
+  submission was accepted, stored and graded. Now 100,000.
+- `secondary_concept_ids` on the human-correction path was unbounded and
+  un-deduplicated: sixty duplicates wrote **sixty-one** immutable evidence rows and moved
+  a concept nearly 200 Elo on one logged solve. The model's own schema has capped it at 4
+  all along, and so does the doc.
+- `focus_concepts` accepted a 5,000-entry tuple with a 201.
+
+### And one route that took its scope on trust
+
+`GET /costs/budget?session_id=` passed the parameter straight to `budget_status`, so it
+answered 200 with another principal's spend for an id that `GET /sessions/{id}` 404s.
+docs/API.md says both cost routes are "scoped by the session cookie like everything else
+under `/api/v1`". Impact is nil on a single-user deployment; the inconsistency is the
+defect, and it is the kind that stops being nil quietly.
+
+### Still open
+
+The session state machine's three holes (a submission racing `/end` resurrects an
+abandoned session; `wrapping` is a dead end every route refuses; the SSE stream never
+terminates and pins a pooled connection while it hangs), the complexity probe giving the
+slowest submissions a free pass, the validator's provenance holes, and `recompute`
+rebasing item ratings onto a prior the live path never used.

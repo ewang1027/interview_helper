@@ -34,6 +34,7 @@ from api.grading.quant import (
     check_answer,
     closing_statement,
     equivalent,
+    expressions,
     grade_quant,
     rounds_to,
     safe_parse,
@@ -395,3 +396,63 @@ def test_an_item_with_nothing_to_check_against_fails_rather_than_marking_everyth
     )
     with pytest.raises(ValueError, match="no `exact` or `numeric`"):
         grade_quant(hollow, SUBMISSION)
+
+
+def test_a_comma_straight_after_the_answer_does_not_destroy_it():
+    """`_TERM` swallowed the comma, producing the span `39,` — which `ALLOWED_CHARS` then
+    refuses, because a comma is not an allowed character. A correct answer scored 0.0 at
+    the highest confidence in the system, writing evidence of a weakness the candidate had
+    just disproved. Only half the quant corpus was exposed: a decimal escapes, because
+    `_THOUSANDS` strips a comma followed by exactly three digits."""
+    checked = check_answer(TOKENS, "Answer: 39, which must exceed 27.")
+
+    assert checked.correct and checked.submitted == "39"
+
+
+def test_a_thousands_separator_is_still_part_of_the_number():
+    assert expressions("1,234,567 in total") == ["1,234,567"]
+
+
+def test_a_retrospective_mention_of_the_answer_does_not_outrank_the_conclusion():
+    """A marker *above* the end of the working is not a declaration — it is the sentence
+    every item whose trap is 27 has to write. The derivation below reaches 39 on its last
+    line and used to be scored 0.0 at 0.9 confidence, because `answer is` on line two
+    outranked `So E0 = 39 presses` on line four."""
+    checked = check_answer(
+        TOKENS,
+        "Let E0 be the expected presses from an empty run.\n"
+        "The naive answer is 27, since (1/3)^3 = 1/27.\n"
+        "But a silver clears the run, so I condition: E0 = 3 + 9 + 27.\n"
+        "So E0 = 39 presses.",
+    )
+
+    assert checked.correct and checked.submitted == "39"
+
+
+def test_a_declaration_is_graded_on_what_was_declared_and_nothing_else():
+    """`expressions` splits on non-operator words, so a declared *wrong* number used to be
+    rescued by the right one appearing later in the candidate's own sentence — scoring 1.0
+    at 0.9 confidence. A declaration is a commitment; it is graded as one."""
+    checked = check_answer(TOKENS, "Final answer: 27, though 39 is what the recursion gives.")
+
+    assert not checked.correct
+    assert checked.declared and checked.submitted == "27"
+
+
+def test_a_declaration_cannot_be_twelve_guesses():
+    checked = check_answer(TOKENS, "Answer: 30 or 31 or 32 or 33 or 34 or 35 or 36 or 39")
+
+    assert not checked.correct and checked.submitted == "30"
+
+
+def test_an_exponent_tower_hidden_behind_parentheses_is_refused_not_evaluated():
+    """`_EXPONENT`'s `[^\\s()]+` stops at a paren, so `(2)**(63)**(63)` presented two
+    exponents of 63 — both under the limit — while meaning `2**(63**63)`. `MAX_NODES` is
+    checked after the parse, so it never ran. Measured: fifteen characters, and
+    `parse_expr` had not returned after ninety seconds, inside the API worker."""
+    started = time.monotonic()
+
+    assert safe_parse("(2)**(63)**(63)") is None
+
+    assert time.monotonic() - started < 1.0
+    assert safe_parse("2**10") == 1024  # a single exponent is still an answer form

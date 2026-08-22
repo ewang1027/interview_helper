@@ -12,7 +12,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
-from api import llm
+from api import llm, sessions
 from api.auth import CurrentPrincipal
 from api.db import get_session
 from api.settings import Settings, get_settings
@@ -47,6 +47,12 @@ def get_budget(
     """Remaining session and daily token budget (docs/COST.md's hard limits).
 
     `session_id` is optional: without one this reports the daily budget only, since a
-    per-session remainder needs a session to be about.
+    per-session remainder needs a session to be about. When given, it is resolved through
+    `sessions.get_session` first — docs/API.md says both routes are "scoped by the session
+    cookie like everything else under `/api/v1`", and this one alone took the parameter on
+    trust, answering 200 with another principal's spend for an id that `GET /sessions/{id}`
+    would 404. Nil impact on a single-user deployment; the inconsistency is the defect.
     """
+    if session_id is not None:
+        sessions.get_session(db, session_id, user_id=principal.user_id)
     return llm.budget_status(db, session_id=session_id, settings=settings)

@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -52,6 +53,11 @@ DEFAULT_LEVEL_MAX = 4.0
 # rubric should move an estimate about half as far as a deterministic result.
 RUBRIC_CONFIDENCE = 0.5
 
+# The shortest quote that counts as a citation. Stated in the system prompt too: a rule
+# the model is never told is a rule it cannot follow, and this one lands hardest on quant
+# derivations, where the decisive span is often a short formula or figure.
+MIN_CITATION_CHARS = 12
+
 # Enough for a judgement per criterion with a citation and a sentence of reasoning.
 MAX_TOKENS = 4096
 
@@ -68,6 +74,8 @@ For each criterion, in the order given:
 3. Quote the span you based that on, **verbatim from the answer**, in `citation`. Copy it
    exactly — it is checked against the answer, and a quote that is not there costs the
    candidate the criterion. If you cannot quote it, it is not demonstrated.
+   The quote must be at least 12 characters. If the decisive span is shorter than that,
+   widen it to the surrounding phrase rather than quoting the fragment alone.
 4. Give one sentence of reasoning naming what is present or missing.
 
 Grade what is there, not what a good answer would contain. Fluency is not correctness: a
@@ -181,22 +189,55 @@ def response_schema(criteria: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+# Typographic characters a candidate's text carries and a model reproducing it usually
+# does not. A browser textarea, a paste from a document, and every phone keyboard produce
+# the left column; a model quoting that text back emits the right one.
+_TYPOGRAPHY = str.maketrans(
+    {
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201a": "'",
+        "\u201b": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u201e": '"',
+        "\u2013": "-",
+        "\u2014": "-",
+        "\u2212": "-",
+        "\u2010": "-",
+        "\u2011": "-",
+        "\u2026": "...",
+        "\u00a0": " ",
+    }
+)
+
+
 def _normalise(text: str) -> str:
-    """Whitespace-flattened and lowercased, for comparing a quote to its source.
+    """Whitespace-flattened, case-folded and punctuation-folded, for comparing a quote to
+    its source.
 
     A model that reflows a quotation across line breaks has still quoted it; one that
     invents a sentence has not. This tells those apart without being brittle about
-    formatting."""
-    return re.sub(r"\s+", " ", text).strip().lower()
+    formatting — and the same argument covers punctuation. Measured: a candidate writing
+    "We won't shard the write path" with the apostrophe a textarea actually produces
+    (U+2019) failed verification against the model's ASCII rendering of the same sentence,
+    and an unverified citation forces `demonstrated` to False. The criterion then scores
+    zero *and writes no evidence*, which is indistinguishable from the candidate never
+    having addressed it."""
+    folded = unicodedata.normalize("NFKC", text).translate(_TYPOGRAPHY)
+    return re.sub(r"\s+", " ", folded).strip().lower()
 
 
 def cites_the_answer(citation: str, answer: str) -> bool:
     """Whether the quote actually appears in what the candidate wrote.
 
     Short quotes are rejected outright: a citation of "the" is a substring of everything
-    and evidence of nothing."""
+    and evidence of nothing. The floor is `MIN_CITATION_CHARS`, and the system prompt
+    states it — a model that is never told the rule cannot comply with it, and a compliant
+    model quoting the ten decisive characters of a formula was demoted exactly as far as
+    one that fabricated its citation."""
     quoted = _normalise(citation)
-    return len(quoted) >= 12 and quoted in _normalise(answer)
+    return len(quoted) >= MIN_CITATION_CHARS and quoted in _normalise(answer)
 
 
 def build_prompt(item: Item, answer: str, criteria: list[dict[str, Any]]) -> str:

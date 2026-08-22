@@ -149,6 +149,30 @@ passing, because a symbolic equivalence is a fact. An answer *read out of* a clo
 sentence carries `0.75`: the check is equally deterministic, but which expression it was
 pointed at was inferred, and a mis-read is a wrong verdict about a right answer.
 
+The two tiers now differ in *what gets graded*, not only in how much the result is
+trusted. **A declaration is graded on the number that was declared** — the first span
+after the marker, and nothing else in the sentence. It has to be: `expressions` splits on
+non-operator words, so "Final answer: 0, since with 1 in 9 chance per guest it rounds to
+0" produced the separate candidates `0`, `1` and `9`, and the check accepted whichever one
+matched. A candidate who declared the wrong number scored 1.0 at 0.9 confidence because
+the right one appeared later in their own sentence. It was also a free hedge:
+"Answer: 30 or 31 or … or 39" was twelve guesses priced as one.
+
+**An undeclared conclusion still considers every span on the line**, and that is the case
+`0.75` exists to express. It cannot be made safe by reading harder — "So I'd pay at most 6
+dollars, comfortably under the 7 dollar pot" and "There are 8 flavours, so the probability
+is 63/128" are the same shape with opposite right answers, and any rule that fixes one
+breaks the other. The known residual is the first: an undeclared answer whose sentence
+mentions the true value in a subordinate clause is scored correct. `Answer:` is what
+removes the ambiguity, and the derivation rubric carries 0.6 of the score regardless.
+
+**A marker above the end of the working is not a declaration.** It used to be, and the
+consequence was the worst kind: "The naive answer is 27" on line two outranked
+"So E0 = 39 presses" on line four, so a correct derivation scored 0.0 at the *highest*
+confidence in the system. That sentence is the natural way to write the decoy for every
+item whose trap is 27 — which is what `i.quant.0001` is built around. A marker now counts
+only at or below the last line carrying arithmetic.
+
 **A decimal is accepted at the precision it was written to** — `5.33` for `16/3`, provided
 it carries at least three significant figures, so `5` is not a correct rounding of
 everything. This is how a person reads it, and refusing it would write evidence of a

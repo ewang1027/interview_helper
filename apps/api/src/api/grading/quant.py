@@ -136,7 +136,15 @@ MIN_SIGNIFICANT = 3
 
 _THOUSANDS = re.compile(r"(?<=\d),(?=\d\d\d(?!\d))")
 _EXPONENT = re.compile(r"(?:\*\*|\^)\s*\(?\s*([^\s()]+)")
-_TERM = r"(?:[A-Za-z_]\w*\s*\([^()\n]{0,40}\)|\(\s*[^()\n]{0,40}\s*\)|\d[\d,]*(?:\.\d+)?)"
+# `\d[\d,]*` swallowed a trailing comma, so "Answer: 39, which must exceed 27" extracted
+# the span `39,` — which `ALLOWED_CHARS` then refuses, because a comma is not an allowed
+# character. A correct answer scored 0.0 at the system's *highest* confidence, writing
+# evidence of a weakness the candidate had just disproved. Only thousands separators are
+# part of a number; a comma in any other position ends the term.
+_TERM = (
+    r"(?:[A-Za-z_]\w*\s*\([^()\n]{0,40}\)|\(\s*[^()\n]{0,40}\s*\)"
+    r"|\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
+)
 _OP = r"(?:\*\*|[-+*/^])"
 _EXPR = re.compile(rf"(?<![\w.]){_TERM}(?:\s*{_OP}\s*{_TERM})*")
 _DECIMAL = re.compile(r"^[-+]?(?:\d+\.\d+|\d+|\.\d+)$")
@@ -223,8 +231,19 @@ def closing_statement(answer: str) -> tuple[str, bool]:
     conclusion, which is where a derivation puts it.
     """
     lines = [line.strip() for line in answer.splitlines() if line.strip()]
-    for line in reversed(lines):
-        marked = _MARKER.search(line)
+    # Where the working ends. A marker *above* this is not a declaration of the answer —
+    # it is a retrospective mention inside the derivation, and "the naive answer is 27" is
+    # the natural way to write the sentence every item whose trap is 27 needs to write.
+    # Measured before this bound existed: a derivation reaching the right answer on its
+    # last line scored 0.0 at the highest confidence in the system, because `answer is` on
+    # line two outranked `So E0 = 39 presses` on line four.
+    last_arithmetic = max(
+        (index for index, line in enumerate(lines) if expressions(line)), default=-1
+    )
+    for index in range(len(lines) - 1, -1, -1):
+        if index < last_arithmetic:
+            break
+        marked = _MARKER.search(lines[index])
         # A marker only counts if something arithmetic follows it: "I will answer in
         # dollars" names no number and is not a declaration.
         if marked and expressions(marked.group("rest")):
@@ -250,6 +269,16 @@ def safe_parse(text: str) -> sympy.Expr | None:
     if not expression or len(expression) > MAX_EXPR_CHARS:
         return None
     if not ALLOWED_CHARS.match(expression):
+        return None
+    # An answer form needs at most one exponent. More than one is a tower, and the
+    # per-token bound below cannot see it: `_EXPONENT`'s `[^\s()]+` stops at a paren, so
+    # `(2)**(63)**(63)` presented two exponents of 63 — both under the limit — while
+    # meaning `2**(63**63)`. `MAX_NODES` is checked *after* the parse, so it never ran.
+    # Measured: fifteen characters, extracted from an ordinary closing statement, and
+    # `parse_expr` had not returned after ninety seconds. That hangs the worker inside the
+    # API process, leaves the item in `grading` forever, and a retry is refused 409 —
+    # exactly the failure docs/GRADING.md's "failure is a failure" section exists to stop.
+    if len(_EXPONENT.findall(expression)) > 1:
         return None
     for exponent in _EXPONENT.findall(expression):
         # Numeric exponents only, and small ones. A symbolic or towering exponent is not an
@@ -366,6 +395,22 @@ def check_answer(item: Item, submission: str) -> AnswerCheck:
         )
 
     candidates = expressions(statement)
+    if declared and candidates:
+        # A declaration is a commitment, so it is graded on the number that was declared —
+        # the first span after the marker — and not on any of the twelve the rest of the
+        # sentence happens to contain. `expressions` splits on non-operator words, so
+        # "Final answer: 0, since with 1 in 9 chance per guest it rounds to 0" yielded the
+        # separate candidates 0, 1 and 9, and the loop below accepted whichever matched:
+        # a candidate who declared the wrong number scored 1.0 at 0.9 confidence because
+        # the right one appeared later in their own sentence. It also handed out a free
+        # hedge — "Answer: 30 or 31 or ... or 39" was twelve guesses for the price of one.
+        #
+        # The undeclared path deliberately keeps all of them. It carries
+        # INFERRED_CONFIDENCE rather than DECLARED_CONFIDENCE precisely because it is
+        # reading a conclusion out of prose, and "16/3 changeovers, about 5.33" states one
+        # answer twice — requiring the first there would fail a candidate for adding a
+        # decimal.
+        candidates = candidates[:1]
     exact = expected.get("exact")
     target = safe_parse(str(exact)) if exact is not None else None
     numeric = expected.get("numeric")

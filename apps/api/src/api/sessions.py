@@ -394,7 +394,14 @@ def grade_artifact(artifact_id: str, runner: CodeRunner | None = None, client: A
         _grade(artifact_id, runner, client)
     except Exception as exc:
         LOGGER.exception("grading %s failed outside the grader", artifact_id)
-        _record_crash(artifact_id, f"{type(exc).__name__}: {exc}")
+        # The exception *type*, never its text. `gradings.detail` is returned verbatim by
+        # `GET /sessions/{id}` and the report, and the text of a database error carries the
+        # failing statement with its bound parameters — measured: a full INSERT with every
+        # column and value, including the candidate's own submission. A psycopg
+        # `OperationalError` would carry the host, port and role; an executor `httpx` error
+        # an internal URL. The type is enough to tell a caller what class of thing went
+        # wrong, and the traceback is in the log where it belongs.
+        _record_crash(artifact_id, type(exc).__name__)
 
 
 def _grade(artifact_id: str, runner: CodeRunner | None, client: Any = None) -> None:

@@ -12,6 +12,7 @@ later `recompute` legitimately produces a different table.
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from typing import Any
@@ -175,7 +176,13 @@ def test_a_grading_that_crashes_outside_the_grader_still_records_a_failure(
     row = next(entry for entry in detail["items"] if entry["item_id"] == item_id)
     assert row["status"] == "failed"
     assert row["score"] is None
-    assert "projection exploded" in row["detail"]["detail"]
+    # The exception *type*, and deliberately not its message. `gradings.detail` is returned
+    # verbatim by this route and by the report, and this assertion used to pin the leak:
+    # a database error's text carries the failing statement with its bound parameters —
+    # measured as a full INSERT including the candidate's own submission — and a psycopg
+    # connection error carries the host, port and role.
+    assert row["detail"]["detail"] == "grading crashed: RuntimeError"
+    assert "projection exploded" not in json.dumps(detail)
 
     # And the session is not stranded: every planned item reached a terminal grading.
     assert detail["state"] == "complete"

@@ -23,13 +23,18 @@ class CreateSessionRequest(BaseModel):
     mode: Mode
     budget_minutes: int = Field(default=45, gt=0, le=240)
     # Empty means "let the planner decide" (docs/API.md).
-    focus_concepts: tuple[str, ...] = ()
+    # Bounded: the planner serves at most one item per concept, so a list longer than the
+    # taxonomy's largest domain cannot change a plan and only costs a scan. A 5,000-entry
+    # tuple was accepted with a 201.
+    focus_concepts: tuple[str, ...] = Field(default=(), max_length=60)
     difficulty_bias: float = Field(default=0.0, ge=-1, le=1)
 
 
 class TurnRequest(BaseModel):
     """What the candidate says. Capped because it lands in a model request: an unbounded
     field is an unbounded bill, and a 400 naming the limit beats a budget refusal."""
+
+    model_config = ConfigDict(extra="forbid")
 
     content: str = Field(min_length=1, max_length=20_000)
 
@@ -40,7 +45,13 @@ class SubmissionRequest(BaseModel):
     item_id: str
     kind: ArtifactKind
     language: str | None = None
-    content: str = Field(min_length=1)
+    # Capped for the same reason `TurnRequest.content` is, which was missed because a
+    # coding submission goes to a sandbox rather than a model. The other three modalities
+    # do not: a design, behavioral or quant submission is the *prompt* to `grade_rubric`
+    # or `grade_quant`, and neither truncates it. Measured: a 5 MB submission was accepted,
+    # stored and graded. The budget check runs before the call and cannot see the size, so
+    # one oversized submission walks straight past `max_tokens_per_session`.
+    content: str = Field(min_length=1, max_length=100_000)
     elapsed_seconds: int = Field(default=0, ge=0)
 
 
@@ -75,7 +86,11 @@ class ClassificationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     primary_concept_id: str = Field(min_length=1)
-    secondary_concept_ids: tuple[str, ...] = ()
+    # The model's own schema caps secondaries at 4 and docs/PRACTICE_LOG.md says so; the
+    # human-correction path enforced nothing. One PATCH carrying sixty duplicates wrote
+    # sixty-one immutable evidence rows and moved a concept's ability nearly 200 Elo on a
+    # single logged solve.
+    secondary_concept_ids: tuple[str, ...] = Field(default=(), max_length=4)
 
 
 class ReviewRequest(BaseModel):
