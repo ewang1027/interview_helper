@@ -28,7 +28,7 @@ from api import sessions as session_service
 from api.db import get_engine
 from api.main import app
 from api.mastery import recompute
-from api.models import Artifact, ConceptEvidence, Grading, Mastery
+from api.models import Artifact, ConceptEvidence, Grading, InterviewSession, Mastery
 from api.routes.sessions import get_runner
 from api.sessions import grade_artifact
 
@@ -192,3 +192,52 @@ def test_a_grading_that_crashes_outside_the_grader_still_records_a_failure(
             select(ConceptEvidence).where(ConceptEvidence.session_id == session["id"])
         ).all()
     assert written == [], "a crashed grading must not leave evidence behind"
+
+
+def test_a_submission_racing_end_cannot_resurrect_the_session(created_sessions) -> None:
+    """`/end` answered 200 with `{"state": "abandoned"}` and the session was
+    `interviewing` a moment later, with `ended_at` set and a report that 409s forever.
+
+    `record_submission` wrote the `briefing -> interviewing` transition from a row it had
+    read before building the artifact, so a commit landing just after an `end` clobbered
+    it. The write is conditional now, so the loser of the race changes nothing.
+    """
+    app.dependency_overrides[get_runner] = lambda: FakeRunner()
+    client = sign_in(TestClient(app))
+    session = client.post("/api/v1/sessions", json={"mode": "coding", "budget_minutes": 20}).json()
+    created_sessions.append(session["id"])
+    item_id = session["plan"]["items"][0]["item_id"]
+
+    outcomes: list[tuple[str, int]] = []
+    lock = threading.Lock()
+
+    def submit() -> None:
+        resp = client.post(
+            f"/api/v1/sessions/{session['id']}/submissions",
+            json={"item_id": item_id, "kind": "code", "language": "python", "content": SOURCE},
+        )
+        with lock:
+            outcomes.append(("submit", resp.status_code))
+
+    def end() -> None:
+        resp = client.post(f"/api/v1/sessions/{session['id']}/end")
+        with lock:
+            outcomes.append(("end", resp.status_code))
+
+    threads = [threading.Thread(target=submit), threading.Thread(target=end)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    state = client.get(f"/api/v1/sessions/{session['id']}").json()["state"]
+    # Whichever order they landed in, the session is in a state the machine allows: either
+    # the end won and it is terminal, or the submission won and it is still open.
+    assert state in {"abandoned", "complete", "briefing", "interviewing"}, outcomes
+    with Session(get_engine()) as db:
+        row = db.get(InterviewSession, session["id"])
+        assert row is not None
+        ended = row.ended_at is not None
+    assert ended == (state in {"abandoned", "complete"}), (
+        f"state {state!r} with ended_at set={ended} — a session cannot be both"
+    )

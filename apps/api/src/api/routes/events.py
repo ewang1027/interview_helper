@@ -15,6 +15,7 @@ Three promises this route has to keep, and each one shapes the code:
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncIterator
 from typing import Annotated, Any
 
@@ -24,8 +25,9 @@ from sse_starlette.sse import EventSourceResponse
 
 from api import sessions as service
 from api.auth import CurrentPrincipal
-from api.db import get_session
+from api.db import get_engine, get_session
 from api.events import POLL_SECONDS, EventBus, bus, sse_frame
+from api.models import InterviewSession
 
 router = APIRouter(tags=["sessions"])
 
@@ -35,6 +37,11 @@ Bus = Annotated[EventBus, Depends(bus)]
 # Long enough that a slow turn does not look like a hang, short enough that a forgotten tab
 # does not hold a connection forever.
 PING_SECONDS = 15
+
+# How long one stream may stay open. SSE clients reconnect by themselves and `Last-Event-ID`
+# makes that lossless, so a bounded stream costs a client nothing — while an unbounded one
+# costs a pooled database connection per abandoned tab.
+MAX_STREAM_SECONDS = 30 * 60
 
 
 def _resume_from(last_event_id: str | None, after: int | None) -> int:
@@ -64,8 +71,13 @@ async def session_events(
     Ownership is checked before the stream opens, with the same 404 every other session
     route gives for somebody else's id — a stream is a read, and it leaks the same thing.
     """
-    session_row = service.get_session(db, session_id, user_id=principal.user_id)
+    service.get_session(db, session_id, user_id=principal.user_id)
     resume = _resume_from(last_event_id, after)
+
+    def _is_finished(sid: str) -> bool:
+        with Session(get_engine()) as fresh:
+            row = fresh.get(InterviewSession, sid)
+            return row is None or row.status in service.REPORTABLE_STATES
 
     async def publish() -> AsyncIterator[dict[str, Any]]:
         cursor = resume
@@ -82,15 +94,38 @@ async def session_events(
             )
             cursor = oldest - 1
 
+        started = time.monotonic()
         while True:
             for event in channel.since(session_id, cursor):
                 cursor = event.seq
                 yield event.as_sse()
-            if session_row.status in service.REPORTABLE_STATES and not channel.since(
-                session_id, cursor
-            ):
+            # Re-read the status rather than testing the row loaded before the stream
+            # opened. That row is a *snapshot*: a stream opened while the session was
+            # briefing tested `briefing` forever, so ending the session while a client was
+            # attached left the generator neither yielding nor stopping. Measured: four
+            # seconds after the session became `abandoned`, still hanging. It matters more
+            # than a stuck tab, because `DbSession` is a `yield` dependency that FastAPI
+            # releases only when the response completes — so each hung stream pins a
+            # pooled connection, and the default pool is 5 + 10 overflow. Fifteen
+            # abandoned tabs stall every request the API has.
+            #
+            # A short-lived session of its own, not `db`: that one belongs to the request
+            # and holding a transaction open across the whole stream is the same bug in a
+            # different coat.
+            if _is_finished(session_id) and not channel.since(session_id, cursor):
                 # Nothing more will happen on a finished session, so the stream ends rather
                 # than holding a connection open for events that cannot arrive.
+                break
+            if time.monotonic() - started > MAX_STREAM_SECONDS:
+                # A backstop for the case the check above cannot see: a session that is
+                # never finished and never abandoned, whose client has gone away without
+                # the socket noticing. SSE clients reconnect on their own, and
+                # `Last-Event-ID` makes that lossless.
+                yield sse_frame(
+                    "stream.timeout",
+                    after=cursor,
+                    detail="Reconnect with Last-Event-ID to continue.",
+                )
                 break
             await asyncio.sleep(POLL_SECONDS)
 

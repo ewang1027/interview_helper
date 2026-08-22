@@ -416,9 +416,17 @@ def test_the_first_turn_moves_the_session_out_of_briefing(created_sessions):
         service.take_turn  # the transition lives in the service, exercised via the route below
 
 
-def test_ending_every_round_moves_the_session_to_wrapping(created_sessions):
+def test_ending_every_round_finishes_a_session_with_nothing_to_grade(created_sessions):
     """`end_round` finishes an item, not the session. The last one leaves nothing to
-    interview about, and grading still has to happen."""
+    interview about — and if nothing was ever submitted, nothing is in flight either.
+
+    This used to stop at `wrapping` and stay there permanently. `wrapping` waits for
+    gradings to land, and `_maybe_complete` only ever runs from a grading callback, so a
+    session that reached it with no submissions was refused by every route it had:
+    `/end` 409ed as "already wrapping", `/report` 409ed as not reportable, `/turns` and
+    `/submissions` 409ed as not open. It could not be finished, abandoned, read or
+    continued — contradicting docs/API.md's `any state ──▶ abandoned`.
+    """
     client, session_id = start_session(created_sessions)
     use_settings(**MODEL_OVERRIDES)
     planned = [
@@ -439,9 +447,14 @@ def test_ending_every_round_moves_the_session_to_wrapping(created_sessions):
         body = post_turn(client, session_id, "done with this one", model)
         assert body["round_ended"] is True
 
-    assert client.get(f"/api/v1/sessions/{session_id}").json()["state"] == "wrapping"
+    assert client.get(f"/api/v1/sessions/{session_id}").json()["state"] == "complete"
     refused = client.post(f"/api/v1/sessions/{session_id}/turns", json={"content": "more?"})
     assert refused.status_code == 409
+
+    # And the session is readable, which is what being stuck in `wrapping` denied.
+    report = client.get(f"/api/v1/sessions/{session_id}/report")
+    assert report.status_code == 200
+    assert report.json()["not_attempted"] == len(planned)
 
 
 def post_turn(

@@ -30,6 +30,7 @@ from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Any, Literal
 
+from sqlalchemy import update
 from sqlmodel import Session, col, select
 
 from api import events as event_bus
@@ -287,6 +288,12 @@ def take_turn(
         event_bus.bus().publish(
             session_row.id, "session.state", state="wrapping", reason=result.end_reason
         )
+        # `wrapping` waits for gradings that are already in flight. If nothing was
+        # submitted — the interviewer's documented "solved, abandoned, or out of time"
+        # path — there are none, and nothing else will ever call `_maybe_complete`. The
+        # session used to sit there permanently, refused by every route including `/end`.
+        _maybe_complete(db, session_row.id)
+        db.refresh(session_row)
 
     return {
         "item_id": item.id,
@@ -365,8 +372,19 @@ def record_submission(
     )
     db.add(artifact)
     if session_row.status == "briefing":
-        session_row.status = "interviewing"
-        db.add(session_row)
+        # Conditional, because `session_row` was read before the artifact was built and an
+        # `/end` can commit in between. Writing the status from the stale row clobbered
+        # `abandoned` back to `interviewing` — measured: `/end` answered 200 with
+        # `{"state": "abandoned"}` and the session was `interviewing` a moment later, with
+        # `ended_at` set and its report 409ing forever.
+        db.exec(
+            update(InterviewSession)
+            .where(
+                col(InterviewSession.id) == session_row.id,
+                col(InterviewSession.status) == "briefing",
+            )
+            .values(status="interviewing")
+        )
     db.commit()
     db.refresh(artifact)
     return artifact
@@ -586,7 +604,13 @@ def _maybe_complete(db: Session, session_id: str) -> None:
     if session_row is None or session_row.status not in COMPLETABLE_STATES:
         return
     outcomes = _item_outcomes(db, session_row)
-    if all(entry["status"] in {"graded", "failed"} for entry in outcomes):
+    # `not_attempted` counts as terminal only once the interviewer has closed the session
+    # out. While it is still open the candidate may yet submit; in `wrapping` there is no
+    # route left that would let them, so waiting on it waits forever.
+    terminal = {"graded", "failed"}
+    if session_row.status == "wrapping":
+        terminal = terminal | {"not_attempted"}
+    if all(entry["status"] in terminal for entry in outcomes):
         session_row.status = "complete"
         session_row.ended_at = _now()
         db.add(session_row)
@@ -600,13 +624,39 @@ def _maybe_complete(db: Session, session_id: str) -> None:
 
 
 def end_session(db: Session, session_row: InterviewSession) -> InterviewSession:
-    if session_row.status not in OPEN_STATES:
+    """docs/API.md: `any state ──▶ abandoned`. It has to be *any* non-terminal state.
+
+    This used to refuse anything outside `OPEN_STATES`, which made `wrapping` a permanent
+    dead end. The interviewer calling `end_round` on the last planned item with nothing
+    submitted moves a session there, and from `wrapping` every route refuses it:
+    `/end` 409s as "already wrapping", `/report` 409s because it is not reportable,
+    `/submissions` and `/turns` 409 because it is not open — and `_maybe_complete` only
+    ever runs from a grading callback that will never fire, because nothing was submitted.
+    The session could not be finished, abandoned, read, or continued.
+
+    The write is conditional rather than read-then-write. A submission committing just
+    after an `end` used to clobber `abandoned` back to `interviewing` from a stale
+    in-memory row, leaving a session with `ended_at` set and a non-terminal status — a
+    state the machine says cannot exist, and one whose report 409s forever.
+    """
+    if session_row.status in REPORTABLE_STATES:
         raise wrong_state(f"Session is already {session_row.status!r}.", state=session_row.status)
-    session_row.status = "abandoned"
-    session_row.ended_at = _now()
-    db.add(session_row)
+    changed = db.exec(
+        update(InterviewSession)
+        .where(
+            col(InterviewSession.id) == session_row.id,
+            col(InterviewSession.status).not_in(REPORTABLE_STATES),
+        )
+        .values(status="abandoned", ended_at=_now())
+    )
     db.commit()
+    if changed.rowcount == 0:  # someone else finished it between the read and the write
+        db.refresh(session_row)
+        raise wrong_state(f"Session is already {session_row.status!r}.", state=session_row.status)
     db.refresh(session_row)
+    event_bus.bus().publish(
+        session_row.id, "session.state", state="abandoned", reason="ended by the candidate"
+    )
     return session_row
 
 

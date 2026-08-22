@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from collections import deque
+from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -37,6 +37,12 @@ logger = logging.getLogger(__name__)
 # session a few dozen; 256 covers "the wifi dropped for a minute" and refuses to grow into
 # a memory leak that only shows up on a long session.
 BUFFER_SIZE = 256
+
+# How many sessions' channels stay resident. Each holds at most `BUFFER_SIZE` events, so
+# this is the bound on the bus as a whole — roughly 128 x 256 events. The eviction is LRU
+# by last publish, so the sessions dropped are the ones nothing has written to in longest,
+# which are the ones no client is watching.
+MAX_CHANNELS = 128
 
 # How often a subscriber looks for new events. Ten times faster than a human notices, and
 # hundreds of times faster than a model answers.
@@ -87,14 +93,27 @@ class _Channel:
 class EventBus:
     """One channel per session. Thread-safe, in-process, bounded."""
 
-    def __init__(self) -> None:
+    def __init__(self, max_channels: int = MAX_CHANNELS) -> None:
         self._lock = threading.Lock()
-        self._channels: dict[str, _Channel] = {}
+        # Insertion-ordered, and used as an LRU: the oldest channel is evicted once the
+        # cap is reached. `forget` exists for a session that is finished *and* read, but
+        # it cannot be called at the moment a session ends — the terminal `session.state`
+        # event is the one a client most needs, and dropping the channel to publish it
+        # destroys it before anyone can read it. So the bound is on the collection rather
+        # than on any one session's lifetime, which is the thing that actually needs
+        # bounding: a process that never forgets a session grows until it is restarted.
+        self._channels: OrderedDict[str, _Channel] = OrderedDict()
+        self._max_channels = max_channels
 
     def publish(self, session_id: str, event_type: str, **data: Any) -> Event:
         """Append an event and return it, with its sequence number."""
         with self._lock:
-            channel = self._channels.setdefault(session_id, _Channel())
+            if session_id not in self._channels:
+                self._channels[session_id] = _Channel()
+                while len(self._channels) > self._max_channels:
+                    self._channels.popitem(last=False)
+            self._channels.move_to_end(session_id)
+            channel = self._channels[session_id]
             channel.seq += 1
             event = Event(seq=channel.seq, type=event_type, data=data, at=datetime.now(UTC))
             channel.events.append(event)

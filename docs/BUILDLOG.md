@@ -3705,3 +3705,107 @@ abandoned session; `wrapping` is a dead end every route refuses; the SSE stream 
 terminates and pins a pooled connection while it hangs), the complexity probe giving the
 slowest submissions a free pass, the validator's provenance holes, and `recompute`
 rebasing item ratings onto a prior the live path never used.
+
+---
+
+## Audit wave 4 — three ways a session could stop being finishable · 2026-08-22
+
+Fourth batch: the session state machine and the event stream. Every finding here is a
+liveness bug — nothing computes a wrong answer, but a session gets into a state it cannot
+leave, and one of them takes the whole API down with it.
+
+```
+make check 249 · test-db 147 · test-sandbox 28 · test-e2e 1
+```
+
+### `wrapping` was a state with no exit
+
+The interviewer calling `end_round` on the last planned item — its documented "solved,
+abandoned, or out of time" path — moves a session to `wrapping`. If nothing was ever
+submitted, nothing is in flight, and `_maybe_complete` only ever runs from a grading
+callback. So it never ran. And from `wrapping`:
+
+```
+POST /end          -> 409  Session is already 'wrapping'.
+GET  /report       -> 409  a report exists once it is ['abandoned', 'complete']
+POST /submissions  -> 409  only accepted while it is ['briefing', 'interviewing']
+POST /turns        -> 409  only taken while it is ['briefing', 'interviewing']
+```
+
+Not finishable, not abandonable, not readable, not continuable. docs/API.md has said
+`any state ──▶ abandoned` since Phase 3; `end_session` refused anything outside
+`OPEN_STATES`. Both halves are fixed: `/end` works from any non-terminal state, and a
+session that reaches `wrapping` with nothing left in flight completes on the spot.
+
+The existing test reached this exact state and asserted only that `/turns` 409s — which it
+does, correctly, on a session that is stuck.
+
+### A submission racing `/end` un-ended the session
+
+`record_submission` wrote `briefing → interviewing` from a row it had read before building
+the artifact, so a commit landing just after an `end` clobbered it:
+
+```
+POST /end          -> 200 {"state": "abandoned"}
+...150ms later, the submission commits
+session state: interviewing | ended_at: 2026-08-22T02:58:09Z
+GET /report        -> 409 Session is 'interviewing'   (forever)
+```
+
+A session with `ended_at` set and a non-terminal status is a state the machine says cannot
+exist. The client was told it was abandoned. Both writes are conditional now, so the loser
+of the race changes nothing, and the regression test asserts the invariant rather than an
+ordering: `ended_at` is set exactly when the state is terminal.
+
+### The stream that never closed, and took the connection pool with it
+
+`routes/events.py` loaded the session row once, before the stream opened, then tested
+`session_row.status` inside the poll loop. A stream attached while the session was
+`briefing` tested `briefing` forever:
+
+```
+frame 1: {'id': '1', 'event': 'tick', ...}
+database says the session is now: abandoned
+!! STREAM HUNG: 4s later the generator has neither yielded nor stopped
+```
+
+The reason this is more than a stuck tab: `DbSession` is a `yield` dependency, and FastAPI
+releases it only when the response completes. Each hung stream pins a pooled connection.
+The default pool is 5 + 10 overflow, so **fifteen abandoned tabs stall every request the
+API has**.
+
+The status is re-read each poll now, through a short-lived session of its own — holding
+the request's transaction open across the whole stream would be the same bug wearing a
+different coat. There is also a 30-minute ceiling on one connection, after which the server
+sends `stream.timeout` and closes; SSE clients reconnect on their own and `Last-Event-ID`
+makes that lossless.
+
+### `/end` was the only transition that told nobody
+
+Every other state change publishes `session.state`. `end_session` published nothing, so a
+client watching the stream was never told the session was abandoned — and, before the fix
+above, never had the stream closed either. It publishes now.
+
+### A fix I got wrong on the first attempt, and why it is worth writing down
+
+`EventBus.forget` documents itself as "called when a session ends" and has no caller
+outside tests, so every session leaves a 256-slot buffer alive until the process restarts.
+The obvious fix is to call it from `end_session`. That is wrong, and the new tests caught
+it immediately: the terminal `session.state` is the event a client most needs, and dropping
+the channel in order to publish it destroys the event before anyone can read it. The stream
+terminated correctly and delivered nothing.
+
+The bound belongs on the collection, not on any one session's lifetime — 128 channels,
+evicted least-recently-published first. What actually grows without limit is the number of
+channels, and that is what is now capped.
+
+### Still open
+
+The complexity probe gives the *slowest* submissions a free pass — a cubic solution scores
+1.0 where a quadratic one scores 0.75, because the probe's pessimistic projection refuses
+to start a second size and `inconclusive` carries no penalty. The corpus validator accepts
+two arbitrary sentences as two independent sources, and `format: uri` is annotation-only
+because the JSON Schema validator is built without a `format_checker`. `recompute` rebases
+item ratings onto a prior the live path never used. And a turn can still execute an
+unbounded number of tool calls — measured at 300 sandbox runs and 603 events in one
+synchronous request, which evicts the entire session's event history with no `stream.gap`.

@@ -29,6 +29,11 @@ def finished_session(created_sessions: list[str]) -> tuple[TestClient, str]:
     session_id = created.json()["id"]
     created_sessions.append(session_id)
     assert client.post(f"/api/v1/sessions/{session_id}/end").status_code == 200
+    # `/end` publishes its own `session.state` now — it was the only transition in the
+    # machine that emitted nothing, so a client on the stream was never told the session
+    # had been abandoned. These tests are about replay and resume, so the channel starts
+    # from a clean slate and the sequence numbers below stay readable.
+    bus().forget(session_id)
     return client, session_id
 
 
@@ -111,3 +116,43 @@ def test_another_users_stream_is_a_404_like_every_other_read(created_sessions):
     _, session_id = finished_session(created_sessions)
     stranger = sign_in(TestClient(app), "01STRANGERSTRANGERSTRANG")
     assert stranger.get(f"/api/v1/sessions/{session_id}/events").status_code == 404
+
+
+def test_a_stream_open_when_the_session_ends_terminates(created_sessions) -> None:
+    """The loop tested `session_row.status` — a row loaded once, before the stream opened.
+
+    So a stream attached while the session was `briefing` tested `briefing` forever, and
+    ending the session left the generator neither yielding nor stopping. Measured: still
+    hanging four seconds after the session became `abandoned`.
+
+    It matters more than a stuck tab. `DbSession` is a `yield` dependency that FastAPI
+    releases only when the response completes, so every hung stream pins a pooled
+    connection — default pool 5 + 10 overflow, so fifteen abandoned tabs stall every
+    request the API has.
+    """
+    client = sign_in(TestClient(app))
+    session = client.post("/api/v1/sessions", json={"mode": "coding", "budget_minutes": 20}).json()
+    created_sessions.append(session["id"])
+
+    client.post(f"/api/v1/sessions/{session['id']}/end")
+
+    with client.stream("GET", f"/api/v1/sessions/{session['id']}/events") as stream:
+        # It terminates on its own. Without the fix this iteration never ends, so the test
+        # hangs rather than failing — which is exactly what the defect does to a client.
+        frames = list(stream.iter_lines())
+
+    assert any("abandoned" in line for line in frames), frames
+
+
+def test_ending_a_session_publishes_the_state_change(created_sessions) -> None:
+    """`end_session` was the only transition in the machine that emitted nothing, so a
+    client watching the stream was never told the session had been abandoned — and, before
+    the fix above, never had the stream closed either."""
+    client = sign_in(TestClient(app))
+    session = client.post("/api/v1/sessions", json={"mode": "coding", "budget_minutes": 20}).json()
+    created_sessions.append(session["id"])
+
+    client.post(f"/api/v1/sessions/{session['id']}/end")
+
+    resp = client.get(f"/api/v1/sessions/{session['id']}/events")
+    assert "abandoned" in resp.text

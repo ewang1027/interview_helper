@@ -65,6 +65,14 @@ Two rules that matter:
 
 - **`abandoned` still writes evidence** for whatever was actually graded. A session you
   quit halfway through is real data about the part you did.
+- **`any state ──▶ abandoned` means any non-terminal state**, and that was a claim this
+  document made before the code kept it. `POST /end` refused anything outside
+  `{briefing, interviewing}`, which made `wrapping` a permanent dead end: the interviewer
+  ending the last round with nothing submitted moves a session there, and from there
+  `/end` 409ed as "already wrapping", `/report` 409ed as unreportable, and `/turns` and
+  `/submissions` 409ed as not open. Nothing could finish it either, because `wrapping`
+  waits for gradings and `_maybe_complete` only runs from a grading callback that would
+  never fire. The session could not be finished, abandoned, read, or continued.
 - **`failed` writes none.** A grader crash must not produce a fabricated score — see
   [GRADING.md](GRADING.md#failure-is-a-failure). A missing grade is visible; a wrong one
   corrupts mastery permanently.
@@ -266,7 +274,7 @@ JSON with a `type` and a monotonic `seq`. Every event below is emitted; the last
 | `grading.started` | `{ item_id }` | Grading began |
 | `grading.result` | `{ item_id, score, criteria[], evidence_written[] }` | Grading finished |
 | `budget.warning` | `{ consumed, limit, scope }` | Approaching a token budget |
-| `session.error` | `{ code, message, recoverable }` | Something failed |
+| `session.error` | `{ code, message, recoverable }` | Something failed. **Specified, never emitted** — no publisher exists. Listed here so its absence is visible rather than assumed |
 
 Three deliberate choices:
 
@@ -285,6 +293,24 @@ Two properties of the implementation that a client should know about:
 - **The stream ends when the session does.** On `complete` or `abandoned` no further event
   can arrive, so the connection closes rather than being held open. A `ping` comment frame
   every 15s keeps it alive while a turn is thinking.
+
+  The status is re-read on each poll. It used to be tested against a row loaded once,
+  before the stream opened — so a stream attached while the session was `briefing` tested
+  `briefing` forever, and ending the session left the generator neither yielding nor
+  stopping. That is worse than a stuck tab: the database session is a `yield` dependency
+  FastAPI releases only when the response completes, so each hung stream pinned a pooled
+  connection, and the default pool is 5 + 10. Fifteen abandoned tabs stalled every request
+  the API had.
+
+  There is also a hard ceiling of 30 minutes on one connection, after which the server
+  sends `stream.timeout` and closes. SSE clients reconnect on their own and
+  `Last-Event-ID` makes that lossless, so a bounded stream costs a client nothing.
+- **The bus is bounded in two directions.** 256 events per session, and 128 sessions,
+  evicted least-recently-published first. `EventBus.forget` documented itself as "called
+  when a session ends" and had no caller outside tests — but calling it there is wrong,
+  not merely missing: the terminal `session.state` is the event a client most needs, and
+  dropping the channel in order to publish it destroys it before anyone can read it. The
+  bound belongs on the collection, which is the thing that actually grows.
 - **The bus is in-process.** One uvicorn process is what this runs on; under Fargate with
   two tasks a client could hold a stream against a task that is not running its turn.
   `api.events.EventBus` is the seam where a shared broker goes in Phase 6, and this is
