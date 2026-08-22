@@ -243,6 +243,20 @@ window is expected to need raising again. The test therefore also asserts the we
 the single **most-served** one, which is the half that does not depend on window
 arithmetic.
 
+**The prior is an input to the replay, and re-rating an item used to break it.** `items.elo`
+drifts from real outcomes, and a re-seed deliberately leaves that drift alone. But a
+re-seed *does* refresh `difficulty_elo`, and `recompute` rebuilds `elo` as `difficulty_elo`
+plus a replay of every evidence row. So the moment an author re-rated an existing item, the
+live table stood on the old prior and every replay stood on the new one, permanently.
+Measured: one full-marks attempt, a prior moved 1600 → 1680, and the replay returned an
+item rating of 1677.56 against a live 1597.94, with the concept's ability 4.64 Elo apart.
+
+`POST /mastery/recompute` is the documented repair tool for a grader bug; there it was the
+thing causing the damage. `api.seed` now reports which priors it changed and replays the
+projection onto them, so both paths stand on the same numbers. Nothing could observe this
+before: the test suite replays after every test, so a development database is permanently
+rebased and only a long-lived one diverges.
+
 Plus a replay test — recomputing `mastery` from `concept_evidence` alone must reproduce
 the live table exactly. **Built, and it earned its keep on its first run:** the
 incremental path and the replay disagreed, because a timestamp written as

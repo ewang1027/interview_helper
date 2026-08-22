@@ -153,3 +153,36 @@ def test_the_driver_sweeps_every_size_it_can_afford(
 
     assert payload["truncated"] is False
     assert [n for n, _ in payload["points"]] == [1000, 2000, 4000, 8000]
+
+
+def test_a_truncated_sweep_is_evidence_of_slowness_not_absence_of_evidence():
+    """The slowest submissions used to get the softest verdict, inverting the probe.
+
+    With one point measured the driver assumes the worst class it recognises (`_g = 3.0`)
+    before starting the next size, so it refuses to start one whenever the first run took
+    more than about 2.2 s. The sweep ends with a single point, `judge` needs three, and
+    `inconclusive` carries no penalty anywhere in `grade_coding`.
+
+    Measured end to end on `i.code.0005` (target `O(n)`) with real containers before the
+    fix: an O(n^2) submission scored **0.75** and an O(n^3) submission scored **1.00**.
+    The worse algorithm scored higher. The driver only truncates because it projected the
+    next size as unaffordable, which is itself a statement about how fast this grows.
+    """
+    assert judge([(1000, 2.5)], "O(n)", truncated=True).verdict == "slower_than_target"
+    assert judge([(1000, 0.9), (2000, 7.2)], "O(n)", truncated=True).verdict == "slower_than_target"
+
+
+def test_an_absurd_first_size_is_judged_without_a_slope():
+    """A single run at the smallest probe size costing over a second is not the declared
+    complexity, whatever a slope would have said. Corpus references measure 0.3-0.5 ms
+    there, so this fires only for a submission catastrophically slower than its target."""
+    result = judge([(1000, 3.0)], "O(n)")
+
+    assert result.verdict == "slower_than_target"
+    assert result.slope is None
+
+
+def test_a_complete_sweep_is_still_judged_on_its_slope():
+    """The guards above must not swallow the ordinary path."""
+    assert judge([(1000, 0.010), (2000, 0.021), (4000, 0.042)], "O(n)").verdict == "matches"
+    assert judge([(1000, 0.02), (2000, 0.08), (4000, 0.32)], "O(n)").verdict == "slower_than_target"

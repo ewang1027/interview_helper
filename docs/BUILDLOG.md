@@ -3912,3 +3912,107 @@ where a quadratic one scores 0.75, because the pessimistic projection refuses to
 second size and `inconclusive` carries no penalty. `recompute` rebasing item ratings onto
 a prior the live path never used. An unbounded number of tool executions per turn. And
 `check_docs.py`'s own blind spots, which are the next batch.
+
+---
+
+## Audit wave 6 — the probe rewarded the worst answers, and a re-rating broke the replay · 2026-08-22
+
+Sixth batch: the two findings that invert a guarantee rather than merely weakening one.
+
+```
+make check 249 · test-db 148 · test-sandbox 28 · test-e2e 1 · verify-solutions 8/8
+executor tests 40 (was 37)
+```
+
+### A cubic solution scored higher than a quadratic one
+
+Measured end to end on `i.code.0005` (target `O(n)`), real containers, real grader:
+
+```
+O(n^2) submission  ->  slower_than_target, slope 2.02  ->  SCORE 0.75
+O(n^3) submission  ->  inconclusive,       slope None  ->  SCORE 1.00
+```
+
+The mechanism is a guard doing the opposite of its intent. With one point measured the
+driver assumes the worst class it recognises (`_g = 3.0`) before starting the next size,
+so it refuses to start one whenever the first run took more than about 2.2 s. The sweep
+then ends with a single point, `judge` requires three, and `inconclusive` carries no
+penalty anywhere in `grade_coding`. The module's own comment claims the opposite —
+"bailing out with the points already collected keeps it judgeable instead of reporting
+`inconclusive` for the most damning case there is" — and the pessimistic projection
+guarantees there are not enough points to judge.
+
+Two changes, both of which turn an absence of evidence into evidence:
+
+- **A truncated sweep is now `slower_than_target`.** The driver truncates *because* it
+  projected the next size as unaffordable, which is a statement about how fast this
+  submission grows, not a missing measurement. `truncated` was already computed and was
+  being discarded in `run_probe`.
+- **A first size costing over a second is `slower_than_target` without a slope.** Every
+  corpus reference measures 0.3–0.5 ms at its smallest size, so this is three orders of
+  magnitude of headroom.
+
+All eight references still measure `matches`, unchanged.
+
+### `recompute` rebased item ratings onto a prior the live path never used
+
+The central claim of docs/ADAPTIVE.md is that mastery is derived and a replay reproduces
+the live table exactly. `items.elo` drifts from real outcomes and a re-seed deliberately
+leaves that alone — but a re-seed *does* refresh `difficulty_elo`, and `recompute` rebuilds
+`elo` as `difficulty_elo` plus a replay. So re-rating an existing item left the two paths
+standing on different priors, for good:
+
+```
+after one attempt:  item.elo=1597.94  ability=1574.69
+after re-seed:      item.elo=1597.94  ability=1574.69   (live table, unchanged)
+after recompute:    item.elo=1677.56  ability=1579.32   (replay)  -> 4.64 Elo apart
+```
+
+`POST /mastery/recompute` is the documented repair tool for a grader bug. Here it was the
+thing doing the damage. `api.seed` now returns which priors it changed and replays the
+projection onto them, so both paths stand on the same numbers — and it says so on stdout,
+because a silent rebase is how this stayed invisible.
+
+It stayed invisible for a specific reason worth keeping: **the test suite replays after
+every test**, so a development database is permanently rebased and only a long-lived one
+can diverge. No test could have caught it, and the new one asserts the *reporting* rather
+than the divergence.
+
+### The replay gate had a hole in the shape its own docstring warns about
+
+`snapshot()` collects "every column the projection owns, `fsrs_card` included", and its
+docstring says outright that "a replay gate that skips a column is a gate with a hole in
+it." It did not read `last_seen` — a column added to `Mastery` after that sentence was
+written. No live divergence today (a 120-sequence property test comparing `last_seen`
+explicitly found none), so this is a hole rather than a bug, and it is closed.
+
+### An intermittent CI failure, and why the fix is not "retry"
+
+`test_memory_bomb` failed once on GitHub's runners with `harness_error` and **an empty
+detail**, having passed on the three runs before and the run after. Two real weaknesses
+made that both possible and undiagnosable:
+
+- OOM attribution read only `docker inspect .State.OOMKilled`, which is set by the runtime
+  and depends on the cgroup version and on whether the kill landed on the container's init
+  or a child. This module sends exactly one `docker kill`, on the wall-clock path, so a
+  **137 arriving on any other path was not killed by us** — and the memory cap is the only
+  other thing in this sandbox that kills a container. Inferring OOM from it is sound, and
+  it fails safe: mislabelling some other hard kill as OOM still refuses the submission.
+- A `harness_error` with an empty detail is unactionable. It now carries the container's
+  exit code, which is not sensitive and is the whole diagnosis.
+
+### Also
+
+`run_probe` splatted the marker payload straight into a comprehension, so a probe result
+whose points were not pairs raised `ValueError` out of the request handler — the same class
+fixed in `parse_result` two waves ago, in the other of the two parsers.
+
+### Still open
+
+The executor buffers container output without bound before applying its 64 KB cap (500 MB
+of output measured at ~1.7 GB peak RSS in the executor, and at high throughput the
+wall-clock kill stops working). `run_sandboxed` can raise from three paths, each becoming
+an executor 500 that the API records as "not the candidate's fault". A turn can execute an
+unbounded number of tool calls — 300 sandbox runs and 603 events in one request, evicting
+the session's whole event history with no `stream.gap`. `/dev/shm` is writable and escape
+test 2 never tries it. And `check_docs.py` has four blind spots of its own.

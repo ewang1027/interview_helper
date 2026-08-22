@@ -12,7 +12,9 @@ from datetime import UTC, date, datetime
 from sqlmodel import Session, select
 
 from api.db import get_engine
+from api.mastery import recompute
 from api.models import Concept, ConceptEdge, Item, ItemConcept
+from api.users import single_user
 from corpus.loader import load_concepts, load_items
 
 
@@ -44,8 +46,10 @@ def _upsert_concepts(session: Session) -> None:
                 session.add(ConceptEdge(concept_id=c.id, prereq_id=prereq_id))
 
 
-def _upsert_items(session: Session) -> None:
+def _upsert_items(session: Session) -> list[str]:
+    """Returns the ids whose corpus prior changed, which the caller has to act on."""
     items = load_items()
+    rebased: list[str] = []
     for i in items:
         item_row = session.get(Item, i.id)
         if item_row is None:
@@ -74,6 +78,8 @@ def _upsert_items(session: Session) -> None:
         item_row.statement_md = i.statement_md
         item_row.primary_concept_id = i.primary_concept
         item_row.difficulty_band = i.difficulty.band
+        if item_row.difficulty_elo != i.difficulty.elo:
+            rebased.append(item_row.id)
         item_row.difficulty_elo = i.difficulty.elo
         item_row.corpus_version = i.corpus_version
         item_row.archetype_id = i.archetype_id
@@ -89,20 +95,52 @@ def _upsert_items(session: Session) -> None:
         for concept_id in i.concepts:
             if (i.id, concept_id) not in existing_links:
                 session.add(ItemConcept(item_id=i.id, concept_id=concept_id))
+    return rebased
 
 
-def seed(session: Session) -> None:
+def seed(session: Session) -> list[str]:
+    """Load the corpus into the database. Returns the items whose corpus prior changed.
+
+    That return value is load-bearing, and the reason is the central claim of
+    docs/ADAPTIVE.md: **mastery is derived, never stored as ground truth**, and
+    `POST /mastery/recompute` must reproduce the live table exactly.
+
+    `items.elo` drifts from real outcomes and a re-seed deliberately leaves it alone —
+    but a re-seed *does* refresh `difficulty_elo`, and `recompute` rebuilds `elo` as
+    `difficulty_elo` plus a replay of every evidence row. So the moment an author re-rates
+    an existing item, the live table stands on the old prior and any replay stands on the
+    new one, and they disagree for good. Measured: one full-marks attempt, then a prior
+    moved 1600 -> 1680, and the replay came back 1677.56 against a live 1597.94, with the
+    concept's ability 4.64 Elo apart. `recompute` is the documented repair tool for a
+    grader bug; here it was the thing doing the damage.
+
+    Nothing could see it, either: the test suite replays after every test, so a dev
+    database is permanently rebased and only a long-lived one diverges.
+    """
     _upsert_concepts(session)
-    _upsert_items(session)
+    rebased = _upsert_items(session)
     session.commit()
+    return rebased
 
 
 def main() -> None:
     with Session(get_engine()) as session:
-        seed(session)
+        rebased = seed(session)
         concepts = session.exec(select(Concept)).all()
         items = session.exec(select(Item)).all()
         print(f"seeded {len(concepts)} concept(s), {len(items)} item(s)")
+        if rebased:
+            # Rebuilt here rather than left for someone to notice: the two paths have to
+            # stand on the same prior, and the only moment that is knowable is the one
+            # where the prior changed.
+            user = single_user(session)
+            recompute(session, user.id)
+            session.commit()
+            print(
+                f"re-rated {len(rebased)} item(s) ({', '.join(sorted(rebased)[:5])}"
+                f"{'...' if len(rebased) > 5 else ''}) — replayed the projection onto the "
+                "new priors so the live table and a replay agree"
+            )
 
 
 if __name__ == "__main__":

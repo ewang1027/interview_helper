@@ -181,13 +181,53 @@ def fit_slope(points: list[tuple[int, float]]) -> float | None:
     return sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=True)) / denom
 
 
-def judge(points: list[tuple[int, float]], target: str | None) -> ProbeResult:
+# A single run at the *smallest* probe size that costs more than this is not the declared
+# complexity, whatever a slope would have said. Corpus references measure 0.3-0.5ms at
+# their smallest size, so this is three orders of magnitude of headroom — it fires only
+# for a submission that is catastrophically slower than the item's target.
+_ABSURD_FIRST_SIZE_SECONDS = 1.0
+
+
+def judge(
+    points: list[tuple[int, float]], target: str | None, truncated: bool = False
+) -> ProbeResult:
     pts = tuple((n, t) for n, t in points)
     band = classify_target(target)
 
     if band is None:
         return ProbeResult(
             "inconclusive", None, pts, target, f"no band for complexity_target {target!r}"
+        )
+
+    # The slowest submissions used to get the *softest* verdict, which inverted the whole
+    # point of the probe. With one point measured the driver assumes the worst class it
+    # recognises (`_g = 3.0`) before starting the next size, so it refuses to start one
+    # whenever the first run took more than ~2.2s. The sweep then ends with a single
+    # point, `judge` needs three, and `inconclusive` carries no penalty anywhere.
+    #
+    # Measured end to end on `i.code.0005` (target `O(n)`), real containers, real grader:
+    #     O(n^2) submission -> slower_than_target, slope 2.02, score 0.75
+    #     O(n^3) submission -> inconclusive,       slope None, score 1.00
+    # The worse algorithm scored higher. A truncated sweep is now evidence *for* slowness
+    # rather than an absence of evidence — the driver only truncates because it projected
+    # the next size as unaffordable, which is a statement about how fast this submission
+    # grows.
+    if truncated and pts:
+        return ProbeResult(
+            "slower_than_target",
+            None,
+            pts,
+            target,
+            f"the sweep was cut short after {len(pts)} size(s): the next one was projected "
+            f"to exceed the probe's budget, which {target} would not",
+        )
+    if pts and pts[0][1] > _ABSURD_FIRST_SIZE_SECONDS:
+        return ProbeResult(
+            "slower_than_target",
+            None,
+            pts,
+            target,
+            f"the smallest size alone took {pts[0][1]:.1f}s, which {target} would not",
         )
     if len(pts) < 3:
         return ProbeResult("inconclusive", None, pts, target, "fewer than 3 usable sizes")
@@ -280,8 +320,20 @@ def run_probe(
             payload = json.loads(line[len(PROBE_MARKER) :])
         except json.JSONDecodeError:
             continue
+        if not isinstance(payload, dict):
+            continue
         if "error" in payload:
             return ProbeResult("inconclusive", None, (), target, payload["error"])
-        return judge([(int(n), float(t)) for n, t in payload["points"]], target)
+        # Validated rather than splatted. `for n, t in payload["points"]` raised
+        # `ValueError` out of the request handler on a payload whose points were not
+        # pairs, and a 500 from the executor is read by the API as "unavailable" — a path
+        # that by design says nothing about the submission.
+        try:
+            points = [(int(n), float(t)) for n, t in payload["points"]]
+        except (KeyError, TypeError, ValueError):
+            continue
+        # `truncated` was produced by the driver and thrown away here, which is what let
+        # the slowest submissions escape as `inconclusive`.
+        return judge(points, target, truncated=bool(payload.get("truncated")))
 
     return ProbeResult("inconclusive", None, (), target, "probe produced no result line")

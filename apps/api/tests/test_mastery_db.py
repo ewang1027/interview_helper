@@ -22,6 +22,7 @@ from api.main import app
 from api.mastery import DEFAULT_ABILITY, K_ITEM, apply_evidence, lock_projection
 from api.models import ConceptEvidence, Item, Mastery
 from api.routes.sessions import get_runner
+from api.seed import seed
 
 pytestmark = pytest.mark.db
 
@@ -80,6 +81,10 @@ def snapshot(user_id: str) -> dict[str, Any]:
                 row.observations,
                 row.stability,
                 row.due_at,
+                # `last_seen` is a column the projection owns and this gate did not read
+                # it — the docstring above says a gate that skips a column is a gate with
+                # a hole in it, and `last_seen` was added after that sentence was written.
+                row.last_seen,
                 row.fsrs_card,
             )
             for row in db.exec(select(Mastery).where(Mastery.user_id == user_id)).all()
@@ -296,3 +301,39 @@ def test_the_mastery_list_says_how_little_it_knows(created_sessions, user_id):
     assert body["calibrating"] == 4
     abilities = [row["ability"] for row in body["concepts"]]
     assert abilities == sorted(abilities)
+
+
+def test_a_re_rated_item_does_not_break_the_replay_invariant(created_sessions, user_id):
+    """docs/ADAPTIVE.md's central claim: mastery is derived, and a replay must reproduce
+    the live table exactly.
+
+    `items.elo` drifts from real outcomes and a re-seed deliberately leaves it alone — but
+    a re-seed *does* refresh `difficulty_elo`, and `recompute` rebuilds `elo` as
+    `difficulty_elo` plus a replay. So re-rating an existing item left the live table
+    standing on the old prior and every replay on the new one. Measured before the fix:
+    one full-marks attempt, a prior moved 1600 -> 1680, and the replay returned item elo
+    1677.56 against a live 1597.94, with the concept's ability 4.64 Elo apart.
+
+    Nothing could see it. The suite replays after every test, so a dev database is
+    permanently rebased and only a long-lived one diverges.
+    """
+    item_id = "i.code.0002"
+    with Session(get_engine()) as db:
+        item = db.get(Item, item_id)
+        assert item is not None
+        original = item.difficulty_elo
+        item.difficulty_elo = original + 80
+        db.add(item)
+        db.commit()
+
+    try:
+        with Session(get_engine()) as db:
+            rebased = seed(db)
+        assert item_id in rebased, "a changed corpus prior has to be reported"
+    finally:
+        with Session(get_engine()) as db:
+            item = db.get(Item, item_id)
+            assert item is not None
+            item.difficulty_elo = original
+            db.add(item)
+            db.commit()

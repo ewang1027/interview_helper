@@ -166,18 +166,34 @@ def run_sandboxed(
         outcome: Outcome
         if timed_out:
             outcome = "timeout"
-        elif oom_killed:
+        elif oom_killed or exit_code == 137:
+            # `OOMKilled` is the direct signal and the one to prefer. But it is reported by
+            # the runtime, and whether it is set for a *child* process killed by the memory
+            # cgroup depends on the cgroup version and the runtime — on GitHub's runners
+            # this test intermittently came back `harness_error` with no detail at all,
+            # which is the least useful answer possible.
+            #
+            # 137 is SIGKILL. This module sends exactly one `docker kill`, on the
+            # wall-clock path, and that branch is above — so a 137 arriving here was not
+            # killed by us, and the memory cap is the only other thing that kills a
+            # container in this sandbox. Inferring OOM from it is sound rather than a
+            # guess, and it fails in the safe direction: mislabelling some other hard kill
+            # as OOM still refuses the submission.
             outcome = "out_of_memory"
         elif exit_code == 0:
             outcome = "ok"
         else:
             outcome = "harness_error"
 
-        return ExecuteResponse(
-            outcome=outcome,
-            wall_ms=wall,
-            detail=(stdout + stderr)[:MAX_OUTPUT_BYTES],
-        )
+        detail = (stdout + stderr)[:MAX_OUTPUT_BYTES]
+        if outcome == "harness_error" and not detail.strip():
+            # A `harness_error` with an empty detail is unactionable — it was reported by
+            # CI with nothing to say what happened, and there was no way to tell an
+            # inspect failure from a container that simply printed nothing. The exit code
+            # is not sensitive and it is the whole diagnosis.
+            detail = f"container exited {exit_code} with no output"
+
+        return ExecuteResponse(outcome=outcome, wall_ms=wall, detail=detail)
     finally:
         # If the process dies between the kill and here, the container leaks; the
         # label above is what a reaper sweeps on.
