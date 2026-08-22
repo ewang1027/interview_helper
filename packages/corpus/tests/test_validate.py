@@ -7,8 +7,11 @@ on good input — a validator that never fails is indistinguishable from no vali
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from corpus.loader import CorpusPaths, load_concepts
 from corpus.validate import (
@@ -103,6 +106,7 @@ def _item(**overrides: Any) -> dict[str, Any]:
         "corpus_version": 1,
         "grading": {
             "type": "tests",
+            "entrypoint": "distinct_count",
             "languages": ["python"],
             "tests": [
                 {"input": [1], "expected": 1},
@@ -416,3 +420,114 @@ def test_items_dir_absent_is_not_an_error(tmp_path: Path) -> None:
     for name in ("concept.schema.json", "item.schema.json"):
         (tmp_path / "schema" / name).write_text((REPO_CORPUS.schema / name).read_text())
     assert _errors(run(paths)) == []
+
+
+# --- holes the audit found: each of these validated clean ------------------------
+
+
+def _mutated(tmp_path: Path, domain: str, item_id: str, change: Any) -> list[Any]:
+    """A copy of the real corpus with one item changed, run through the real validator."""
+    root = tmp_path / "corpus"
+    (root / "data" / "items").mkdir(parents=True)
+    (root / "schema").mkdir(parents=True)
+    shutil.copy(REPO_CORPUS.concepts_file, root / "data" / "concepts.json")
+    for name in ("concept.schema.json", "item.schema.json"):
+        shutil.copy(REPO_CORPUS.schema / name, root / "schema" / name)
+    for source in sorted(REPO_CORPUS.items_dir.glob("*.json")):
+        shutil.copy(source, root / "data" / "items" / source.name)
+
+    path = root / "data" / "items" / f"{domain}.json"
+    payload = json.loads(path.read_text())
+    change(next(item for item in payload["items"] if item["id"] == item_id))
+    path.write_text(json.dumps(payload))
+    return run(CorpusPaths(root=root))
+
+
+def test_a_tests_item_without_an_entrypoint_is_refused(tmp_path: Path) -> None:
+    """`grading.coding` raises `ValueError` without it and `agent.tools` raises `KeyError`,
+    so this validated clean and then crashed the grader the first time it was served."""
+    findings = _mutated(tmp_path, "coding", "i.code.0001", lambda i: i["grading"].pop("entrypoint"))
+    assert any("entrypoint" in m for m in _errors(findings))
+
+
+def test_an_empty_exact_answer_is_refused(tmp_path: Path) -> None:
+    """The check was `is None`, which an empty string satisfies. Every correct answer was
+    then scored wrong at runtime — `check_answer` compares against `None` and reports
+    "39 is not None" — with nothing anywhere saying why."""
+    findings = _mutated(
+        tmp_path, "quant", "i.quant.0001", lambda i: i["grading"]["answer"].update({"exact": ""})
+    )
+    assert any("present but empty" in m for m in _errors(findings))
+
+
+def test_an_empty_primary_concept_is_refused(tmp_path: Path) -> None:
+    """`if primary and ...` skipped the check for the one value that is always wrong.
+    `primary_concept` is a foreign key into `concepts` at runtime."""
+    findings = _mutated(
+        tmp_path, "coding", "i.code.0001", lambda i: i.update({"primary_concept": ""})
+    )
+    assert _errors(findings)
+
+
+def test_two_sentences_are_not_two_independent_sources(tmp_path: Path) -> None:
+    """`jsonschema` was built with no `format_checker`, so `"format": "uri"` was an
+    annotation nothing enforced — and `_registrable_domain` returned the sentence itself,
+    making two arbitrary strings two distinct registrable domains. This is the corpus's
+    core provenance claim and the signal that *ranks* archetypes."""
+    findings = _mutated(
+        tmp_path,
+        "coding",
+        "a.code.0001",
+        lambda i: i.update(
+            {
+                "sources": [
+                    {
+                        "url": "a friend who interviewed there in 2019",
+                        "retrieved_at": "2026-01-01",
+                        "evidence": "he said they asked something like this at the onsite",
+                    },
+                    {
+                        "url": "my own recollection of a phone screen",
+                        "retrieved_at": "2026-01-01",
+                        "evidence": "I remember being asked this pattern more than once",
+                    },
+                ]
+            }
+        ),
+    )
+    assert _errors(findings)
+
+
+@pytest.mark.parametrize(
+    ("label", "change"),
+    [
+        ("target with no probe", lambda i: i["grading"].pop("complexity_probe")),
+        ("unrecognised target", lambda i: i["grading"].update({"complexity_target": "O(n + m)"})),
+        (
+            "descending sizes",
+            lambda i: i["grading"]["complexity_probe"].update({"sizes": [8000, 4000, 1000]}),
+        ),
+        (
+            "identical sizes",
+            lambda i: i["grading"]["complexity_probe"].update({"sizes": [1000, 1000, 1000]}),
+        ),
+        (
+            "generator that defines nothing",
+            lambda i: i["grading"]["complexity_probe"].update({"generator": "TODO: write this"}),
+        ),
+    ],
+)
+def test_an_unenforceable_complexity_target_is_refused(
+    tmp_path: Path, label: str, change: Any
+) -> None:
+    """None of these was checked anywhere. `item.schema.json` says a target without a probe
+    "cannot run at all" and docs/CORPUS.md makes the pairing an authoring checklist item —
+    a note to a human, not a gate.
+
+    The unrecognised-target case is the sharpest: a bad string does not fail, it returns
+    `None`, `judge` reports `inconclusive`, and `--complexity` only fails on a confident
+    `slower_than_target`. Measured: a quadratic solution declaring `O(n)` is caught at
+    slope 2.07; the same solution declaring `O(n + m)` exits 0.
+    """
+    findings = _mutated(tmp_path, "coding", "i.code.0001", change)
+    assert _errors(findings), label

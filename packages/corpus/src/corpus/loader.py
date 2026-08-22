@@ -43,6 +43,24 @@ def _read_json(path: Path) -> Any:
         return json.load(fh)
 
 
+def _items_of(payload: Any, path: Path) -> list[Any]:
+    """The `items` list, or a loud failure.
+
+    `payload.get("items", [])` meant a typo in the top-level key — a rename, a merge
+    artifact, one hand edit — silently removed a whole domain from the corpus *and* from
+    validation. Measured: renaming `items` to `item` in `coding.json` dropped twelve items
+    and `corpus validate` reported `36 items ... 0 errors, 0 warnings` and exited 0. There
+    is no count floor anywhere, so the summary line was the only signal that anything had
+    changed, and nothing compares it against anything.
+    """
+    if not isinstance(payload, dict) or "items" not in payload:
+        raise ValueError(f"{path}: no top-level 'items' key")
+    items = payload["items"]
+    if not isinstance(items, list):
+        raise ValueError(f"{path}: 'items' is {type(items).__name__}, expected a list")
+    return items
+
+
 def load_concepts(paths: CorpusPaths | None = None) -> list[Concept]:
     paths = paths or CorpusPaths.default()
     payload = _read_json(paths.concepts_file)
@@ -61,7 +79,7 @@ def load_items(paths: CorpusPaths | None = None) -> list[Item]:
     items: list[Item] = []
     for path in sorted(paths.items_dir.glob("*.json")):
         payload = _read_json(path)
-        items.extend(Item.model_validate(raw) for raw in payload.get("items", []))
+        items.extend(Item.model_validate(raw) for raw in _items_of(payload, path))
     return items
 
 
@@ -80,6 +98,6 @@ def load_raw_items(paths: CorpusPaths | None = None) -> list[dict[str, Any]]:
         return []
     out: list[dict[str, Any]] = []
     for path in sorted(paths.items_dir.glob("*.json")):
-        payload: dict[str, Any] = _read_json(path)
-        out.extend(payload.get("items", []))
+        payload = _read_json(path)
+        out.extend(_items_of(payload, path))
     return out

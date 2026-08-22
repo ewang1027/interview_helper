@@ -3809,3 +3809,106 @@ because the JSON Schema validator is built without a `format_checker`. `recomput
 item ratings onto a prior the live path never used. And a turn can still execute an
 unbounded number of tool calls — measured at 300 sandbox runs and 603 events in one
 synchronous request, which evicts the entire session's event history with no `stream.gap`.
+
+---
+
+## Audit wave 5 — the validator had holes in the checks it was named for · 2026-08-22
+
+Fifth batch. `docs/CORPUS.md` opens by saying a validator with a hole is worse than none,
+because it grants false confidence. The audit found eight, each confirmed by building a
+corpus copy, breaking one thing, and watching `corpus valid — 0 errors, 0 warnings`.
+
+```
+make check 249 · test-db 147 · test-sandbox 28 · test-e2e 1 · verify-solutions 8/8
+corpus tests 37 (was 30)
+```
+
+### Two arbitrary sentences were two independent sources
+
+The provenance rule is the corpus's core claim and the signal that **ranks** archetypes.
+An archetype citing `"a friend who interviewed there in 2019"` and `"my own recollection
+of a phone screen"` validated clean: `_registrable_domain` returned each sentence
+unchanged, so they were two distinct registrable domains.
+
+`"format": "uri"` in the schema did not help — `jsonschema.Draft202012Validator` was
+constructed with no `format_checker`, so every `format` was an annotation nothing read.
+Adding the checker turned out not to be enough either: **jsonschema's `uri` checker needs
+an optional dependency that is not installed, so it silently does nothing**. `date` is
+checked now that the checker is present; the URL shape is enforced directly, in the same
+place the independence rule lives.
+
+### An empty string passed three checks that existed to stop it
+
+- `answer.exact: ""` — the check was `is None`, which an empty string satisfies. At
+  runtime `check_answer` parses `exact` and compares against the result, so **every**
+  correct answer for that item is scored wrong, reporting "39 is not None", with nothing
+  saying why. Verified against the real grader.
+- `primary_concept: ""` — guarded by `if primary and ...`, so the check was skipped for
+  the one value that is always wrong. It is a foreign key into `concepts` at runtime.
+- A `tests` item with no `entrypoint` — optional in the schema, and `grading.coding`
+  raises `ValueError` without it while `agent.tools` raises `KeyError`. It validated clean
+  and crashed the grader the first time anyone was served it.
+
+### Nothing checked a complexity probe at all
+
+All of these validated clean: a `complexity_target` with the probe deleted, sizes in
+descending order, three identical sizes, and a generator whose entire body was the string
+`"TODO: write this generator"`. `item.schema.json` says outright that a target without a
+probe "cannot run at all", and docs/CORPUS.md makes the pairing an authoring checklist
+item — which is a note to a human, not a gate.
+
+The sharpest of these is the target string itself, because it fails **silently**:
+
+```
+quadratic solution, target 'O(n)'      -> exit 1   SLOW  slope 2.07 vs O(n)
+same solution,      target 'O(n + m)'  -> exit 0   complexity inconclusive
+```
+
+An unrecognised target returns `None`, `judge` reports `inconclusive`, and
+`verify_reference_solutions --complexity` only fails on a confident `slower_than_target`.
+So `O(n + m)`, `O(n) amortised`, `O(sqrt(n))` and a `0(n)` zero-for-O typo all turn the
+gate off without a word.
+
+`classify_target` moved from the executor into `packages/corpus`, which is where it
+belongs: it is a statement about what a corpus string *means*, and the corpus owns the
+item contract. One definition, imported by the executor to judge a measurement and by the
+validator to refuse a target it could never judge — rather than a copy in each that drifts.
+
+### A typo in one key deleted a quarter of the corpus, silently
+
+`load_items` used `payload.get("items", [])`. Renaming `items` to `item` in `coding.json`
+— a merge artifact, a hand edit — removed twelve items from the corpus *and* from
+validation:
+
+```
+159 concepts · 36 items (12 archetypes, 24 instances) · behavioral=12, quant=12, system_design=12
+corpus valid — 0 errors, 0 warning(s)          exit 0
+```
+
+The summary line is the only signal, and nothing compares it against anything. Missing or
+non-list `items` is now a load failure, reported as an error rather than a traceback.
+
+### The originality check is blinded by one bold word in eight
+
+Not fixed, but now stated accurately in docs/CORPUS.md, because the honest description
+was already half-written there and this narrows it further. `_shingles` is
+`text.lower().split()` with no punctuation or Markdown stripping, and the field it
+tokenizes is `statement_md`. On one 60-word paste, differing only in emphasis markers:
+
+| | containment | verdict |
+|---|---|---|
+| raw paste | 100% | error, correctly |
+| every 8th word bolded | 0.0% | passes |
+| every 10th word bolded | 22.6% | error |
+
+Reflowing the same paste as a bullet list takes the 12-gram check from 49 hits to zero.
+docs/CORPUS.md already said a statement copied from a live URL passes cleanly; it now also
+says that the one slip it *does* catch is only caught in raw, unformatted form.
+
+### Still open
+
+The complexity probe's free pass for the slowest submissions — a cubic solution scores 1.0
+where a quadratic one scores 0.75, because the pessimistic projection refuses to start a
+second size and `inconclusive` carries no penalty. `recompute` rebasing item ratings onto
+a prior the live path never used. An unbounded number of tool executions per turn. And
+`check_docs.py`'s own blind spots, which are the next batch.

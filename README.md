@@ -94,7 +94,7 @@ buildlog disagree about what exists, the buildlog is right.**
 | [GLOSSARY](docs/GLOSSARY.md) | Project vocabulary in one place | all | Current |
 | [ARCHITECTURE](docs/ARCHITECTURE.md) | Services, trust boundaries, data model, model routing | all | Design, partly built |
 | [CONCEPTS](docs/CONCEPTS.md) | The 159-concept taxonomy and its rules | 0 | ✅ Built |
-| [CORPUS](docs/CORPUS.md) | What a corpus item is; the validator's eight checks | 0 → 1 | ✅ Contract built |
+| [CORPUS](docs/CORPUS.md) | What a corpus item is, and what the validator does and does not catch | 0 → 1 | ✅ Contract built |
 | [RESEARCH](docs/RESEARCH.md) | How items get researched and authored | 1 | Spec |
 | [SECURITY](docs/SECURITY.md) | Threat model, sandbox isolation, the six escape tests, the answer parser | 2 | ✅ Isolation built |
 | [GRADING](docs/GRADING.md) | The four graders and what they produce | 2 → 3 | ✅ All four graders built |

@@ -66,6 +66,21 @@ copy of the source page, so it compares the statement against the item's own
 an author who pastes problem text into their evidence note, and nothing else. **A
 statement copied verbatim from a live URL passes this check cleanly.**
 
+**And narrower still than that.** `_shingles` is `text.lower().split()`, with no
+punctuation or Markdown stripping — and the field it tokenizes is `statement_md`. So the
+one thing every author does to a Markdown statement defeats it. Measured on the same
+60-word paste, the only difference being emphasis markers:
+
+| | containment | verdict |
+|---|---|---|
+| raw paste | 100% | **error**, correctly |
+| every 8th word bolded (7 of 60 touched) | 0.0% | passes |
+| every 9th word bolded (6 of 60 touched) | 11.3% | passes |
+| every 10th word bolded (6 of 60 touched) | 22.6% | error |
+
+Reflowing the same paste as a bullet list takes the 12-gram check from 49 hits to zero.
+Bolding one word in eight is enough to make it blind.
+
 So the originality rule is enforced by *process*, not by the validator: read sources to
 learn that a pattern is asked, close them, and write the problem from the pattern. The
 shingle check is a backstop against one specific slip, not a guarantee. Treating it as

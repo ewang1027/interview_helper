@@ -17,6 +17,7 @@ any error. Checks, in order:
 from __future__ import annotations
 
 import json
+import re
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
@@ -25,6 +26,7 @@ from typing import Any
 
 import jsonschema
 
+from corpus.complexity import classify_target
 from corpus.loader import CorpusPaths, load_raw_concepts, load_raw_items
 
 # Two shingle thresholds. A single long verbatim run is damning on its own; a high
@@ -108,6 +110,12 @@ def _shingles(text: str, n: int) -> set[str]:
     return {" ".join(words[i : i + n]) for i in range(len(words) - n + 1)}
 
 
+# A source has to be a fetchable address. Deliberately permissive about the rest of the
+# URL and strict about the scheme and a dotted host, which is what distinguishes a citation
+# from a sentence.
+_URL = re.compile(r"^https?://[^\s/@:]+\.[^\s/@:]+", re.I)
+
+
 def _registrable_domain(url: str) -> str:
     """Approximate eTLD+1 — good enough to tell independent sources apart.
 
@@ -138,11 +146,70 @@ def _load_schema(paths: CorpusPaths, name: str) -> dict[str, Any]:
     return schema
 
 
+def _check_complexity(grading: dict[str, Any], where: str) -> list[Finding]:
+    """A complexity target is only enforceable if a probe can supply inputs of size n.
+
+    None of this was checked anywhere. `item.schema.json` says outright that a target
+    without a probe "cannot run at all", and docs/CORPUS.md makes the pairing an authoring
+    checklist item — which is a note to a human, not a gate. All of the following
+    validated clean: a target with the probe deleted, sizes in descending order, three
+    identical sizes, and a generator whose body was the string "TODO".
+
+    The target string is checked against `classify_target` too, because an unrecognised
+    one disables the gate *silently*: `verify_reference_solutions --complexity` fails only
+    on a confident `slower_than_target`, so a quadratic solution declaring `O(n + m)` comes
+    back `inconclusive` and exits 0, where the same solution declaring `O(n)` is caught.
+    """
+    findings: list[Finding] = []
+    target = grading.get("complexity_target")
+    probe = grading.get("complexity_probe")
+
+    if target and not probe:
+        findings.append(
+            Finding("error", where, f"complexity_target '{target}' has no complexity_probe to run")
+        )
+    if probe and not target:
+        findings.append(
+            Finding("warn", where, "complexity_probe with no complexity_target to judge")
+        )
+
+    if target and classify_target(str(target)) is None:
+        findings.append(
+            Finding(
+                "error",
+                where,
+                f"complexity_target '{target}' is not a band the probe recognises; "
+                "an unrecognised target silently disables the check",
+            )
+        )
+
+    if probe:
+        sizes = probe.get("sizes", [])
+        if sorted(sizes) != list(sizes) or len(set(sizes)) != len(sizes):
+            findings.append(
+                Finding(
+                    "error",
+                    where,
+                    f"complexity_probe.sizes must ascend and be distinct: {sizes}",
+                )
+            )
+        if "make_input" not in str(probe.get("generator", "")):
+            findings.append(
+                Finding("error", where, "complexity_probe.generator must define make_input(n)")
+            )
+    return findings
+
+
 def check_schema(
     records: list[dict[str, Any]], schema: dict[str, Any], label: str
 ) -> list[Finding]:
     findings: list[Finding] = []
-    validator = jsonschema.Draft202012Validator(schema)
+    # With no `format_checker`, `"format": "uri"` and `"format": "date"` are annotations
+    # that nothing enforces — so `"a friend who interviewed there in 2019"` satisfied
+    # `sources[].url`, and `_registrable_domain` returned the sentence itself. Two
+    # arbitrary sentences were therefore two distinct registrable domains, which is the
+    # corpus's core provenance claim and the signal that *ranks* archetypes.
+    validator = jsonschema.Draft202012Validator(schema, format_checker=jsonschema.FormatChecker())
     for rec in records:
         rid = rec.get("id", "<no id>")
         for err in sorted(validator.iter_errors(rec), key=lambda e: list(e.path)):
@@ -248,7 +315,10 @@ def check_items(items: list[dict[str, Any]], concepts: list[dict[str, Any]]) -> 
                     )
                 )
         primary = item.get("primary_concept")
-        if primary and primary not in item.get("concepts", []):
+        # No truthiness guard. `primary_concept: ""` is the one value that is always wrong
+        # — it is a foreign key into `concepts` at runtime — and `if primary` skipped the
+        # check for exactly that value.
+        if primary is not None and primary not in item.get("concepts", []):
             findings.append(
                 Finding("error", where, f"primary_concept '{primary}' not listed in concepts")
             )
@@ -266,7 +336,17 @@ def check_items(items: list[dict[str, Any]], concepts: list[dict[str, Any]]) -> 
 
         # --- source independence ------------------------------------------------
         sources = item.get("sources", [])
-        domains = {_registrable_domain(s["url"]) for s in sources if s.get("url")}
+        # `"format": "uri"` in the schema is inert — jsonschema needs an optional
+        # dependency to check it, and without one it is an annotation. So the shape is
+        # enforced here, where the rule actually lives. Two arbitrary sentences —
+        # "a friend who interviewed there in 2019" — were two distinct registrable
+        # domains, which is the corpus's core provenance claim and the signal that *ranks*
+        # archetypes.
+        urls = [str(source.get("url", "")) for source in sources]
+        for url in urls:
+            if not _URL.match(url):
+                findings.append(Finding("error", where, f"source url is not a url: {url[:60]!r}"))
+        domains = {_registrable_domain(url) for url in urls if _URL.match(url)}
         if len(domains) < 2:
             findings.append(
                 Finding(
@@ -393,6 +473,11 @@ def _check_grading(item: dict[str, Any], where: str, concept_ids: set[str]) -> l
         )
 
     if actual == "tests":
+        # `grading.coding` raises `ValueError` without it and `agent.tools` raises
+        # `KeyError`, so an item with no entrypoint validates clean and then crashes the
+        # grader the first time anyone is served it.
+        if not grading.get("entrypoint"):
+            findings.append(Finding("error", where, "tests grading needs an entrypoint"))
         declared = set(grading.get("languages", []))
         provided = set(grading.get("reference_solutions", {}))
         missing = declared - provided
@@ -407,9 +492,17 @@ def _check_grading(item: dict[str, Any], where: str, concept_ids: set[str]) -> l
                     "warn", where, f"reference solution for undeclared language(s): {sorted(extra)}"
                 )
             )
+        findings.extend(_check_complexity(grading, where))
     elif actual == "answer":
         answer = grading.get("answer", {})
-        if answer.get("exact") is None and answer.get("numeric") is None:
+        # Present-but-empty is its own error, and not covered by the "needs one of them"
+        # check below: `check_answer` parses `exact` and compares against the result, so
+        # an empty string makes every correct answer wrong at runtime — it reports
+        # "39 is not None" — with nothing anywhere saying why. Verified against the real
+        # grader on `i.quant.0001`.
+        if "exact" in answer and not str(answer["exact"] or "").strip():
+            findings.append(Finding("error", where, "answer.exact is present but empty"))
+        if not answer.get("exact") and answer.get("numeric") is None:
             findings.append(
                 Finding("error", where, "answer grading needs an exact or numeric value")
             )
@@ -476,7 +569,15 @@ def main(argv: list[str] | None = None) -> int:
     if argv and Path(argv[0]).is_dir():
         paths = CorpusPaths(root=Path(argv[0]).resolve())
 
-    findings = run(paths)
+    try:
+        findings = run(paths)
+    except (ValueError, KeyError) as exc:
+        # A corpus file that cannot be read at all is an error, not a traceback. The
+        # loader raises here for a missing or non-list `items` key — a case that used to
+        # be swallowed, dropping a whole domain while reporting `0 errors`.
+        print(f"ERROR corpus: {exc}", file=sys.stderr)
+        print("corpus INVALID — 1 error(s), 0 warning(s)")
+        return 1
     errors = [f for f in findings if f.level == "error"]
     warns = [f for f in findings if f.level == "warn"]
 

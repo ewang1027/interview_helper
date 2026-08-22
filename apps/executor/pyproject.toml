@@ -6,6 +6,10 @@ requires-python = ">=3.12,<3.13"
 # Deliberately minimal. This service runs untrusted code; every dependency is
 # attack surface, so it gets the HTTP layer and nothing else.
 dependencies = [
+    # `corpus` is pure data and schema — no network, no credentials, no I/O. Importing it
+    # does not widen this service's trust boundary, which is enforced by the container it
+    # runs in, and it keeps `classify_target` from being two copies that drift.
+    "corpus",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.34",
     "pydantic>=2.10",

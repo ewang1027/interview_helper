@@ -35,9 +35,9 @@ from __future__ import annotations
 
 import json
 import math
-import re
 from dataclasses import dataclass
 
+from corpus.complexity import classify_target
 from executor.protocol import Verdict
 from executor.sandbox import run_sandboxed
 
@@ -165,40 +165,6 @@ class ProbeResult:
     def penalises(self) -> bool:
         """Only a confident `slower_than_target` may affect a score."""
         return self.verdict == "slower_than_target"
-
-
-def classify_target(target: str | None) -> str | None:
-    """Map a `complexity_target` string onto a measured band.
-
-    Symbols other than the probe's own `n` are treated as constants, because the probe
-    only varies n: `O(n log S)` over a fixed value range S is linear in n, and judging it
-    against a linearithmic band would let a genuinely n-log-n solution pass unnoticed.
-    """
-    if not target:
-        return None
-    t = target.lower().replace(" ", "")
-    t = re.sub(r"^o\((.*)\)$", r"\1", t)
-    if not t:
-        return None
-
-    # Drop log factors over a symbol that is not n — they do not grow with the probe.
-    t = re.sub(r"log\((?![n)])[a-z]+\)", "", t)
-    t = re.sub(r"log(?![n(])[a-z]", "", t)
-    t = t.strip("*·") or "1"
-
-    if t in {"1", ""}:
-        return "constant"
-    if t in {"logn", "log(n)"}:
-        return "log"
-    if t in {"n", "n*1"}:
-        return "linear"
-    if t in {"nlogn", "nlog(n)", "n*logn"}:
-        return "linearithmic"
-    if t in {"n^2", "n**2", "n2", "n^2logn"}:
-        return "quadratic"
-    if t in {"n^3", "n**3", "n3"}:
-        return "cubic"
-    return None
 
 
 def fit_slope(points: list[tuple[int, float]]) -> float | None:
