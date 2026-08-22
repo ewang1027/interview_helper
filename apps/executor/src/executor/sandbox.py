@@ -11,10 +11,14 @@ candidate's source. It sets limits the kernel enforces and reports what happened
 
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
+import threading
 import time
 import uuid
+from collections import deque
+from typing import Any
 
 from executor.protocol import ExecuteResponse, Outcome
 
@@ -27,6 +31,20 @@ CPUS = os.environ.get("EXECUTOR_CPUS", "0.5")
 # Untrusted output is itself a denial-of-service vector: an unbounded stderr fills the
 # caller's memory just as effectively as an allocation bomb inside the container.
 MAX_OUTPUT_BYTES = 64 * 1024
+
+# What the container is allowed to *produce*, as opposed to what is retained. The cap
+# above bounded only the latter: `communicate()` accumulated the whole stream in this
+# process first and truncated afterwards, when the memory had already been spent.
+# Measured — 500 MB of container output cost ~1.7 GB peak RSS in the executor and still
+# returned `outcome="ok"` with a tidy 64 KB detail. Worse, at high throughput it wedged
+# the daemon's attach stream, so the wall-clock kill stopped working: a run declaring a
+# 5 s wall took 30.4 s of real time and 2.9 GB, with `docker rm -f` blowing its own
+# timeout. The container's `--memory` cap is irrelevant here because the memory is spent
+# on the *host* side of the pipe.
+#
+# Generous relative to what is kept, because the point is to stop a bomb rather than to
+# police a chatty program: a submission that prints a few MB is merely noisy.
+MAX_STREAM_BYTES = 8 * 1024 * 1024
 
 _LABEL = "interview-helper-executor"
 
@@ -88,9 +106,93 @@ def _docker_flags(name: str, memory_mb: int) -> list[str]:
 
 
 def _run(cmd: list[str], timeout: float = 15.0) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603
-        cmd, capture_output=True, text=True, timeout=timeout, check=False
-    )
+    """Run a docker CLI command. **Never raises**, whatever the daemon does.
+
+    `run_sandboxed` promises the same thing, and this is where that promise was broken.
+    Both `docker kill` (from inside the timeout handler) and `docker rm -f` (from the
+    `finally`) hit their own timeouts under load and propagated `TimeoutExpired` — the
+    second one also masking any result already computed. Measured: a chatty submission
+    drove `docker rm -f` past 15 s on three consecutive trials, and the caller saw a 500.
+
+    That matters more than a lost result. The API maps an executor 5xx to
+    `ExecutorUnavailableError`, records "executor unavailable", and that path says nothing
+    about the submission — so it was a reliable way for a candidate to turn a bad attempt
+    into an infrastructure fault.
+    """
+    try:
+        return subprocess.run(  # noqa: S603
+            cmd, capture_output=True, text=True, timeout=timeout, check=False
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return subprocess.CompletedProcess(cmd, returncode=-1, stdout="", stderr=str(exc))
+
+
+def _drain(stream: Any, sink: deque[bytes], budget: int) -> None:
+    """Read to EOF, keeping only the last `budget` bytes.
+
+    The **tail**, not the head, and that is a fix rather than a detail. The driver prints
+    its result marker last and `parse_result` scans backwards for it, so retaining the
+    first N bytes meant any submission whose own output exceeded the cap lost its grading
+    entirely and came back `harness_error` — a candidate printing debug lines was scored
+    as a harness failure.
+
+    Reading continues to EOF rather than stopping early, so a program that is merely
+    chatty still delivers its marker. What is bounded is memory, which is what was
+    actually unbounded: nothing accumulates beyond `budget`, and the wall clock remains
+    the bound on time.
+    """
+    held = 0
+    try:
+        while True:
+            chunk = stream.read(65536)
+            if not chunk:
+                return
+            sink.append(chunk)
+            held += len(chunk)
+            while held > budget and len(sink) > 1:
+                held -= len(sink.popleft())
+    except (OSError, ValueError):
+        return
+    finally:
+        with contextlib.suppress(OSError, ValueError):
+            stream.close()
+
+
+class _BoundedReader:
+    """Drains a process's pipes on threads, keeping only the tail of each.
+
+    Replaces `communicate`, which has no bound: it returns the whole stream and any cap is
+    applied after the memory has been spent. It also owns both pipes for the process's
+    whole lifetime, so the timeout path reads from *this* rather than calling
+    `communicate` a second time — doing that raised `ValueError: flush of closed file`,
+    because stdin was already closed and these threads already held the pipes.
+    """
+
+    def __init__(self, proc: subprocess.Popen[bytes]) -> None:
+        self._out: deque[bytes] = deque()
+        self._err: deque[bytes] = deque()
+        self._threads = [
+            threading.Thread(target=_drain, args=(proc.stdout, self._out, MAX_STREAM_BYTES)),
+            threading.Thread(target=_drain, args=(proc.stderr, self._err, MAX_STREAM_BYTES)),
+        ]
+        for thread in self._threads:
+            thread.daemon = True
+            thread.start()
+
+    def send(self, proc: subprocess.Popen[bytes], payload: bytes) -> None:
+        if proc.stdin is None:
+            return
+        with contextlib.suppress(OSError, ValueError):
+            proc.stdin.write(payload)
+            proc.stdin.close()
+
+    def result(self) -> tuple[bytes, bytes]:
+        for thread in self._threads:
+            thread.join(timeout=2.0)
+        return (
+            b"".join(self._out)[-MAX_STREAM_BYTES:],
+            b"".join(self._err)[-MAX_STREAM_BYTES:],
+        )
 
 
 def _inspect(name: str) -> tuple[int, bool]:
@@ -131,20 +233,36 @@ def run_sandboxed(
     timed_out = False
     started = time.monotonic()
 
+    # `replace`, not `surrogateescape`: the latter only round-trips the U+DC80-DCFF range,
+    # so a lone `\ud800` — a well-formed JSON escape that reaches here as a `str` — still
+    # raised. A mangled character makes the container report a syntax error, which is a
+    # grading failure and the correct outcome. What it must not do is raise past this
+    # function's "never raises" contract into a 500 the API reads as "executor
+    # unavailable", a verdict that says nothing about the submission.
+    encoded = source.encode("utf-8", "replace")
+
     try:
         proc = subprocess.Popen(  # noqa: S603
             _docker_flags(name, memory_mb or DEFAULT_MEMORY_MB),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            # Bytes, not `text=True`. Text mode encodes with the default handler, so a
+            # source containing an unpaired surrogate — `"\ud800"` is a well-formed JSON
+            # escape and reaches here as a `str` — raised `UnicodeEncodeError` out of
+            # `communicate`, past this function's "never raises" contract, and became a
+            # 500 that the API reads as "the executor is unavailable". That path says
+            # nothing about the submission, so it was a reliable way for a candidate to
+            # make their own grading disappear as an infrastructure fault.
         )
     except (OSError, ValueError) as exc:
         return ExecuteResponse(outcome="harness_error", detail=f"could not launch docker: {exc}")
 
+    reader = _BoundedReader(proc)
     try:
+        reader.send(proc, encoded)
         try:
-            stdout, stderr = proc.communicate(input=source, timeout=wall_s)
+            proc.wait(timeout=wall_s)
         except subprocess.TimeoutExpired:
             # THE critical step. Measured: subprocess's own timeout kills only the
             # docker CLI — the daemon keeps running the container, which then also
@@ -154,12 +272,14 @@ def run_sandboxed(
             _run(["docker", "kill", name], timeout=10)  # measured 0.10s
             # `docker stop` is NOT acceptable here: measured 10.1s against a process
             # that ignores SIGTERM, which is a hang wearing a timeout's clothes.
-            try:
-                stdout, stderr = proc.communicate(timeout=10)
-            except subprocess.TimeoutExpired:
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                proc.wait(timeout=10)
+            if proc.poll() is None:
                 proc.kill()  # last resort: the caller must never hang either
-                stdout, stderr = "", ""
+        raw_out, raw_err = reader.result()
 
+        stdout = raw_out.decode("utf-8", "replace")
+        stderr = raw_err.decode("utf-8", "replace")
         wall = int((time.monotonic() - started) * 1000)
         exit_code, oom_killed = _inspect(name)
 
@@ -185,7 +305,9 @@ def run_sandboxed(
         else:
             outcome = "harness_error"
 
-        detail = (stdout + stderr)[:MAX_OUTPUT_BYTES]
+        # The tail, for the same reason `_drain` keeps the tail: the result marker is the
+        # last thing printed and `parse_result` scans backwards for it.
+        detail = (stdout + stderr)[-MAX_OUTPUT_BYTES:]
         if outcome == "harness_error" and not detail.strip():
             # A `harness_error` with an empty detail is unactionable — it was reported by
             # CI with nothing to say what happened, and there was no way to tell an

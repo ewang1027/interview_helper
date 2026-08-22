@@ -71,7 +71,23 @@ Six layers, each independently sufficient to prevent a class of harm:
 | Capabilities | All Linux capabilities dropped; `no-new-privileges` | Kernel-adjacent tricks |
 | Syscalls | Docker's default seccomp profile. The "plus explicit deny" this row used to promise is **not** implemented — see "Measured behaviour" for why adding it as written would have *weakened* the sandbox | Sandbox escape primitives |
 | Resources | Wall-clock timeout, memory cap, PID cap (64), CPU quota (0.5). **The first two are per-request overrides with a positive-integer floor and no ceiling** — a caller may ask for `wall_ms=3600000`; a server-side maximum is owed before the executor is reachable by anything but the API. `POST /probe` runs under the same limits but defaults them **higher** (60s wall, 512 MB) because it deliberately runs the submission at four sizes; its own internal budget stops the sweep at ~20s of process time, so the wall is a backstop rather than the real bound. That last claim was **false as first shipped** and CI caught it: the budget was only checked *between* sizes, so on a runner several times slower than the calibration machine a single size's first run blew through the wall mid-measurement. The driver now projects each size's cost from the growth already measured and refuses to start one it cannot afford (2026-08-21), which is what makes the budget the real bound on any machine | Denial of service against the host |
-| Output | Captured stdout/stderr truncated at 64 KB | An unbounded stream filling the *caller's* memory — as effective a DoS as an allocation bomb inside the container. Note the grading consequence: if truncation eats the result marker, the run becomes a `harness_error`, so a very chatty correct solution fails |
+| Output | Read on bounded reader threads, keeping the last 8 MB per stream; 64 KB retained in the response | An unbounded stream filling the *caller's* memory — as effective a DoS as an allocation bomb inside the container, and the container's own `--memory` cap does not touch it because the memory is spent on the **host** side of the pipe |
+
+**The 64 KB cap used to bound only what was *retained*.** `communicate()` accumulated the
+whole stream in the executor's address space and the truncation ran afterwards, when the
+memory had already been spent. Measured: 500 MB of container output cost ~1.7 GB peak RSS
+in the executor and still returned `outcome="ok"` with a tidy 64 KB detail. An unbounded
+writer was worse — it wedged the daemon's attach stream, so the wall-clock kill stopped
+working and a run declaring a 5 s wall took **30.4 s** of real time at 2.9–5.0 GB, with
+`docker rm -f` blowing its own 15 s timeout. Now: 500 MB costs 60 MB and 2.1 s, and the
+unbounded writer is a clean `timeout` at 5.2 s and 79 MB.
+
+**The retained window is the tail, not the head**, which is a correctness fix rather than a
+detail. The driver prints its result marker last and `parse_result` scans backwards for it,
+so keeping the *first* 64 KB meant any submission whose own output exceeded the cap lost
+its grading and came back `harness_error` — the grading consequence this table used to note
+as unavoidable was in fact an artefact of truncating the wrong end. A chatty correct
+solution now delivers its marker.
 
 Isolation is at the **infrastructure** layer, not in code. "The sandbox has no network" is
 a security group with zero egress rules — not a Python check that can be bypassed by the

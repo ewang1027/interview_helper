@@ -17,6 +17,7 @@ Two rules these tests are written to respect, both learned by measurement:
 from __future__ import annotations
 
 import subprocess
+import time
 
 import pytest
 
@@ -155,3 +156,59 @@ def test_no_cross_execution_contamination():
     assert second.outcome == "ok", second.detail
     assert "leaked" not in second.detail, f"contamination: {second.detail}"
     assert "scratch:[]" in second.detail
+
+
+def test_a_lone_surrogate_in_the_source_is_not_a_crash():
+    """`run_sandboxed` promises it never raises, and text-mode encoding broke that.
+
+    `"\\ud800"` is a well-formed JSON escape, so a perfectly valid `POST /execute` body
+    delivers a lone surrogate as a `str`. `communicate` in text mode raised
+    `UnicodeEncodeError` straight past the contract, and FastAPI turned it into a 500 —
+    which `ExecutorClient` maps to `ExecutorUnavailableError`, which the API records as
+    "executor unavailable". That verdict says *nothing about the submission*, so it was a
+    reliable way for a candidate to make a bad attempt disappear as an infrastructure
+    fault.
+    """
+    result = run_sandboxed("print('hi')  # \ud800")
+
+    assert result.outcome in {"ok", "harness_error"}
+    assert _docker_alive()
+
+
+def test_a_chatty_submission_still_delivers_its_result_marker():
+    """The retained window is the **tail**, and that is a fix rather than a detail.
+
+    The driver prints its result marker last and `parse_result` scans backwards for it, so
+    keeping the first 64 KB meant any submission whose own output exceeded the cap lost
+    its grading entirely and came back `harness_error` — a candidate printing debug lines
+    was scored as a harness failure.
+    """
+    source = (
+        "import sys\n"
+        "for _ in range(200): sys.stdout.write('A' * (1 << 20))\n"
+        'print(\'##LEARN-RESULT {"passed": 3, "failures": []}\')\n'
+    )
+
+    result = run_sandboxed(source, wall_ms=15000)
+
+    assert "##LEARN-RESULT" in result.detail
+    assert len(result.detail) <= 64 * 1024
+
+
+def test_an_output_bomb_is_bounded_in_memory_and_still_hits_its_wall_clock():
+    """`communicate()` accumulated the whole stream in this process and truncated
+    afterwards, when the memory had already been spent. Measured before: 500 MB of output
+    cost ~1.7 GB peak RSS and returned `ok`; an unbounded writer reached 2.9-5.0 GB and
+    wedged the daemon's attach stream, so a declared 5 s wall took 30.4 s of real time
+    with `docker rm -f` blowing its own timeout. The container's `--memory` cap does not
+    help — the memory is spent on the *host* side of the pipe.
+    """
+    started = time.monotonic()
+
+    result = run_sandboxed(
+        "import sys\nwhile True: sys.stdout.write('A' * (1 << 20))", wall_ms=3000
+    )
+
+    assert result.outcome == "timeout"
+    assert time.monotonic() - started < 20.0
+    assert _docker_alive()

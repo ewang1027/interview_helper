@@ -4016,3 +4016,85 @@ an executor 500 that the API records as "not the candidate's fault". A turn can 
 unbounded number of tool calls — 300 sandbox runs and 603 events in one request, evicting
 the session's whole event history with no `stream.gap`. `/dev/shm` is writable and escape
 test 2 never tries it. And `check_docs.py` has four blind spots of its own.
+
+---
+
+## Audit wave 7 — three ways to make your own grading disappear · 2026-08-22
+
+Seventh batch: the executor. The theme is one the sandbox audit named — `run_sandboxed`
+promises "never raises, never hangs" and had three paths that raise. Each becomes a 500,
+which `ExecutorClient` maps to `ExecutorUnavailableError`, which the API records as
+"executor unavailable" — a verdict that by design **says nothing about the submission**.
+So each was a reliable way for a candidate to turn a bad attempt into an infrastructure
+fault.
+
+```
+make check 249 · test-db 148 · test-sandbox 31 · test-e2e 1 · verify-solutions 8/8
+```
+
+### The 64 KB output cap bounded what was kept, not what was read
+
+`communicate()` accumulates the whole stream in the executor's address space; the
+truncation ran afterwards, when the memory had already been spent. The container's own
+`--memory=256m` is irrelevant, because the memory is spent on the **host** side of the pipe.
+
+| | before | after |
+|---|---|---|
+| 500 MB of output | ~1.7 GB peak RSS, 2.5 s, `outcome="ok"` | 60 MB, 2.1 s |
+| unbounded writer, 5 s wall | **30.4 s real**, 2.9–5.0 GB, `docker rm -f` blew its own 15 s timeout | clean `timeout` at 5.2 s, 79 MB |
+
+At high throughput it wedged the daemon's attach stream, which is why the wall-clock kill
+stopped working — the declared 5 s wall became 30 s. Output is now read on two bounded
+reader threads that keep a rolling tail, so nothing accumulates and the wall clock is the
+bound on time again.
+
+### And the cap was truncating the wrong end
+
+Found while fixing the above, and it is the more consequential half. The retained window
+was the **first** 64 KB. The driver prints its result marker **last**, and `parse_result`
+scans backwards for it — so any submission whose own output exceeded 64 KB lost its
+grading entirely and came back `harness_error`. A candidate printing debug lines was
+scored as a harness failure.
+
+docs/SECURITY.md recorded this as an unavoidable consequence of truncation ("if truncation
+eats the result marker, the run becomes a `harness_error`, so a very chatty correct
+solution fails"). It was not unavoidable; it was an artefact of keeping the wrong end.
+
+### A lone surrogate in the source crashed the request
+
+`"\ud800"` is a well-formed JSON escape, so a perfectly valid `POST /execute` body delivers
+a lone surrogate as a `str`. `communicate` in text mode encoded it with the default handler
+and raised `UnicodeEncodeError` past the "never raises" contract. Encoding is explicit now
+— and `surrogateescape` is *not* enough, because it only round-trips U+DC80–DCFF, so the
+first fix still raised on `\ud800`. With `replace`, the container reports a syntax error,
+which is a grading failure and the right answer.
+
+### `_run` propagated its own timeouts, including from the `finally`
+
+Both `docker kill` (inside the timeout handler) and `docker rm -f` (from the `finally`)
+hit their own timeouts under load and raised — the second also masking any result already
+computed. It returns a sentinel now and never propagates.
+
+### The reaper the docs cite had no caller
+
+docs/SECURITY.md justifies dropping `--rm` — which is genuinely necessary, since `--rm`
+destroys the container before `docker inspect` can tell a wall-clock kill from an OOM kill,
+both being exit 137 — by pointing at "a labelled reaper for containers orphaned between
+those steps." `reap_orphans` had one definition, zero callers, no startup hook, no timer.
+It runs on executor startup now, which is exactly when the containers orphaned by a
+previous process's crash are visible.
+
+### What is still open, and what is deliberately not being fixed
+
+**Not fixed, by decision:** a candidate can still forge a *plausible* result — a full score
+on the real test count. docs/SECURITY.md scopes that out (single user, the only person
+deceived is the one practising) and that reasoning is unchanged. What wave 2 fixed was the
+blast radius, not the forgery.
+
+**Still open:** `/dev/shm` is writable and escape test 2 never tries it — real harm is
+small (64 MB, per-container, destroyed with it) but both the doc and the test's stated
+requirement are literally false. A turn can execute an unbounded number of tool calls —
+300 sandbox runs and 603 events in one synchronous request, evicting the session's entire
+event history with no `stream.gap`. The probe's 20 s budget is `process_time` while the
+wall is real time under `--cpus=0.5`, so the first size is still not covered by the
+projection. And `check_docs.py` has four blind spots of its own.

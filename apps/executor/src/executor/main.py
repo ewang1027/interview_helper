@@ -13,18 +13,44 @@ becomes the boundary and there is no socket at all.
 
 from __future__ import annotations
 
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from executor import __version__
 from executor.complexity import run_probe
 from executor.harness import build_driver, parse_result
 from executor.protocol import ExecuteRequest, ExecuteResponse, ProbeRequest, ProbeResponse
-from executor.sandbox import run_sandboxed
+from executor.sandbox import reap_orphans, run_sandboxed
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Sweep containers orphaned by a previous process before serving anything.
+
+    `--rm` is deliberately not used anywhere in `sandbox.py`: it destroys the container
+    before `docker inspect` can distinguish a wall-clock kill from an OOM kill, which are
+    both exit 137. docs/SECURITY.md justifies dropping it by pointing at "a labelled
+    reaper for containers orphaned between those steps" — and `reap_orphans` had one
+    definition, zero callers, no startup hook and no timer. The paths that orphan a
+    container are exactly the ones where this process died or its cleanup failed, so
+    startup is when the sweep can actually see them.
+    """
+    reaped = reap_orphans()
+    if reaped:
+        logger.warning("reaped %d container(s) orphaned by a previous run", reaped)
+    yield
+
 
 app = FastAPI(
     title="interview_helper executor",
     version=__version__,
     description="Runs untrusted candidate code under strict isolation.",
+    lifespan=lifespan,
 )
 
 
