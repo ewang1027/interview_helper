@@ -4098,3 +4098,82 @@ requirement are literally false. A turn can execute an unbounded number of tool 
 event history with no `stream.gap`. The probe's 20 s budget is `process_time` while the
 wall is real time under `--cpus=0.5`, so the first size is still not covered by the
 projection. And `check_docs.py` has four blind spots of its own.
+
+---
+
+## Audit wave 8 — a turn that ran 300 containers, and a writable path nobody tested · 2026-08-22
+
+Eighth batch, and the last of the confirmed high-severity findings.
+
+```
+make check 249 · test-db 149 · test-sandbox 31 · test-e2e 1 · verify-solutions 8/8
+```
+
+### One turn, 300 executor round-trips, and the session's history gone
+
+`MAX_TOOL_ROUNDS = 5` caps *model calls*. Nothing capped `tool_use` blocks per response,
+and the loop executed every one of them:
+
+```
+60 run_code blocks per response, 5 rounds:
+  truncated: True | tool_calls reported: 300
+  executor invocations in ONE turn: 300
+  turns rows written: 307
+  bus events published: 603      (against a 256-slot buffer)
+```
+
+Two consequences. Three hundred container round-trips inside one synchronous HTTP request.
+And 603 events into a 256-slot ring — so a single turn **evicted the entire session's
+history**, `item.presented` and `hint.revealed` and `grading.result` with it, and emitted
+no `stream.gap`, because that check runs once at stream open and never again.
+
+A candidate reaches this without a malicious model. "Run each of these sixty variants" is
+all it takes. `check_answer` and `record_observation` already carried per-item rations;
+`run_code` — the only tool that reaches the executor — had none. Twelve executions per
+turn now, reported through the same `truncated` flag the round cap uses.
+
+### The writable path escape test 2 never tried
+
+Docker mounts a 64 MB writable `/dev/shm` by default, and `--read-only` does not cover it.
+`test_no_filesystem_escape` checked four write targets — `/tmp`, `/etc`, `/root`, `/` —
+all four on the read-only rootfs. So the assertion "writes outside denied" passed **because
+the escape was never attempted**:
+
+```
+WRITE_OK:/dev/shm/x
+write_denied:/tmp/x:OSError      write_denied:/etc/x:OSError
+write_denied:/root/x:PermissionError   write_denied:/x:OSError
+```
+
+Real harm is small — per-container, destroyed with it, no cross-execution persistence — but
+docs/SECURITY.md's "one writable `tmpfs` scratch dir per execution" and the test's own
+stated requirement were both literally false, which is the failure mode this repo keeps
+finding: a green test that proves nothing.
+
+`--shm-size 0` turns out not to be honoured (Docker falls back to its default), so the
+mount is shadowed with a read-only tmpfs, the same trick already used for `/etc`. `/scratch`
+still writable, all 31 sandbox tests green.
+
+### Where the audit stands
+
+Eight waves. Of roughly fifty confirmed findings, the ones that remain are the ones I judged
+either lower severity than the cost of fixing them now, or genuinely out of scope:
+
+- **Out of scope by decision.** A candidate can still forge a *plausible* result — a full
+  score on the real test count. docs/SECURITY.md scopes that out and the reasoning holds;
+  wave 2 removed the blast radius, not the forgery.
+- **The undeclared quant answer.** "So I'd pay at most 6 dollars, comfortably under the 7
+  dollar pot" is still scored correct at 0.75. It cannot be fixed by reading harder — the
+  sentence that needs the *first* number and the sentence that needs the *last* have the
+  same shape.
+- **Lower severity, not yet done:** `check_docs.py`'s four blind spots (a phase row matched
+  anywhere in a 190 KB file, a positional README column read, a `(?<!not )built` lookbehind,
+  and both doc gates globbing non-recursively); the probe's 20 s `process_time` budget
+  against a real-time wall under `--cpus=0.5`, which still does not cover the first size;
+  `session.error` specified and never emitted; SSE timestamps using `+00:00` where the JSON
+  bodies use `Z`; and the practice log's own concurrency and validation findings, of which
+  only the unbounded `secondary_concept_ids` has been closed.
+
+The buildlog names these rather than letting eight waves of fixes read as "the audit is
+finished". It is not; what is finished is everything that corrupts data, costs money, or
+lets a candidate control their own grade.

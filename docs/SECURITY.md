@@ -66,7 +66,7 @@ Six layers, each independently sufficient to prevent a class of harm:
 | Layer | Control | Blocks |
 |---|---|---|
 | Network | No egress. Enforced by Docker network config locally and a security group with **no outbound rules** in AWS | Exfiltration, callbacks, dependency fetching |
-| Filesystem | Read-only root, **plus a read-only `/etc` overlay and a non-root uid** — read-only root alone does not deny *reads*; one writable `tmpfs` scratch dir per execution, destroyed after | Persistence, cross-execution contamination |
+| Filesystem | Read-only root, **plus read-only `/etc` and `/dev/shm` overlays and a non-root uid** — read-only root alone does not deny *reads*, and does not cover the 64 MB writable `/dev/shm` Docker mounts by default; one writable `tmpfs` scratch dir per execution, destroyed after | Persistence, cross-execution contamination |
 | Identity | Runs as uid/gid `65534`, with `/etc` overlaid empty so there is no passwd entry to escalate through. **A shell is present and runnable** — measured: `/bin/sh -c 'id'` succeeds and returns uid 65534 — because `python:3.12-slim` is used as-is and only `/scratch` is `noexec`. Shelling out is possible and inherits the same uid, dropped capabilities and empty network namespace | Privilege escalation |
 | Capabilities | All Linux capabilities dropped; `no-new-privileges` | Kernel-adjacent tricks |
 | Syscalls | Docker's default seccomp profile. The "plus explicit deny" this row used to promise is **not** implemented — see "Measured behaviour" for why adding it as written would have *weakened* the sandbox | Sandbox escape primitives |
@@ -104,7 +104,7 @@ sandbox so broken it runs nothing would make all six pass.
 | # | Test | Attempt | Required outcome |
 |---|---|---|---|
 | 1 | `test_no_network_egress` | DNS resolve and a raw TCP connect to a public address. Socket *creation* is deliberately not asserted — an `AF_INET` socket is still created successfully under `--network none`, so a test that only opens one proves nothing | Both fail; execution returns a normal failed result |
-| 2 | `test_no_filesystem_escape` | Read `/etc/passwd`, read outside the scratch dir, write outside the scratch dir, traverse with `../` | Reads outside scratch denied; writes outside denied |
+| 2 | `test_no_filesystem_escape` | Read `/etc/passwd`, read outside the scratch dir, write outside the scratch dir **including `/dev/shm`**, traverse with `../` | Reads outside scratch denied; writes outside denied |
 | 3 | `test_pid_exhaustion` | Fork bomb | Capped; the host survives. Asserted as `_docker_alive()` — the daemon still answers. `POST /execute` and its `/health` now exist, so this should be tightened to health-check the executor itself; it has not been, and that is open rather than blocked. Note the *result* can never say `pid_limit`: the container's own exit is not diagnostic (a recursive fork bomb was measured exiting **0** with empty output), so a capped run surfaces as `ok` or `harness_error` despite `pid_limit` being a declared outcome |
 | 4 | `test_memory_bomb` | Allocate past the memory cap | OOM-killed; service survives; result reports the limit that was hit |
 | 5 | `test_wall_clock_timeout` | Infinite loop | Killed at the timeout; result reports a timeout, not a hang |
@@ -132,6 +132,15 @@ fine — so escape test 2 was unachievable as written. Denying reads needs a non
 readable regardless; there is no flag that closes it, so the compensating control is
 that **the executor is injected with no environment secrets** — which the credential
 rule above already required, now load-bearing for a second reason.
+
+**And it stayed half-true for longer than that.** The test's four write targets were
+`/tmp`, `/etc`, `/root` and `/` — all of them on the read-only rootfs. `/dev/shm`, the one
+writable path outside `/scratch` that Docker mounts by default, was never in the list, so
+the assertion "writes outside denied" passed **because the escape was never attempted**.
+Real harm was small — 64 MB, per-container, destroyed with it, no cross-execution
+persistence — but the row above and the test's stated requirement were both literally
+false. `--shm-size 0` is not honoured (Docker falls back to its default), so the mount is
+shadowed with a read-only tmpfs, the same way `/etc` is.
 
 **2. A naive `subprocess(timeout=)` on `docker run` kills the CLI, not the container.**
 The daemon keeps running the code, and because the client died `--rm` never fires, so

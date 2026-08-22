@@ -652,3 +652,33 @@ def test_a_delta_subscriber_that_raises_does_not_lose_the_call(created_sessions)
     )
     assert completion.text == "still fine"
     assert completion.usage.total > 0
+
+
+def test_one_turn_cannot_execute_an_unbounded_number_of_tools(created_sessions):
+    """`MAX_TOOL_ROUNDS` bounds model calls, not `tool_use` blocks per response.
+
+    Nothing bounded how many blocks one response could carry, and the loop executed every
+    one. Measured with 60 blocks per response across 5 rounds: **300 executor round-trips
+    inside one synchronous HTTP request**, 307 transcript rows, and 603 events against a
+    256-slot buffer — so one turn evicted the session's entire history, with no
+    `stream.gap`, because that check runs once at stream open.
+
+    A candidate reaches this without a malicious model, just by asking: "run each of these
+    sixty variants". `check_answer` and `record_observation` already had per-item rations;
+    `run_code`, the only tool that reaches the executor, had none.
+    """
+    _, session_id = start_session(created_sessions)
+    use_settings(**MODEL_OVERRIDES)
+    runner = FakeRunner()
+    many = model_response(
+        *[
+            tool_block("run_code", {"language": "python", "source": "pass"}, use_id=f"tu_{i}")
+            for i in range(60)
+        ]
+    )
+    model = ScriptedModel(many, many, many, many, many)
+
+    result = turn(session_id, "run all of these", model, runner=runner)
+
+    assert len(result.tool_calls) <= loop.MAX_TOOL_CALLS_PER_TURN
+    assert result.truncated is True

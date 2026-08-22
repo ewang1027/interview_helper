@@ -154,8 +154,17 @@ end_reason, truncated }`.
 Synchronous, unlike a submission: a turn is a conversation and the candidate is waiting for
 the reply. The tools the interviewer used are reported rather than hidden, for the same
 reason the plan is — you should be able to see that it ran your code before telling you
-something about it. `truncated` says the interviewer hit the per-turn tool-round cap, which
-is a cost control and is reported rather than silently swallowed.
+something about it. `truncated` says the interviewer hit one of two per-turn caps, both
+cost controls and both reported rather than silently swallowed.
+
+There are two because they bound different things, and only one of them existed. **Rounds**
+(5) bound model calls. **Tool executions** (12) bound `tool_use` blocks — nothing did, and
+the loop executed every block in every response. Measured with 60 blocks per response
+across the 5 rounds: **300 executor round-trips inside one synchronous HTTP request**, 307
+transcript rows, and 603 events against a 256-slot buffer — so a single turn evicted the
+session's entire event history (`item.presented`, `hint.revealed`, `grading.result`) with
+no `stream.gap`, because that check runs once, at stream open. A candidate reaches this
+without a malicious model, by asking for it: "run each of these sixty variants".
 
 **`POST /sessions/{id}/submissions`**
 

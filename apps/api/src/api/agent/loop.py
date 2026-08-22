@@ -48,6 +48,19 @@ logger = logging.getLogger(__name__)
 # waiting on. The cap is a cost control, not a correctness one — it is reported, not hidden.
 MAX_TOOL_ROUNDS = 5
 
+# ...and a cap on tool *executions*, which is a different number. `MAX_TOOL_ROUNDS` bounds
+# model calls; nothing bounded how many `tool_use` blocks one response could carry, and the
+# loop executed every one of them. Measured with 60 blocks per response across the 5
+# rounds: **300 executor round-trips inside one synchronous HTTP request**, 307 transcript
+# rows, and 603 events against a 256-slot buffer — so one turn evicted the entire session's
+# history (`item.presented`, `hint.revealed`, `grading.result`) with no `stream.gap`, since
+# that check runs once, at stream open.
+#
+# A candidate reaches this without a malicious model, just by asking for it: "run each of
+# these sixty variants". `check_answer` and `record_observation` already carry their own
+# per-item rations; `run_code` — the only tool that reaches the executor — had none.
+MAX_TOOL_CALLS_PER_TURN = 12
+
 # `concept_evidence.source` for a row the interviewer wrote from the conversation, and the
 # third producer of that table after session grading and the practice log. A distinct value
 # because these rows are the softest evidence in the system and the first that could ever
@@ -319,6 +332,9 @@ def run_turn(
             )
 
         for use in uses:
+            if len(calls) >= MAX_TOOL_CALLS_PER_TURN:
+                truncated = True
+                break
             arguments = use.input if isinstance(use.input, dict) else {}
             channel.publish(
                 session_row.id,
@@ -371,6 +387,13 @@ def run_turn(
             written += 1
             calls.append({"tool": use.name, "input": arguments, "is_error": outcome.is_error})
 
+        if truncated:
+            logger.warning(
+                "session %s hit the %s-call tool cap in one turn",
+                session_row.id,
+                MAX_TOOL_CALLS_PER_TURN,
+            )
+            break
         if round_number == MAX_TOOL_ROUNDS - 1:
             truncated = True
             logger.warning(

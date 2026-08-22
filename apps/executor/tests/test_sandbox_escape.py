@@ -79,7 +79,10 @@ def test_no_filesystem_escape():
         "        print(f'READ_OK:{p}')\n"
         "    except Exception as exc:\n"
         "        print(f'read_denied:{p}:{type(exc).__name__}')\n"
-        "for p in ('/tmp/x', '/etc/x', '/root/x', '/x'):\n"
+        # /dev/shm is the one writable path outside /scratch that Docker provides by
+        # default, and it was the one this list did not try — so the assertion below
+        # passed because the escape was never attempted.
+        "for p in ('/tmp/x', '/etc/x', '/root/x', '/x', '/dev/shm/x'):\n"
         "    try:\n"
         "        pathlib.Path(p).write_text('x')\n"
         "        print(f'WRITE_OK:{p}')\n"

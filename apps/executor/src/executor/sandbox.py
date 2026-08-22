@@ -78,6 +78,17 @@ def _docker_flags(name: str, memory_mb: int) -> list[str]:
         # without a passwd entry because --user is numeric.
         "--tmpfs",
         "/etc:ro,size=1m",
+        # Docker mounts a 64 MB writable /dev/shm by default, which `--read-only` does not
+        # cover. docs/SECURITY.md described the sandbox as having "one writable tmpfs
+        # scratch dir per execution" and escape test 2 checked four paths, all of them on
+        # the read-only rootfs — so the one writable path outside /scratch was never tried
+        # and the test passed because the escape was never attempted. Real harm was small
+        # (per-container, destroyed with it, no cross-execution persistence), but both the
+        # doc and the test's stated requirement were literally false.
+        # `--shm-size 0` is not honoured (Docker falls back to its 64 MB default), so the
+        # mount is shadowed the same way /etc is above.
+        "--tmpfs",
+        "/dev/shm:ro,size=1m",  # noqa: S108 - a mount spec, not a path this process opens
         "--user",
         "65534:65534",
         "--cap-drop=ALL",
