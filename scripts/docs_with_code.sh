@@ -63,7 +63,10 @@ for range in "${ranges[@]}"; do
       continue
     fi
     inspected=$((inspected + 1))
-    files=$(git diff-tree --no-commit-id --name-only -r "$sha")
+    # `-c core.quotepath=false`: with the default, git wraps any path containing a
+    # non-ASCII byte in double quotes and C-escapes it, so `CODE_RE`'s `^` anchor never
+    # matched and a code-only commit touching such a path passed the gate.
+    files=$(git -c core.quotepath=false diff-tree --no-commit-id --name-only -r "$sha")
     if grep -qE "$CODE_RE" <<<"$files" && ! grep -qE "$DOC_RE" <<<"$files"; then
       undocumented+=("$(git log -1 --format='%h %s' "$sha")")
     fi

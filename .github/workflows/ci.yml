@@ -32,6 +32,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: the secret scan reads the commits being introduced, not just the
+          # tree. A shallow clone has nothing to read, and would report clean.
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -112,4 +116,30 @@ jobs:
       # Backstop for GitHub's own secret scanning (push protection only sees a
       # push after it lands). This repo is public: see docs/SECURITY.md.
       - name: Secret scan
-        run: bash scripts/secret_scan.sh
+        run: |
+          if [ -n "${GITHUB_BASE_REF:-}" ]; then
+            range="origin/$GITHUB_BASE_REF..HEAD"          # pull request
+          elif [ -n "${GITHUB_EVENT_BEFORE:-}" ] && ! echo "$GITHUB_EVENT_BEFORE" | grep -qE '^0+$'; then
+            range="$GITHUB_EVENT_BEFORE..HEAD"             # push to a branch that existed
+          else
+            range=""                                       # new branch or first push
+          fi
+          if [ -n "$range" ]; then bash scripts/secret_scan.sh "$range"; else bash scripts/secret_scan.sh; fi
+        env:
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+
+      # CLAUDE.md's rule 1 — docs travel with the code — was enforced only by the pre-push
+      # hook, which exists only after `make setup` runs `git config core.hooksPath hooks`.
+      # A fresh clone, or a commit made anywhere else, had nothing checking it. The secret
+      # scan was double-covered and the rule this repo says its value depends on was not.
+      - name: Docs travel with the code
+        run: |
+          if [ -n "${GITHUB_BASE_REF:-}" ]; then
+            bash scripts/docs_with_code.sh "origin/$GITHUB_BASE_REF..HEAD"
+          elif [ -n "${GITHUB_EVENT_BEFORE:-}" ] && ! echo "$GITHUB_EVENT_BEFORE" | grep -qE '^0+$'; then
+            bash scripts/docs_with_code.sh "$GITHUB_EVENT_BEFORE..HEAD"
+          else
+            echo "docs_with_code: skipped (new branch — no base to diff against)"
+          fi
+        env:
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}

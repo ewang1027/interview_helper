@@ -7,8 +7,6 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-bash scripts/secret_scan.sh
-
 # git feeds a pre-push hook one line per ref on stdin:
 #   <local ref> <local sha> <remote ref> <remote sha>
 # A sha of all zeros means "does not exist": on the local side the ref is being deleted,
@@ -29,6 +27,16 @@ while read -r local_ref local_sha _remote_ref remote_sha; do
   fi
 done
 
+# The secret scan runs *after* the ranges are computed, so it can read what is actually
+# being published rather than only what happens to be in the working tree. Paste a key,
+# commit, `git rm` it, commit the fix, push — the tree is clean at this moment and both
+# commits reach a public remote. With no ranges (a tag push, a deletion) it falls back to
+# the working-tree scan, which is still better than nothing.
+# `"${ranges[@]}"` on an empty array is an unbound-variable abort under `set -u` on the
+# bash 3.2 that ships with macOS, so the empty case is spelled out rather than relied on.
 if [[ ${#ranges[@]} -gt 0 ]]; then
+  bash scripts/secret_scan.sh "${ranges[@]}"
   bash scripts/docs_with_code.sh "${ranges[@]}"
+else
+  bash scripts/secret_scan.sh
 fi

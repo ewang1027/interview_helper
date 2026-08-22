@@ -291,8 +291,28 @@ returns in under a second.
 - In AWS: Secrets Manager, injected as environment variables at task start.
 - IAM task roles are per-service and least-privilege. The API may invoke Bedrock and read
   one secret. The executor role can do neither.
-- A secret scan runs before any push (`git grep` for key patterns); it caught nothing on
-  the Phase 0 push, which is the baseline to maintain.
+- A secret scan runs before any push (`scripts/secret_scan.sh`) and again in CI. It reads
+  **the commits being published, not only the working tree** — the most common accident is
+  paste a key, commit, notice, `git rm`, commit the fix, push, and a tree scan is clean at
+  exactly that moment while both commits reach a public remote. Measured: the previous
+  version passed that sequence with the key live on the remote.
+
+  What it is worth, stated so it is not over-trusted. It matches ten credential shapes
+  that are a credential or nothing (AWS, Anthropic, OpenAI, GitHub in all five prefixes
+  plus fine-grained PATs, private-key headers, Slack, Stripe, Google, JWT) and three
+  name-assigned-a-value shapes including this service's own `SESSION_SECRET` and
+  `GITHUB_CLIENT_SECRET` and any connection string with an inline password. It does **not**
+  read binaries, and it is regex matching, not entropy analysis: a secret in a shape it
+  does not know passes. It is a backstop for GitHub push protection, not a replacement.
+
+  Two things it used to get wrong are worth keeping, because both made it report `clean`
+  while checking less than it appeared to. `\s` is a GNU extension absent from BSD/macOS
+  ERE, so the local hook matched a literal `s` while CI on glibc matched whitespace — the
+  gate running *before* publication was the weaker one. Rewriting it, an adversarial test
+  found `\b` failing the same way and disarming six of the ten shapes above. Neither
+  failure was visible in the output. And `2>/dev/null || true` around the `git grep` turned
+  any git failure into `secret_scan: clean`, a line this repo's build log quotes as
+  evidence.
 
 ## The repo is public
 
@@ -307,7 +327,8 @@ mind for the rest of the build:
 - **Phase 6 discipline:** account IDs, ARNs, VPC and subnet IDs go in `terraform.tfvars`
   (ignored) with a committed `.tfvars.example`. Terraform state goes in an S3 backend, not
   on disk.
-- Enable GitHub secret scanning and push protection on the repo.
+- Enable GitHub secret scanning and push protection on the repo. **Still open**, and it is
+  the only control that catches a shape `scripts/secret_scan.sh` does not know.
 
 ## Explicitly out of scope
 

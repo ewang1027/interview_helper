@@ -3329,3 +3329,86 @@ lengthens the Phase 4 gate's exploration prologue again, so that window will kee
 until the weights are calibrated against real sessions. And the coding probe's noise-floor
 margin is thin corpus-wide; the fifth probe size that would fix it is a decision to take
 across every coding item at once, not per item.
+
+---
+
+## Audit wave 1 — the gates that reported success without checking · 2026-08-22
+
+A six-way parallel audit of the whole repo, one agent per subsystem, each required to
+verify by running rather than by reading. It returned roughly fifty confirmed findings.
+This entry covers the first batch fixed: **the gates guarding a public repo.**
+
+The pattern worth naming, because it recurred in five independent places: *a gate that
+passes vacuously*. Not a gate that is wrong — a gate that reports success having checked
+nothing, which is strictly worse than no gate because the build log then quotes it as
+evidence.
+
+### The secret scan never read what was being pushed
+
+`scripts/secret_scan.sh` ran `git grep` with no revision, which searches the **working
+tree**. The most common secret accident there is — paste a key, commit, notice, `git rm`,
+commit the fix, push — leaves the tree clean at exactly the moment the hook fires. Both
+commits reach the remote. Confirmed against a bare remote: `secret_scan: clean`, push
+exit 0, key live in the published history.
+
+It now takes the ranges the pre-push hook already computes and reads every line **added**
+by the commits being published (removed lines are the fix, not the leak). CI passes the
+PR or push range and checks out with `fetch-depth: 0`, because a shallow clone has no
+history to read and would report clean.
+
+### Two GNU regex extensions, both silently disarming the scan
+
+`\s` is absent from BSD/macOS ERE, and `git grep -E` compiles with the platform regcomp.
+So `aws_secret_access_key\s*=\s*` matched a literal `s` locally and whitespace on CI: the
+gate that runs *before* publication was the weaker of the two, which is the wrong way
+round.
+
+Rewriting it, an adversarial test caught the same class again in the new patterns — `\b`
+is also a GNU extension, and it was disarming **six of the ten** credential shapes. Both
+failures are invisible in the output; the script prints `clean` either way. Word
+boundaries are now simply omitted.
+
+Coverage measured against nine planted secrets: the old scan matched one, the new one
+matches eight. The ninth is AWS's own documentation example key, allowlisted on purpose.
+
+### Three more holes in the same file
+
+- **`':!*.example'` is a basename glob matching at any depth**, so `.env.example` was
+  exempt — the one tracked file that names every secret this service has, and the file
+  `CLAUDE.md` requires you to edit for each new `Settings` field. Filled in with real
+  values it scanned clean. Exclusions are now exact paths.
+- **`2>/dev/null || true`** turned any git failure into `secret_scan: clean`. That line is
+  quoted in this build log as evidence; it now means the scan ran.
+- **No `-i`**, so `AWS_SECRET_ACCESS_KEY=` — the only casing this repo uses anywhere —
+  was missed.
+
+The patterns are now split in two, because the fix for one hole opens another: shapes
+that are *a credential or nothing* consult no allowlist, while `NAME=value` shapes do.
+Otherwise the literal string "example" anywhere on a line disarms the check.
+
+### The rule this repo says its value depends on had no CI enforcement
+
+`CLAUDE.md`'s rule 1 is that documentation travels with the code. It was enforced by
+`hooks/pre-push` alone — which exists only after `make setup` runs
+`git config core.hooksPath hooks`. A fresh clone has nothing checking it, and neither does
+a commit made anywhere else. Meanwhile the secret scan was double-covered.
+
+`scripts/docs_with_code.sh` now runs in CI over the PR or push range.
+
+While wiring it: `CODE_RE`'s `^(apps|packages|...)/` anchor never matched a path git
+quoted. With `core.quotepath` at its default, any path containing a non-ASCII byte comes
+back wrapped in double quotes, so a code-only commit touching `apps/api/src/api/café.py`
+passed the gate — confirmed, and confirmed fixed against the same commit shape.
+
+### Also fixed
+
+`"${ranges[@]}"` on an empty array is an unbound-variable abort under `set -u` on the
+bash 3.2 macOS ships. The empty case is now spelled out rather than relied on.
+
+### What this batch does not cover
+
+The audit's other findings — a budget race with a measured 8000× overshoot, three
+concurrency holes that write duplicate immutable evidence, a quant grader that scores a
+restated number correct, a validator that accepts two sentences as two independent
+sources — are being worked in the batches after this one. They are listed here so that a
+reader of this entry does not take "audited" to mean "clean".
