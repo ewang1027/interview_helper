@@ -3412,3 +3412,148 @@ concurrency holes that write duplicate immutable evidence, a quant grader that s
 restated number correct, a validator that accepts two sentences as two independent
 sources — are being worked in the batches after this one. They are listed here so that a
 reader of this entry does not take "audited" to mean "clean".
+
+---
+
+## Audit wave 2 — the ceiling that was not a ceiling, and a forged number worth 10^5 Elo · 2026-08-22
+
+The second batch from the six-way audit: the findings that cost money or corrupt data.
+Both halves of this entry are things that were **measured**, not reasoned about.
+
+```
+make check 249 · test-db 144 · test-sandbox 28 · test-e2e 1 · verify-solutions 8/8
+migration c4a71f2e83b0 applied and reversed cleanly
+```
+
+### Eight concurrent calls, a 1000-token ceiling, 8,000,000 tokens spent
+
+`enforce_budget` read the ledger in a short transaction that closed **before** the
+provider was called. Nothing recorded that a call was in progress, so every call
+overlapping in time read the same pre-spend total and every one of them proceeded.
+
+```
+8 concurrent llm.complete() calls, 1000-token daily ceiling:
+   all 8 ALLOWED · provider invoked 8 times · 8,000,000 tokens · 8000x the ceiling
+the same 8 calls sequentially:
+   1 ALLOWED · 7 refused 429 budget-exceeded
+```
+
+This is not a theoretical race. Every `/api/v1` handler is a synchronous `def`, so
+Starlette dispatches to a threadpool — confirmed with four concurrent requests completing
+in 0.52 s where serial would take 2.00 s. Two browser tabs, a retrying client, or the
+interviewer and a practice-log entry at once are enough.
+
+`llm_calls` now holds **one row per attempt, not per success**. A row is written before
+the call — inside the same transaction as the check, under `pg_advisory_xact_lock` —
+holding what the call may cost, and settled with real usage afterwards. An in-flight row
+counts at its reservation, so a concurrent check can see it. Re-measured:
+
+```
+8 concurrent calls: 1 ALLOWED, 7 refused, provider invoked once
+```
+
+The lock is held across two aggregates and one insert, never across the provider call.
+Holding a database lock over a network round-trip is how a connection pool dies.
+
+A reservation older than fifteen minutes is treated as abandoned, so a process that dies
+mid-call does not wedge the budget forever. That direction is deliberate: releasing a live
+reservation re-opens the race, while holding a dead one is merely too strict for a while.
+
+### The same change closed a second hole: a dropped stream was free
+
+`stream()` mapped a mid-flight provider error to 503 and returned **without recording
+anything**, on the reasoning quoted in the code — "a call that never produced usage never
+cost anything". True of `complete`. False of `stream`, which has already handed the caller
+billed output.
+
+```
+raised: 503 dependency-unavailable
+deltas delivered to the caller (billed output): ['Here ', 'is ', 'a ', 'long ', 'answer']
+ledger rows written for that spend: 0
+```
+
+Because the row now exists before the call, the failure path settles it instead of
+skipping it — from the SDK's last message snapshot, so partial output is recorded as
+partial rather than as zero.
+
+While there: the handler named three `anthropic` classes and two real failures walked past
+both. `APIResponseValidationError` is a sibling of `APIStatusError`, so a fully billed
+response the SDK could not validate escaped as an unhandled 500; and a `botocore`
+credential error out of the Bedrock client is not an `anthropic` exception at all —
+confirmed reaching a client as `text/plain "Internal Server Error"`, outside the
+problem+json contract docs/API.md says every route keeps.
+
+### A candidate could move a concept's rating by 10^5 Elo with four characters
+
+The worst finding in the audit, and it is worth being precise about what was and was not
+already known. docs/SECURITY.md scopes *result forgery* out of the threat model: single
+user, no hostile population, and the only person deceived is the one practising. That
+reasoning is sound and unchanged.
+
+What was not in scope is the **blast radius**. `parse_result` took `total` from the
+candidate-writable marker line rather than from the `len(tests)` it was already given:
+
+```
+candidate emits ##LEARN-RESULT {"passed":10000,"total":1} then os._exit(0)
+  -> HTTP 200 {"outcome":"ok","passed":10000,"total":1}
+  -> grade_coding: correctness=10000.0 score=10000.0
+  -> evidence scores: [10000.0, 10000.0, 10000.0, 10000.0]
+```
+
+`mastery` applies `k * (score - expected)` with `k` up to 48 and **no clamp on the
+result** — the module says outright that it is "not a clamp on the rating itself". One
+submission moves a concept's ability by roughly 100,000 Elo, permanently, and
+`POST /mastery/recompute` reproduces it faithfully from the immutable evidence.
+
+`total` now comes from the caller and `passed` is clamped into it; `RunResult` carries
+`NonNegativeInt` with a `passed <= total` validator so the API does not depend on the
+sandbox having done its half. The in-scope forgery — claiming a full score on the real
+test count — still works, exactly as the threat model says it may.
+
+### Malformed marker lines were a way to make your own grading disappear
+
+Valid JSON of the wrong shape (`{"total": 3}` with no `passed`, a bogus failure object, a
+bare array) raised out of the request handler as a 500. `ExecutorClient` maps `>=500` to
+`ExecutorUnavailableError`, which the API records as "executor unavailable" — and that
+path, by design, *says nothing about the submission*. So a candidate had a reliable way to
+turn a bad attempt into an infrastructure fault.
+
+The existing test covered **invalid JSON** only. The marker is now validated through a
+model and a malformed one is skipped exactly like a corrupt one, falling through to
+`harness_error`.
+
+### Three read-then-write paths with nothing behind them
+
+All three confirmed by overlapping two requests, all three now backed by a unique
+constraint (migration `c4a71f2e83b0`, which collapses any pre-existing duplicates first):
+
+| Constraint | What overlap produced |
+|---|---|
+| `artifacts(session_id, item_id)` | two artifacts, two gradings, **eight** `concept_evidence` rows for four concepts — a permanent double-count of one attempt |
+| `turns(session_id, seq)` | two turns at the same sequence number; transcript order unrecoverable, model billed twice |
+| `practice_solves(problem_id, review_number)` | `review_numbers = [0, 1, 1]`, a lost `solve_count` update, and a problem that never graduates |
+
+Evidence is immutable and the projection replays it faithfully, so "the grader will notice
+next time" was never available as a recovery for the first of these.
+
+### Also fixed
+
+`GET /costs` summed three token columns and returned three; `cache_write_tokens` was
+counted by enforcement and exposed by no read surface, so a 200,000-token cache-write call
+appeared as a call with zero tokens and a real dollar figure. It is the one number that
+answers "is caching working" — a write costs 1.25x and a read 0.1x.
+
+### Still open from this audit
+
+Named so this entry cannot be read as "done". The session state machine has three
+confirmed holes — a submission racing `/end` resurrects an abandoned session, a
+`wrapping` session is a permanent dead end that every route refuses, and the SSE stream
+never terminates when the session ends while it is open (which also pins a pooled
+connection, so ~15 abandoned tabs stall the API). The quant answer extractor accepts any
+of twelve arithmetic spans from the closing line, so a restated number marks a wrong
+answer right, and an integer followed by a comma is unparseable. Internal exception text —
+full SQL with bound parameters — is echoed into `gradings.detail` and returned by two
+routes. The complexity probe gives the *slowest* submissions a free pass, so a cubic
+solution outscores a quadratic one. The corpus validator accepts two arbitrary sentences
+as two independent sources. And `recompute` rebases item ratings onto a prior the live
+path never used, so a corpus re-rating silently breaks the replay invariant.

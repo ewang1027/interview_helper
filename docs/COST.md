@@ -125,10 +125,26 @@ Three properties worth stating, because each is a choice:
 
 - **A token is a token.** Input, output, cache reads and cache writes all count toward a
   limit. Cache reads are cheap, not free, and they are still context the model processed.
-- **The check is "already spent", not "would this fit".** The input size is not known before
-  the call, and asking the provider would itself be a call. So the last call before a
-  refusal can overshoot its ceiling by at most its own `max_tokens`, and the next one is
-  refused. Bounded and honest beats precise and expensive.
+- **The check is "already spent" plus "what is in flight".** The input size is not known
+  before the call, and asking the provider would itself be a call. So the last call before
+  a refusal can overshoot its ceiling by at most its own `max_tokens` plus its estimated
+  input, and the next one is refused.
+
+  That bound used to be false under any concurrency at all, which is worth keeping because
+  the sentence above read as if it were true. The check ran in a transaction that closed
+  *before* the provider was called, so nothing recorded that a call was in progress and
+  every call overlapping in time read the same pre-spend total. Measured: **eight
+  concurrent calls against a 1000-token daily ceiling were all allowed, spending 8,000,000
+  tokens** — an 8000x overshoot of a limit described here as bounded by one call. Every
+  `/api/v1` handler is a synchronous `def`, so Starlette runs them in a threadpool; two
+  browser tabs, a retrying client, or the interviewer and a practice-log entry together
+  are enough.
+
+  A row is now written to `llm_calls` **before** the call, inside the same transaction as
+  the check and under `pg_advisory_xact_lock`, holding what the call may cost. It is
+  settled with real usage afterwards. An in-flight row counts against the budget at its
+  reservation, so a concurrent check sees it; a reservation older than fifteen minutes is
+  treated as abandoned, which fails in the direction of being briefly too strict.
 - **The day resets at UTC midnight**, not on a rolling 24-hour window. A rolling window is
   kinder to a late-night session and impossible to reconcile against a bill.
 
@@ -138,6 +154,7 @@ Every model call appends to `llm_calls`:
 
 | Column | Why |
 |---|---|
+| `status`, `reserved_tokens`, `settled_at` | One row per **attempt**, not per success. `reserved` while in flight and counted against the budget at its reservation; then `settled` (usage is real) or `failed` (the call did not complete, and usage is whatever the provider admitted to). A streamed call that dropped after producing output used to write no row at all — the caller had already been handed billed tokens, and neither the ledger nor the next budget check ever saw them |
 | `model`, `provider` | Attribute spend to a routing decision |
 | `input_tokens`, `output_tokens` | The bill |
 | `cache_read_tokens`, `cache_write_tokens` | Whether caching is actually working |

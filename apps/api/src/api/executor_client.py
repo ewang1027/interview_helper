@@ -32,7 +32,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Literal, Protocol
 
 import httpx
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, NonNegativeInt, model_validator
 
 from api.settings import get_settings
 
@@ -72,12 +72,24 @@ class RunResult(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True)
 
     outcome: Outcome
-    passed: int
-    total: int
+    # Bounded, and cross-checked against each other. The executor is hostile-by-assumption
+    # and the result travels back on the same stdout the candidate can write to, so a
+    # forged marker line reached here as `passed=10000, total=1` and `grade_coding`
+    # turned it into a score of 10000.0. The executor now pins `total` to the trusted test
+    # count; this is the second half, so the API does not depend on the sandbox having
+    # done it.
+    passed: NonNegativeInt
+    total: NonNegativeInt
     failures: tuple[RunFailure, ...] = ()
     wall_ms: int = 0
     peak_rss_kb: int = 0  # always 0 today — nothing measures it (docs/API.md)
     detail: str = ""
+
+    @model_validator(mode="after")
+    def _passed_within_total(self) -> RunResult:
+        if self.passed > self.total:
+            raise ValueError(f"passed={self.passed} exceeds total={self.total}")
+        return self
 
     @property
     def is_gradeable(self) -> bool:

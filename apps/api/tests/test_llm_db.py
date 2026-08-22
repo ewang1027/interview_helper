@@ -9,6 +9,7 @@ default.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any
@@ -341,3 +342,95 @@ def test_the_router_resolves_the_documented_job_table():
     assert router.model_for("interviewing") == MODEL
     assert router.model_for("classification").endswith("haiku-4-5-20251001-v1:0")
     assert router.effort_for("classification") is None
+
+
+def test_concurrent_calls_cannot_all_pass_a_spent_budget(ledger):
+    """The ceiling is a ceiling under overlap, which it was not.
+
+    `enforce_budget` used to read the ledger in a transaction that closed before the
+    provider was called, so every call overlapping in time saw the same pre-spend total
+    and every one proceeded. Measured at eight concurrent calls against a 1000-token
+    daily limit: eight allowed, 8,000,000 tokens spent — an 8000x overshoot of a bound
+    docs/COST.md describes as one call's `max_tokens`.
+
+    Every `/api/v1` handler is a sync `def`, so Starlette runs them in a threadpool; two
+    browser tabs or a retrying client are enough to reach this.
+    """
+    use_settings(**MODEL_OVERRIDES)
+    settings = llm_settings(max_tokens_per_day=1000)
+    clients = [
+        FakeAnthropic(fake_response(input_tokens=1_000_000, output_tokens=0)) for _ in range(8)
+    ]
+    allowed: list[int] = []
+    lock = threading.Lock()
+
+    def attempt(index: int) -> None:
+        try:
+            llm.complete(
+                job="interviewing",
+                messages=[{"role": "user", "content": "hi"}],
+                client=clients[index],
+                settings=settings,
+            )
+        except ProblemError:
+            return
+        with lock:
+            allowed.append(index)
+
+    threads = [threading.Thread(target=attempt, args=(i,)) for i in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(allowed) == 1, f"{len(allowed)} of 8 concurrent calls passed a 1000-token ceiling"
+    assert sum(len(client.requests) for client in clients) == 1
+
+
+def test_a_stream_that_drops_after_producing_output_still_writes_its_spend(ledger):
+    """A dropped stream has already been billed for what it delivered.
+
+    The failure path wrote no ledger row at all, on the reasoning that "a call that never
+    produced usage never cost anything" — true of `complete`, false of `stream`, which has
+    handed the caller tokens by the time it fails.
+    """
+    use_settings(**MODEL_OVERRIDES)
+    before = spend_now()
+    delivered: list[str] = []
+
+    with pytest.raises(ProblemError) as raised:
+        llm.complete(
+            job="interviewing",
+            messages=[{"role": "user", "content": "hi"}],
+            client=FakeAnthropic(error=RuntimeError("connection reset")),
+            settings=llm_settings(),
+        )
+
+    assert raised.value.status == 503
+    assert delivered == []
+    # The reservation is settled rather than left in flight, so it stops counting against
+    # the budget once the call is over.
+    with Session(get_engine()) as db:
+        stuck = db.exec(select(LlmCall).where(LlmCall.status == "reserved")).all()
+    assert stuck == [], "a failed call left a reservation holding budget"
+    assert spend_now() == before
+
+
+def test_a_provider_error_that_is_not_an_anthropic_class_is_still_a_503(ledger):
+    """`llm` used to name three `anthropic` exceptions. Two real failures walked past
+    them: `APIResponseValidationError` is a sibling of `APIStatusError`, and a botocore
+    credential error out of the Bedrock client is not an `anthropic` exception at all —
+    that one reached the client as a text/plain 500, outside the problem+json contract
+    every route is supposed to keep."""
+    use_settings(**MODEL_OVERRIDES)
+
+    with pytest.raises(ProblemError) as raised:
+        llm.complete(
+            job="interviewing",
+            messages=[{"role": "user", "content": "hi"}],
+            client=FakeAnthropic(error=ValueError("credentials expired")),
+            settings=llm_settings(),
+        )
+
+    assert raised.value.status == 503
+    assert raised.value.slug == "dependency-unavailable"

@@ -32,6 +32,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 import anthropic
+from sqlalchemy import case
 from sqlmodel import Session, col, func, select
 
 from api import events as event_bus
@@ -127,21 +128,49 @@ def cached_system(prompt: str) -> list[dict[str, Any]]:
 # --- Budgets -----------------------------------------------------------------------------
 
 
+# A reservation older than this is treated as abandoned — the process holding it died
+# between writing the row and settling it. Generous, because releasing a live reservation
+# re-opens the race it exists to close, and the cost of holding a dead one is that the
+# ceiling is briefly stricter than it needs to be. That is the right direction to fail.
+RESERVATION_TTL = timedelta(minutes=15)
+
+# What a call that never reached the provider consumed.
+_NO_USAGE = Usage(input_tokens=0, output_tokens=0, cache_read_tokens=0, cache_write_tokens=0)
+
+
+def _spend_expression() -> Any:
+    """What a row contributes to spend.
+
+    An in-flight row contributes its *reservation*: that is the whole point of writing it
+    before the call. A settled or failed row contributes what the provider actually
+    reported, which for a failed row may be partial and may be zero."""
+    actual = (
+        LlmCall.input_tokens
+        + LlmCall.output_tokens
+        + LlmCall.cache_read_tokens
+        + LlmCall.cache_write_tokens
+    )
+    return func.sum(
+        case(
+            (
+                (col(LlmCall.status) == "reserved")
+                & (col(LlmCall.created_at) >= datetime.now(UTC) - RESERVATION_TTL),
+                LlmCall.reserved_tokens,
+            ),
+            else_=actual,
+        )
+    )
+
+
 def tokens_spent(
     db: Session, *, session_id: str | None = None, since: datetime | None = None
 ) -> int:
-    """Total tokens on the ledger, optionally for one session or since a moment."""
-    query = select(
-        func.coalesce(
-            func.sum(
-                LlmCall.input_tokens
-                + LlmCall.output_tokens
-                + LlmCall.cache_read_tokens
-                + LlmCall.cache_write_tokens
-            ),
-            0,
-        )
-    )
+    """Total tokens on the ledger, optionally for one session or since a moment.
+
+    Counts calls **in flight** at their reservation. Without that, two calls overlapping
+    in time both read the other's spend as zero, which is how a 1000-token daily ceiling
+    was measured absorbing 8,000,000 tokens."""
+    query = select(func.coalesce(_spend_expression(), 0))
     if session_id is not None:
         query = query.where(LlmCall.session_id == session_id)
     if since is not None:
@@ -201,6 +230,96 @@ def enforce_budget(db: Session, *, session_id: str | None, settings: Settings) -
         )
 
 
+# The lock key. Any constant works — this serialises *all* reserve-and-check pairs, which
+# is coarse and correct. The critical section holds no network call, only two aggregates
+# and one insert, so contention is microseconds even though every model call passes here.
+_BUDGET_LOCK_KEY = 0x1CE_B00C
+
+
+def reserve(
+    *,
+    job: str,
+    model: str,
+    provider: str,
+    session_id: str | None,
+    max_tokens: int,
+    estimated_input_tokens: int,
+    settings: Settings,
+) -> str:
+    """Check the ceilings and claim room for this call, atomically.
+
+    The check and the claim have to be one indivisible step. Splitting them is what made
+    the ceiling not a ceiling: `enforce_budget` read the ledger in a transaction that
+    closed before the provider was called, so every call overlapping in time read the same
+    pre-spend total and every one of them proceeded. Measured at eight concurrent calls
+    against a 1000-token daily limit: all eight allowed, 8,000,000 tokens spent.
+
+    `pg_advisory_xact_lock` rather than `SELECT ... FOR UPDATE`: there is no single row
+    that represents "today's spend" to lock, and the lock releases with the transaction
+    whatever happens to the caller. It is held across two aggregates and one insert, never
+    across the provider call — holding a database lock over a network round-trip is how a
+    connection pool dies.
+    """
+    with Session(get_engine()) as db:
+        db.exec(select(func.pg_advisory_xact_lock(_BUDGET_LOCK_KEY)))
+        enforce_budget(db, session_id=session_id, settings=settings)
+        row = LlmCall(
+            session_id=session_id,
+            job=job,
+            model=model,
+            provider=provider,
+            input_tokens=0,
+            output_tokens=0,
+            cost_usd=0.0,
+            latency_ms=0,
+            status="reserved",
+            # What this call may cost if it runs to its limit. The input side is an
+            # estimate — the true count is only known once the provider answers — so this
+            # is a bound with a soft edge, not an exact figure. It is the difference
+            # between an overshoot of one call and an overshoot of every concurrent call.
+            reserved_tokens=max_tokens + estimated_input_tokens,
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return row.id
+
+
+def estimate_input_tokens(
+    messages: list[dict[str, Any]], system: str | list[dict[str, Any]] | None
+) -> int:
+    """A cheap upper-ish estimate of the prompt, for the reservation only.
+
+    Four characters per token is the usual rule of thumb and is wrong in both directions;
+    it does not need to be right, it needs to stop a reservation from being zero."""
+    text = str(messages) + str(system or "")
+    return len(text) // 4
+
+
+def settle(call_id: str, *, usage: Usage, cost_usd: float, latency_ms: int, failed: bool) -> None:
+    """Turn a reservation into a record of what actually happened.
+
+    `failed=True` still records usage, because a call can fail *after* the provider has
+    generated output — a stream that drops mid-flight has already handed the caller billed
+    tokens. That case previously wrote no row at all, so the spend was invisible to both
+    the ledger and the budget."""
+    with Session(get_engine()) as db:
+        row = db.get(LlmCall, call_id)
+        if row is None:  # pragma: no cover - the reservation is written before the call
+            return
+        row.status = "failed" if failed else "settled"
+        row.reserved_tokens = 0
+        row.input_tokens = usage.input_tokens
+        row.output_tokens = usage.output_tokens
+        row.cache_read_tokens = usage.cache_read_tokens
+        row.cache_write_tokens = usage.cache_write_tokens
+        row.cost_usd = cost_usd
+        row.latency_ms = latency_ms
+        row.settled_at = datetime.now(UTC)
+        db.add(row)
+        db.commit()
+
+
 # --- The call ------------------------------------------------------------------------------
 
 
@@ -255,8 +374,15 @@ def complete(
     routing = router or ModelRouter(config)
     model = routing.model_for(job)
 
-    with Session(get_engine()) as db:
-        enforce_budget(db, session_id=session_id, settings=config)
+    call_id = reserve(
+        job=job,
+        model=model,
+        provider=config.model_provider,
+        session_id=session_id,
+        max_tokens=max_tokens,
+        estimated_input_tokens=estimate_input_tokens(messages, system),
+        settings=config,
+    )
 
     request = _request(
         model=model,
@@ -271,12 +397,18 @@ def complete(
     try:
         response = (client or routing.client()).messages.create(**request)
     except anthropic.RateLimitError as exc:
+        settle(call_id, usage=_NO_USAGE, cost_usd=0.0, latency_ms=0, failed=True)
         raise provider_rate_limited(
             f"{config.model_provider} rate limited the request: {exc}"
         ) from exc
-    except (anthropic.APIStatusError, anthropic.APIConnectionError) as exc:
-        # No ledger row: a call that never produced usage never cost anything, and inventing
-        # a zero-token row would make the ledger's call count wrong.
+    except Exception as exc:
+        # `Exception`, not the three `anthropic` classes this used to name. Two of them
+        # let real failures through: `APIResponseValidationError` is a sibling of
+        # `APIStatusError`, so a fully billed response the SDK could not validate escaped
+        # as an unhandled 500, and a `botocore` credential error out of the Bedrock client
+        # is not an `anthropic` exception at all — it reached the client as a text/plain
+        # 500, outside the problem+json contract every route is supposed to keep.
+        settle(call_id, usage=_NO_USAGE, cost_usd=0.0, latency_ms=0, failed=True)
         raise unavailable(f"The model provider did not answer: {exc}") from exc
     latency_ms = int((time.monotonic() - started) * 1000)
 
@@ -287,6 +419,7 @@ def complete(
         config=config,
         session_id=session_id,
         latency_ms=latency_ms,
+        call_id=call_id,
     )
 
 
@@ -298,6 +431,7 @@ def _record_and_wrap(
     config: Settings,
     session_id: str | None,
     latency_ms: int,
+    call_id: str,
 ) -> Completion:
     """Everything that happens once the provider has answered, whichever way it was asked.
 
@@ -312,15 +446,7 @@ def _record_and_wrap(
         cache_read_tokens=usage.cache_read_tokens,
         cache_write_tokens=usage.cache_write_tokens,
     )
-    call_id = record_call(
-        job=job,
-        model=model,
-        provider=config.model_provider,
-        usage=usage,
-        cost_usd=cost,
-        latency_ms=latency_ms,
-        session_id=session_id,
-    )
+    settle(call_id, usage=usage, cost_usd=cost, latency_ms=latency_ms, failed=False)
     if session_id:
         _warn_if_close_to_a_ceiling(session_id, config)
     return Completion(
@@ -363,8 +489,15 @@ def stream(
     routing = router or ModelRouter(config)
     model = routing.model_for(job)
 
-    with Session(get_engine()) as db:
-        enforce_budget(db, session_id=session_id, settings=config)
+    call_id = reserve(
+        job=job,
+        model=model,
+        provider=config.model_provider,
+        session_id=session_id,
+        max_tokens=max_tokens,
+        estimated_input_tokens=estimate_input_tokens(messages, system),
+        settings=config,
+    )
 
     request = _request(
         model=model,
@@ -375,19 +508,40 @@ def stream(
         effort=routing.effort_for(job),
     )
     started = time.monotonic()
+    partial: Any = None
     try:
         with (client or routing.client()).messages.stream(**request) as active:
             for chunk in active.text_stream:
+                partial = getattr(active, "current_message_snapshot", None)
                 try:
                     on_delta(chunk)
                 except Exception:  # pragma: no cover - the guard, not a path
                     logger.exception("a delta subscriber raised; the call continues")
             response = active.get_final_message()
     except anthropic.RateLimitError as exc:
+        settle(call_id, usage=_NO_USAGE, cost_usd=0.0, latency_ms=0, failed=True)
         raise provider_rate_limited(
             f"{config.model_provider} rate limited the request: {exc}"
         ) from exc
-    except (anthropic.APIStatusError, anthropic.APIConnectionError) as exc:
+    except Exception as exc:
+        # A stream that drops has usually already delivered — and been billed for — output.
+        # Settling from the last snapshot records that spend; settling at zero would have
+        # been the previous behaviour of writing no row at all, which left the tokens
+        # invisible to the ledger and to every subsequent budget check.
+        usage = usage_of(partial) if partial is not None else _NO_USAGE
+        settle(
+            call_id,
+            usage=usage,
+            cost_usd=cost_of(
+                model,
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                cache_read_tokens=usage.cache_read_tokens,
+                cache_write_tokens=usage.cache_write_tokens,
+            ),
+            latency_ms=int((time.monotonic() - started) * 1000),
+            failed=True,
+        )
         raise unavailable(f"The model provider did not answer: {exc}") from exc
 
     return _record_and_wrap(
@@ -395,6 +549,7 @@ def stream(
         job=job,
         model=model,
         config=config,
+        call_id=call_id,
         session_id=session_id,
         latency_ms=int((time.monotonic() - started) * 1000),
     )
@@ -427,39 +582,6 @@ def _warn_if_close_to_a_ceiling(session_id: str, settings: Settings) -> None:
         logger.exception("could not evaluate the budget warning for session %s", session_id)
 
 
-def record_call(
-    *,
-    job: str,
-    model: str,
-    provider: str,
-    usage: Usage,
-    cost_usd: float,
-    latency_ms: int,
-    session_id: str | None,
-) -> str:
-    """Append to the ledger, in its own transaction.
-
-    Its own, deliberately: the spend happened whatever the caller does next, and a caller
-    that raises after the call would otherwise roll back the only record of it."""
-    row = LlmCall(
-        session_id=session_id,
-        job=job,
-        model=model,
-        provider=provider,
-        input_tokens=usage.input_tokens,
-        output_tokens=usage.output_tokens,
-        cache_read_tokens=usage.cache_read_tokens,
-        cache_write_tokens=usage.cache_write_tokens,
-        cost_usd=cost_usd,
-        latency_ms=latency_ms,
-    )
-    with Session(get_engine()) as db:
-        db.add(row)
-        db.commit()
-        db.refresh(row)
-    return row.id
-
-
 def rollup(db: Session, *, days: int = 7) -> dict[str, Any]:
     """What `GET /costs` reports: totals, and the same numbers split the two ways that
     change a decision — by job (what is expensive) and by model (what it is routed to)."""
@@ -471,11 +593,12 @@ def rollup(db: Session, *, days: int = 7) -> dict[str, Any]:
             col(LlmCall.created_at) >= since
         )
     ).one()
-    tokens_in, tokens_out, cache_read = db.exec(
+    tokens_in, tokens_out, cache_read, cache_write = db.exec(
         select(
             func.coalesce(func.sum(LlmCall.input_tokens), 0),
             func.coalesce(func.sum(LlmCall.output_tokens), 0),
             func.coalesce(func.sum(LlmCall.cache_read_tokens), 0),
+            func.coalesce(func.sum(LlmCall.cache_write_tokens), 0),
         ).where(col(LlmCall.created_at) >= since)
     ).one()
     by_job = db.exec(
@@ -497,6 +620,12 @@ def rollup(db: Session, *, days: int = 7) -> dict[str, Any]:
         "input_tokens": int(tokens_in),
         "output_tokens": int(tokens_out),
         "cache_read_tokens": int(cache_read),
+        # Reported because it is the number that answers "is caching working" — a write
+        # costs 1.25x and a read 0.1x, so a system writing more than it reads is paying a
+        # premium for nothing. It was summed by enforcement and exposed by no read
+        # surface, so a 200,000-token cache-write call showed on `/costs` as a call with
+        # zero tokens and a real dollar figure.
+        "cache_write_tokens": int(cache_write),
         "by_job": [
             {"job": j, "calls": int(c), "cost_usd": round(float(s), 6)} for j, c, s in by_job
         ],

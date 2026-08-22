@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from executor.harness import RESULT_MARKER, build_driver, parse_result
 from executor.protocol import ExecuteResponse
 
@@ -109,3 +111,45 @@ def test_a_corrupt_marker_line_is_skipped_not_fatal() -> None:
     )
     assert out.outcome == "ok"
     assert (out.passed, out.total) == (2, 2)
+
+
+def test_a_forged_marker_cannot_claim_more_passes_than_there_are_tests():
+    """The result travels back on the same stdout the candidate can write to.
+
+    docs/SECURITY.md scopes *result forgery* out — single user, the only person deceived
+    is the one practising. What was not in scope is the blast radius: taking `total` from
+    the payload let `{"passed": 10000, "total": 1}` through, `grade_coding` turned it into
+    correctness 10000.0, and `mastery` applies `k * (score - expected)` with no clamp on
+    the result — roughly 10^5 Elo on one concept, permanently, and reproduced faithfully
+    by every replay. `total` now comes from the caller, which is `len(tests)`.
+    """
+    raw = ExecuteResponse(
+        outcome="ok",
+        passed=0,
+        total=0,
+        detail='##LEARN-RESULT {"passed": 10000, "total": 1, "failures": []}',
+    )
+
+    result = parse_result(raw, total=11)
+
+    assert result.total == 11
+    assert result.passed == 11  # clamped to the real count, not 10000
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        '##LEARN-RESULT {"total": 3}',  # no `passed`
+        '##LEARN-RESULT {"passed": 1, "failures": [{"not": "a failure"}]}',
+        "##LEARN-RESULT [1, 2, 3]",  # valid JSON, not an object
+        '##LEARN-RESULT {"passed": "lots"}',
+    ],
+)
+def test_a_marker_of_the_wrong_shape_fails_closed_rather_than_crashing(marker: str):
+    """Valid JSON with the wrong shape used to raise out of the request handler, and a 500
+    from the executor is read by the API as `unavailable` — which says nothing about the
+    submission. That gave a candidate a reliable way to make their own grading disappear
+    as an infrastructure fault. An existing test covered *invalid* JSON only."""
+    result = parse_result(ExecuteResponse(outcome="ok", passed=0, total=0, detail=marker), total=11)
+
+    assert result.outcome == "harness_error"

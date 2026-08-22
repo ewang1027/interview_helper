@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import json
 
+from pydantic import BaseModel, ConfigDict, ValidationError
+
 from executor.protocol import ExecuteResponse, Outcome, TestCase, TestFailure
 
 RESULT_MARKER = "##LEARN-RESULT "
@@ -85,6 +87,17 @@ def build_driver(source: str, entrypoint: str, tests: tuple[TestCase, ...]) -> s
     return _DRIVER.format(payload=payload, source=source, marker=RESULT_MARKER)
 
 
+class _Marker(BaseModel):
+    """The driver's result line, validated rather than indexed.
+
+    `total` is deliberately absent: the trusted count is the caller's `len(tests)`."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    passed: int
+    failures: list[TestFailure] = []
+
+
 def parse_result(raw: ExecuteResponse, total: int) -> ExecuteResponse:
     """Fold the driver's marker line into `raw`, which carries the sandbox's verdict.
 
@@ -112,15 +125,34 @@ def parse_result(raw: ExecuteResponse, total: int) -> ExecuteResponse:
             payload = json.loads(line[len(RESULT_MARKER) :])
         except json.JSONDecodeError:
             continue
+        if not isinstance(payload, dict):
+            continue
         if "error" in payload:
             return raw.model_copy(
                 update={"outcome": "harness_error", "total": total, "detail": payload["error"]}
             )
+        # Valid JSON of the wrong shape used to raise straight out of the request handler
+        # — `payload["passed"]` on a marker missing the key, `TestFailure(**f)` on a
+        # bogus failure object — and a 500 from the executor is read by the API as
+        # "unavailable", which says *nothing about the submission*. So a candidate could
+        # make their own grading disappear as an infrastructure fault. A malformed marker
+        # is now treated exactly like a corrupt one: skipped.
+        try:
+            marker = _Marker.model_validate(payload)
+        except ValidationError:
+            continue
+        # `total` comes from the caller, never from the payload. It is
+        # `len(tests)` — a number the candidate cannot influence — and `passed` is clamped
+        # into it. Taking the payload's own `total` let a submission print
+        # `{"passed": 10000, "total": 1}` and exit, which `grade_coding` turned into
+        # correctness 10000.0 and four evidence rows at score 10000.0. `mastery` applies
+        # `k * (score - expected)` with no clamp on the result, so one such submission
+        # moved a concept's ability by roughly 10^5 Elo, permanently and replayably.
         return raw.model_copy(
             update={
-                "passed": payload["passed"],
-                "total": payload["total"],
-                "failures": tuple(TestFailure(**f) for f in payload["failures"]),
+                "passed": max(0, min(marker.passed, total)),
+                "total": total,
+                "failures": tuple(marker.failures),
             }
         )
 

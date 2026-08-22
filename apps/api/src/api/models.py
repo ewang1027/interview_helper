@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, Column, DateTime
+from sqlalchemy import CheckConstraint, Column, DateTime, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
@@ -147,7 +147,15 @@ class InterviewSession(SQLModel, table=True):
 
 
 class Turn(SQLModel, table=True):
+    """One row per message in a session's transcript.
+
+    `seq` is unique per session because `agent.loop.next_seq` computes it as
+    `max(seq) + 1` — a read-then-write with nothing behind it. Two concurrent `POST
+    /turns` both read the same maximum, and the transcript's order becomes ambiguous
+    while the model is billed twice."""
+
     __tablename__ = "turns"
+    __table_args__ = (UniqueConstraint("session_id", "seq", name="turns_session_seq_unique"),)
 
     id: str = Field(default_factory=new_id, primary_key=True)
     session_id: str = Field(foreign_key="sessions.id", index=True)
@@ -159,7 +167,19 @@ class Turn(SQLModel, table=True):
 
 
 class Artifact(SQLModel, table=True):
+    """One submission. **One per (session, item)** — enforced here rather than only by the
+    check in `sessions.record_submission`, which is a read-then-write.
+
+    Measured before this constraint existed: two concurrent submissions for the same item
+    both returned 202, stored two artifacts, ran two gradings and wrote **eight**
+    `concept_evidence` rows for four concepts. Evidence is immutable and feeds the whole
+    adaptive projection, so a duplicate is not a cosmetic bug — it is a permanent
+    double-count of one attempt that `POST /mastery/recompute` faithfully reproduces."""
+
     __tablename__ = "artifacts"
+    __table_args__ = (
+        UniqueConstraint("session_id", "item_id", name="artifacts_session_item_unique"),
+    )
 
     id: str = Field(default_factory=new_id, primary_key=True)
     session_id: str = Field(foreign_key="sessions.id", index=True)
@@ -260,9 +280,26 @@ class Mastery(SQLModel, table=True):
 
 
 class LlmCall(SQLModel, table=True):
+    """One row per model call **attempt**, not per success.
+
+    The row is written before the provider is called, holding a reservation for what the
+    call may cost, and settled with the real usage after. Two findings made that
+    necessary. Enforcement used to read the ledger in a transaction that closed before the
+    call, so overlapping calls all saw the same pre-spend total — measured at an 8000x
+    overshoot of the daily ceiling with eight concurrent calls. And a streamed call that
+    dropped after the provider had produced output left no row at all, because the row was
+    only ever written on success; the caller had already been handed billed tokens."""
+
     __tablename__ = "llm_calls"
 
     id: str = Field(default_factory=new_id, primary_key=True)
+    # "reserved" while the call is in flight, then "settled" (usage is real) or "failed"
+    # (the call did not complete; usage is whatever the provider admitted to).
+    status: str = Field(default="settled", index=True)
+    # What the call was allowed to spend, counted against the budget while it is in
+    # flight. Zero once settled, because `input_tokens` and the rest are then real.
+    reserved_tokens: int = 0
+    settled_at: datetime | None = Field(default=None, sa_column=_ts(nullable=True))
     session_id: str | None = Field(default=None, foreign_key="sessions.id")
     job: str  # e.g. "session_planning", "grading", "practice_log_classify"
     model: str
@@ -305,6 +342,9 @@ class PracticeSolve(SQLModel, table=True):
     """Append-only, mirroring `concept_evidence`'s immutability."""
 
     __tablename__ = "practice_solves"
+    __table_args__ = (
+        UniqueConstraint("problem_id", "review_number", name="practice_solves_number_unique"),
+    )
 
     id: str = Field(default_factory=new_id, primary_key=True)
     problem_id: str = Field(foreign_key="practice_problems.id", index=True)
