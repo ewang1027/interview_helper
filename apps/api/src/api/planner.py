@@ -126,8 +126,23 @@ def _prerequisite_substitution(
 
     weakest = min(weaker, key=lambda candidate: candidate.ability)
     if weakest.concept_id not in serveable:
+        # "as a primary" is load-bearing and used not to be there. `serveable` is keyed on
+        # `primary_concept`, but `concept_evidence` is written for every *tagged* concept —
+        # 53 concepts receive evidence where 16 are some item's primary. So this note was
+        # reporting "no item measures it" about concepts that two, four, even eight items
+        # measure, which reads as a corpus gap and is a policy.
+        #
+        # The policy is deliberate and stays. Serving an item for a concept it was not
+        # built to discriminate on is a weaker measurement, and its difficulty rating is
+        # calibrated against the primary. Measured when the substitution was widened to the
+        # tagged tier: `big-o-analysis` — tagged on all eight coding items and the primary
+        # of none — accumulates observations faster than anything else and crowded the
+        # actual injected weakness out of the plan, taking the Phase 4 gate from 6 of 10
+        # sessions on the weakness to 5. An honest ranking that plans worse is not a trade
+        # worth making; what needed fixing was the sentence.
         return entry.concept_id, (
-            f"{weakest.concept_id} gates it and is weaker, but no item measures it"
+            f"{weakest.concept_id} gates it and is weaker, but no item measures it "
+            "as a primary concept"
         )
     return weakest.concept_id, f"substituted for {entry.concept_id}, whose prerequisite it is"
 

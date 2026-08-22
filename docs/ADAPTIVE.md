@@ -185,6 +185,20 @@ A session is a **budget** (minutes) and a **mode**. The planner:
    an item whose *primary* concept is the prerequisite, and the corpus has sixteen
    primaries across 159 concepts.
 
+   **"As a primary" is the whole of it, and the plan now says so.** `concept_evidence` is
+   written for every concept an item *tags* — 53 of 159 receive evidence — while only the
+   16 that are some item's `primary_concept` can be served. The note used to read "no item
+   measures it", which is false about a concept eight items measure and reads as a corpus
+   gap rather than the policy it is.
+
+   The policy is deliberate. Serving an item for a concept it was not built to discriminate
+   on is a weaker measurement, and the item's difficulty rating is calibrated against its
+   primary. Measured when substitution was widened to the tagged tier: `big-o-analysis` —
+   tagged on all eight coding items and the primary of none — accumulates observations
+   faster than anything else and crowded the injected weakness out of the plan, taking the
+   Phase 4 gate from 6 of 10 sessions on the weakness down to 5. An honest ranking that
+   plans worse is not a trade worth making.
+
    Note which side the corpus has to cover, because it is easy to state this too
    pessimistically. The check is on the concept substituted *toward* — the gated concept
    is whatever the ranking threw up and may have no items at all, in which case

@@ -210,7 +210,11 @@ def test_a_prerequisite_no_item_measures_is_reported_rather_than_served(db_sessi
     )
 
     assert concept_id == WEAK_CONCEPT
-    assert note is not None and "no item measures it" in note
+    # "as a primary concept" matters: `concept_evidence` is written for every *tagged*
+    # concept, so 53 concepts receive evidence where 16 are some item's primary. Without
+    # that qualifier this note claimed nothing measured concepts that eight items measure,
+    # which reads as a corpus gap when it is a deliberate policy.
+    assert note is not None and "no item measures it as a primary concept" in note
 
 
 def test_a_weak_prerequisite_that_can_be_served_takes_the_slot(db_session):

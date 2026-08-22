@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-08-22
+## Where things stand — 2026-08-22 (post-audit)
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -4177,3 +4177,65 @@ either lower severity than the cost of fixing them now, or genuinely out of scop
 The buildlog names these rather than letting eight waves of fixes read as "the audit is
 finished". It is not; what is finished is everything that corrupts data, costs money, or
 lets a candidate control their own grade.
+
+---
+
+## Audit wave 9 — a change I made, measured, and took back out · 2026-08-22
+
+One finding, one fix, and a reversal worth more than the fix would have been.
+
+### The finding: the planner ranks 159 concepts and can serve 16
+
+```
+concepts in the taxonomy                                              159
+…that some item TAGS  (evidence written, ability moves, ranked)        53
+…that some item measures as PRIMARY (the planner can serve)            16
+```
+
+So 37 concepts accumulate real evidence and are ranked by weakness, and none of them can
+ever be served. `big-o-analysis` is tagged on **all eight** coding items: the engine learns
+you are weak at it, ranks it, and serves nothing.
+
+The grading layer already models two tiers — `grading/coding.py` writes evidence for every
+tagged concept at `SECONDARY_CONFIDENCE`, commented "real evidence, softer claim". The
+planner used one. Widening it looked like the highest-leverage change available: 37
+concepts reachable with no new corpus, worth more than the next four authoring waves.
+
+### The measurement: it made the engine worse
+
+Implemented, and the Phase 4 gate immediately caught it. `big-o-analysis` is tagged on
+everything, so it accumulates observations faster than any real concept and — being weak
+for the same reason the candidate's actual weakness is weak — **crowded the injected
+weakness out of the plan**:
+
+```
+before:  weakness served 6 of 10 sessions, and most-served
+after:   weakness served 5 of 10 sessions, no longer a majority
+```
+
+It also produced plans containing the same item twice, once under its primary concept and
+once under a tag — and the second submission for an item is refused 409, which strands the
+session. That was fixable. The crowding was not, because it is not a bug: secondary
+evidence propagates one concept's weakness to everything co-tagged with it, which is what
+"real evidence, softer claim" *means*.
+
+### The reversal
+
+`test_focusing_on_a_secondary_only_concept_says_what_actually_happened` already existed,
+already asserted a 422, and its docstring already explained the reasoning. The repo decided
+this deliberately and my change overrode it. It is reverted.
+
+What was actually wrong was one sentence. The plan reported:
+
+```
+"stack-simulation gates it and is weaker, but no item measures it"
+```
+
+about a concept **two items measure**. That reads as a corpus gap and is a policy. It now
+says "no item measures it **as a primary concept**", and docs/ADAPTIVE.md carries the
+policy and the measurement behind it.
+
+Worth keeping as a finding in its own right: the ranking is honest and the serving is
+narrower than the ranking, on purpose. An engine that plans well and explains itself
+imprecisely is a better engine than one that plans badly and explains itself exactly — but
+only the second of those is visible without running the gate, which is why the gate exists.
