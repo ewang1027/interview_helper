@@ -25,6 +25,7 @@ from api.models import Mastery
 from api.planner import STRATEGY, _prerequisite_substitution, build_plan
 from api.priority import ConceptPriority
 from api.routes.sessions import get_runner
+from corpus.loader import load_concepts, load_items
 
 pytestmark = pytest.mark.db
 
@@ -100,31 +101,50 @@ def test_the_plan_shows_the_concepts_it_weighed_not_only_the_ones_it_served(crea
     assert len(considered) >= len(served)
 
 
-def test_an_injected_weakness_gets_drilled_within_five_sessions(created_sessions):
+def test_an_injected_weakness_gets_drilled(created_sessions):
     """docs/ADAPTIVE.md's Phase 4 gate.
 
-    A candidate who fails `monotonic-stack` and aces everything else. Sessions are budgeted
-    to one item so the planner has to *choose*, and a majority of the five choices must
-    land on the item that measures the weakness.
+    A candidate who fails `monotonic-stack` and aces everything else. Sessions are
+    budgeted to one item so the planner has to *choose*, and a majority of the choices
+    must land on the item that measures the weakness.
 
-    The second and third assertions are why this test is worth trusting. An earlier version
-    checked only the majority and **passed while proving nothing**: the planner happened to
-    serve that item first at cold start, for want of a tie-break, so the count was already
-    satisfied before any evidence existed. A gate that can be satisfied by a default is not
-    a gate. So: the first session must *not* be the weak item, and by the end the engine
-    must actually believe the candidate is weakest at that concept.
+    The second and third assertions are why this test is worth trusting. An earlier
+    version checked only the majority and **passed while proving nothing**: the planner
+    happened to serve that item first at cold start, for want of a tie-break, so the count
+    was already satisfied before any evidence existed. A gate that can be satisfied by a
+    default is not a gate. So: the first session must *not* be the weak item, and by the
+    end the engine must actually believe the candidate is weakest at that concept.
+
+    **The window was five sessions and is now ten**, because authoring
+    `hash-map-counting` woke up a term that had never been able to fire. It gates six
+    coding concepts, so its `unlocks` term is 0.086 against `monotonic-stack`'s 0.014, and
+    at cold start — where every weakness term sits at 0.199 because nothing is measured —
+    that difference decides the order. The planner spends sessions 1-3 establishing a
+    foundational concept that unlocks six others before it drills anything, which is
+    docs/ADAPTIVE.md's stated intent for the term rather than a regression. Measured:
+    sessions 4-7 all serve the weakness, session 8 rotates away on anti-repetition, and
+    9-10 return to it.
+
+    Two consequences worth naming, because both will recur. A *majority* over a growing
+    window is not a gate this engine can ever satisfy — `W_EXPOSURE` guarantees it rotates
+    off a sore spot, so the fraction is bounded above by design. And the exploration
+    prologue scales with how much unmeasured foundational corpus exists, so this window is
+    expected to need raising again as authoring continues. The `most_served` assertion is
+    the half that does not depend on window arithmetic.
     """
     runner = ScriptedRunner({WEAK_ENTRYPOINT})
     client = client_with(runner)
 
     served: list[str] = []
-    for _ in range(5):
+    for _ in range(10):
         session = start(client, created_sessions, budget=20)
         item_id = session["plan"]["items"][0]["item_id"]
         served.append(item_id)
         submit(client, session["id"], item_id)
 
-    assert served.count(WEAK_ITEM) >= 3, f"served {served}"
+    most_served = max(set(served), key=served.count)
+    assert most_served == WEAK_ITEM, f"served {served}"
+    assert served.count(WEAK_ITEM) > len(served) / 2, f"served {served}"
     assert served[0] != WEAK_ITEM, "cold start served it by default, so this proves nothing"
 
     measured = {
@@ -275,3 +295,77 @@ def test_nothing_is_marked_review_when_nothing_is_due(created_sessions, user_id,
         entry["reason"]["prerequisite_note"] != "due for review, and you are good at it"
         for entry in plan["items"]
     )
+
+
+def _substitutable_pairs() -> list[tuple[str, str]]:
+    """`(gated concept, prerequisite)` pairs the corpus can actually honour.
+
+    Note which side the corpus has to cover. `_prerequisite_substitution` checks
+    `serveable` only on the concept it substitutes *toward* — the gated concept is
+    whatever the ranking threw up and may have no items at all, in which case
+    substitution *rescues* a slot `build_plan` would otherwise drop for an empty pool.
+    Requiring both sides to be measured describes a different, smaller set: the case
+    where the planner turns away from a concept it could have served.
+
+    Computed from disk rather than written down. Which pairs exist is a property of how
+    much corpus has been authored, and the two tests above pin their `serveable` sets by
+    hand — `test_a_weak_prerequisite_that_can_be_served_takes_the_slot` passes
+    `{"sliding-window", "two-pointers"}`, and no item measures `two-pointers` even now.
+    That proves the *function* has both branches. It does not prove the corpus can reach
+    the second one, which is a different claim and the one below.
+    """
+    serveable = {
+        item.primary_concept for item in load_items() if item.kind == "instance" and item.is_active
+    }
+    return [
+        (concept.id, prereq)
+        for concept in load_concepts()
+        if concept.deprecated_at is None
+        for prereq in concept.prereqs
+        if prereq in serveable
+    ]
+
+
+def test_every_prerequisite_pair_the_corpus_can_honour_is_actually_substituted(db_session):
+    """The gate against the real DAG and the real corpus, rather than a hand-written
+    `serveable` set. Every pair on disk must substitute; one that does not means the
+    concept edge and the corpus disagree about which way the prerequisite runs."""
+    pairs = _substitutable_pairs()
+    assert pairs, "no concept has a prerequisite the corpus can serve"
+
+    for gated, prereq in pairs:
+        entry = _priority(gated, ability=1500)
+        weaker = _priority(prereq, ability=1100)
+        concept_id, note = _prerequisite_substitution(
+            db_session,
+            entry,
+            {entry.concept_id: entry, weaker.concept_id: weaker},
+            serveable={prereq},
+        )
+
+        assert concept_id == prereq, f"{gated} did not substitute toward {prereq}"
+        assert note is not None and f"substituted for {gated}" in note
+
+
+def test_the_gate_can_turn_away_from_a_concept_it_could_have_served(db_session):
+    """The harder half, and the one this corpus could barely reach.
+
+    Rescuing an unserveable concept's slot is the common case and needs only the
+    prerequisite to have items. The case worth having is the *redirect*: a concept the
+    planner could serve, passed over because something underneath it is weaker. That
+    needs both sides measured, and until `star-structure`, `hash-map-counting`,
+    `load-balancing` and `sample-space-counting` were authored the corpus held exactly
+    one such pair, all of it in quant.
+    """
+    serveable = {
+        item.primary_concept for item in load_items() if item.kind == "instance" and item.is_active
+    }
+    redirects = [(gated, prereq) for gated, prereq in _substitutable_pairs() if gated in serveable]
+    domains = {
+        concept.domain
+        for concept in load_concepts()
+        if concept.id in {gated for gated, _ in redirects}
+    }
+
+    assert len(redirects) >= 6, redirects
+    assert domains == {"coding", "quant", "system_design", "behavioral"}, domains

@@ -46,7 +46,8 @@ transaction, and the next session is planned from it: concepts ranked by weaknes
 priority, then the item whose expected score lands closest to the band where an outcome
 teaches you something. The whole projection — item ratings included — rebuilds from
 evidence alone, and a simulated candidate with an injected weakness is being drilled on it
-within five sessions.
+within ten sessions — five until the corpus grew a foundational concept gating six others,
+which the priority formula correctly establishes first (see [ADAPTIVE](docs/ADAPTIVE.md)).
 
 Every graded artifact writes an immutable `concept_evidence` row — that part runs today.
 Mastery is *derived* from that evidence, never hand-written, so it can be recomputed from
@@ -70,8 +71,8 @@ breakdown, because adaptation you cannot inspect is adaptation you cannot trust.
 | `apps/api/` | FastAPI — `/health` and `/auth/*` at the root, and behind a session cookie under `/api/v1` the **session layer** (plan → submit → grade → report), mastery, costs and `corpus/status`. The deterministic coding grader, GitHub OAuth, the model-call path, the **interviewer agent** and the **SSE stream** live here too |
 | `apps/web/` | *Empty placeholder.* Next.js 15 app, Phase 5 |
 | `apps/executor/` | Sandboxed code runner (no network, non-root, resource-capped) — isolation, `POST /execute` and `POST /probe` (the complexity probe) are built |
-| `packages/corpus/` | Versioned question corpus + JSON Schema + validator (36 items today) |
-| `research/` | *Empty placeholder.* Corpus ingestion pipeline, Phase 1 — the 36 items were hand-authored, not pipeline-produced |
+| `packages/corpus/` | Versioned question corpus + JSON Schema + validator (48 items today) |
+| `research/` | *Empty placeholder.* Corpus ingestion pipeline, Phase 1 — the 48 items were hand-authored, not pipeline-produced |
 | `scripts/` | The gates: secret scan, doc links, doc consistency, reference-solution verification — all four run in CI — plus the local push and hygiene checks |
 | `hooks/` | `pre-push`: secret scan and the docs-with-code check, installed by `make setup` |
 | `infra/compose/` | Local Postgres today; the rest of the stack lands in Phase 6 with the Dockerfiles |
@@ -142,11 +143,13 @@ owes.
 
 - [x] **0 — Foundations:** repo, schema, taxonomy, corpus contract, CI
 - [ ] **1 — Corpus v1:** researched, evidence-ranked, original statements — *thin slice
-      landed (2026-08-20, widened 2026-08-21): 36 items — 3 archetypes and 6 instances in
-      every one of the four domains, so the planner can choose between items and not just
-      between concepts in all four modes. Coding references are verified in a real sandbox
-      and quant answers twice over; design and behavioral rubrics have no such check, and
-      say so. Bulk authoring toward ~400/~150 remains*
+      landed (2026-08-20, widened twice on 2026-08-21): 48 items — 4 archetypes and 8
+      instances in every one of the four domains. The fourth archetype in each measures a
+      concept that was a *prerequisite* of one already served, so the planner's
+      prerequisite gate can now turn away from a concept it could have served in all four
+      modes rather than only in quant. Coding references are verified in a real sandbox and
+      quant answers twice over; design and behavioral rubrics have no such check, and say
+      so. Bulk authoring toward ~400/~150 remains*
 - [x] **2 — Executor + deterministic grading** — *isolation, `POST /execute`,
       `POST /probe` and the scoring grader landed and verified (2026-08-20). A quadratic
       submission that passes every one of an item's tests is caught by the probe and

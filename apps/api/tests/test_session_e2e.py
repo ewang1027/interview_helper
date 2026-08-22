@@ -36,6 +36,7 @@ pytestmark = pytest.mark.e2e
 # input. It passes every test i.code.0002 ships, so only the probe can mark it down. The
 # item is named here because this source is written against its entrypoint.
 IMPOSTOR_ITEM = "i.code.0002"
+IMPOSTOR_CONCEPT = "monotonic-stack"
 QUADRATIC_SPANS = (
     "def pressure_spans(readings):\n"
     "    out = []\n"
@@ -97,17 +98,27 @@ def test_a_coding_session_runs_from_plan_to_report(executor_server, created_sess
     # through GitHub. Nothing else here is stubbed.
     client = sign_in(TestClient(app))
 
-    created = client.post("/api/v1/sessions", json={"mode": "coding", "budget_minutes": 45}).json()
+    # Focused, rather than taking whatever a cold start ranks first. `QUADRATIC_SPANS` is
+    # hand-written against one entrypoint, so this test needs that item in the plan — and
+    # a cold-start plan is a *ranking*, which every authoring wave moves. It pinned the
+    # whole plan until a second `sliding-window` instance was authored, then pinned only
+    # the impostor's item until `hash-map-counting` was authored and outranked it. What
+    # this test is for is plan → submit → grade → report through a real sandbox; which
+    # items a cold start prefers is `test_planner_db.py`'s subject, not this one's.
+    created = client.post(
+        "/api/v1/sessions",
+        json={
+            "mode": "coding",
+            "budget_minutes": 90,
+            "focus_concepts": [IMPOSTOR_CONCEPT, "sliding-window"],
+        },
+    ).json()
     created_sessions.append(created["id"])
     planned = [entry["item_id"] for entry in created["plan"]["items"]]
 
     # A correct solution, and a correct-but-quadratic one. The pair is the whole point:
-    # both pass every test they are given, and the report has to tell them apart.
-    #
-    # Only the impostor's item is pinned, because `QUADRATIC_SPANS` is written against that
-    # item's entrypoint. Which item joins it in the plan is the planner's decision and it
-    # changes when the corpus does — this test asserted the whole plan until a second
-    # `sliding-window` instance was authored and the planner, correctly, preferred it.
+    # both pass every test they are given, and the report has to tell them apart. The
+    # planner serves at most one item per concept, so two focus concepts give exactly two.
     assert IMPOSTOR_ITEM in planned, planned
     correct_item = next(item_id for item_id in planned if item_id != IMPOSTOR_ITEM)
 

@@ -747,6 +747,270 @@
       },
       "corpus_version": 1,
       "created_at": "2026-08-21"
+    },
+    {
+      "id": "a.behav.0004",
+      "kind": "archetype",
+      "domain": "behavioral",
+      "modality": "behavioral",
+      "archetype_id": null,
+      "title": "One open prompt, no beats named: the story you have to structure yourself",
+      "statement_md": "**Pattern.** The interviewer asks one wide question — tell me about your work, walk me\nthrough something you built, what have you been up to lately — and then stops talking.\nThe question names no topic to hit and no parts to fill in, so whatever shape comes back\nis a shape the candidate supplied. It opens most behavioural rounds and most recruiter\nscreens, which makes it the prompt candidates meet most often and rehearse least, and\nthe one where a bad habit never gets corrected because nothing in the question corrects\nit.\n\n**What it measures.** Not the story — the delivery of it. Whether one bounded episode\ngets picked rather than a career, a team, or a whole system; whether the scene-setting\nstops at the point a listener can follow rather than at the point the candidate runs out\nof context to hand over; whether the middle of the answer is a sequence of things this\nperson did, said in the first person, or a description of what was going on around them\nat the time; and whether it ends on something an outsider could have checked, offered\nrather than extracted. The failure it exists to catch is a fluent one, which is exactly\nwhy it survives: an answer that is confident, easy to listen to, four-fifths background,\nplural throughout, and over before anything is said to have happened.\n\n**Typical realisations.** The opening minute of a recruiter screen; walk me through a\nproject on your CV; the most interesting thing you have built; the same request under a\ntwo-minute cap because the interviewer has four other things to get through; a take-home\ndebrief that begins with nothing but an invitation to talk about it.",
+      "concepts": [
+        "star-structure",
+        "situation-framing",
+        "concise-narrative",
+        "contribution-attribution",
+        "quantified-impact"
+      ],
+      "primary_concept": "star-structure",
+      "difficulty": {
+        "band": "easy",
+        "elo": 1300
+      },
+      "sources": [
+        {
+          "url": "https://www.aboutamazon.com/news/workplace/amazon-interview-best-tips",
+          "title": "Interview tips from Amazon recruiters",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A very large employer's own published hiring advice states that its interviewing is behaviour-based and asks candidates to answer in a fixed four-part shape. A quoted recruiting manager says the panel wants to hear what the individual personally delivered rather than what a team did, and the worked example carries figures on the outcome — so the shape of the answer, not only its content, is what the employer tells candidates to bring."
+        },
+        {
+          "url": "https://successworks.wisc.edu/the-basics/preparing-for-your-interview-2/the-star-method/",
+          "title": "The STAR Method — UW–Madison SuccessWorks",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A university careers office's guidance on this format. It says the prompt arrives as an open invitation to recall one occasion, that a general account of how you usually work does not count, that the pronoun should be singular rather than plural, and that candidates habitually have to be asked before they supply the outcome — which is precisely the failure this pattern is built to expose."
+        },
+        {
+          "url": "https://interviewing.io/blog/how-software-engineering-behavioral-interviews-are-evaluated-meta",
+          "title": "How software engineering behavioral interviews are evaluated at Meta",
+          "retrieved_at": "2026-08-21",
+          "evidence": "An ex-interviewer at a large employer enumerates the dimensions a behavioural round is scored against, and how clearly the candidate tells their stories is one of them in its own right, listed separately from the substance of what the stories contain. That is direct attestation that assembly of an answer is graded rather than being a matter of taste."
+        }
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
+    },
+    {
+      "id": "i.behav.0007",
+      "kind": "instance",
+      "domain": "behavioral",
+      "modality": "behavioral",
+      "archetype_id": "a.behav.0004",
+      "title": "An open floor, and nothing to rescue you",
+      "statement_md": "Pick one piece of work from the last couple of years and tell me about it. Anything you\nlike — something you shipped, something you killed, a system you kept alive, an analysis\nnobody asked you for.\n\nThat is the whole question. I am not going to break it into parts for you, I will not\nprompt you for anything you leave out, and when you stop talking I will take what you\nsaid as the answer. Take as long as you think it needs, and stop when you think you are\ndone.\n\nI know nothing about your team, your stack or your customers, so give me whatever I need\nin order to follow you — and nothing I do not.",
+      "concepts": [
+        "star-structure",
+        "situation-framing",
+        "contribution-attribution",
+        "quantified-impact",
+        "concise-narrative"
+      ],
+      "primary_concept": "star-structure",
+      "difficulty": {
+        "band": "warmup",
+        "elo": 1250
+      },
+      "expected_minutes": 5,
+      "sources": [
+        {
+          "url": "https://www.aboutamazon.com/news/workplace/amazon-interview-best-tips",
+          "title": "Interview tips from Amazon recruiters",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A very large employer's own published hiring advice states that its interviewing is behaviour-based and asks candidates to answer in a fixed four-part shape. A quoted recruiting manager says the panel wants to hear what the individual personally delivered rather than what a team did, and the worked example carries figures on the outcome — so the shape of the answer, not only its content, is what the employer tells candidates to bring."
+        },
+        {
+          "url": "https://successworks.wisc.edu/the-basics/preparing-for-your-interview-2/the-star-method/",
+          "title": "The STAR Method — UW–Madison SuccessWorks",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A university careers office's guidance on this format. It says the prompt arrives as an open invitation to recall one occasion, that a general account of how you usually work does not count, that the pronoun should be singular rather than plural, and that candidates habitually have to be asked before they supply the outcome — which is precisely the failure this pattern is built to expose."
+        },
+        {
+          "url": "https://interviewing.io/blog/how-software-engineering-behavioral-interviews-are-evaluated-meta",
+          "title": "How software engineering behavioral interviews are evaluated at Meta",
+          "retrieved_at": "2026-08-21",
+          "evidence": "An ex-interviewer at a large employer enumerates the dimensions a behavioural round is scored against, and how clearly the candidate tells their stories is one of them in its own right, listed separately from the substance of what the stories contain. That is direct attestation that assembly of an answer is graded rather than being a matter of taste."
+        }
+      ],
+      "grading": {
+        "type": "rubric",
+        "criteria": [
+          {
+            "id": "four_beats_and_their_proportions",
+            "description": "Delivers a complete arc without being asked for one — a bounded opening, what the candidate was on the hook for, what they did about it, and how it ended — with the bulk of the words spent on the doing rather than on the background.",
+            "weight": 0.35,
+            "concept": "star-structure",
+            "levels": {
+              "0": "The answer never arrives anywhere. Context, history and how the thing worked take up most of it, and it stops on description rather than on anything that happened. Two near misses belong here and not at 2: a middle that reports activity a team was engaged in instead of steps this person took, and a close that appraises the project ('it was a really interesting piece of work', 'I learned a lot') instead of saying what changed. Fluency does not alter the reading — an answer can be confident, well-paced, a pleasure to listen to and still be all setup.",
+              "2": "All four parts are somewhere in there, but out of proportion or out of order — the opening runs to half the answer, or the ending arrives as a subordinate clause, or the listener has to reassemble the sequence themselves.",
+              "4": "One bounded episode, opened in a few sentences, most of the answer spent on what was done and in the order it was done, and an explicit close naming what came of it. None of it had to be asked for."
+            }
+          },
+          {
+            "id": "setup_stops_when_it_has_done_its_job",
+            "description": "Gives the context needed to make the rest land — what the thing was, who it was for, why it mattered — and then leaves it, instead of continuing because background is the easiest material to talk about.",
+            "weight": 0.2,
+            "concept": "situation-framing",
+            "levels": {
+              "0": "More than half the answer is background: team structure, project history, a tour of the architecture, what came before. The listener ends up knowing the setting well and still not knowing what the candidate did in it.",
+              "2": "Roughly the right content and under half the answer, but it overstays — a second and third pass over the same setting, or detail the rest of the answer never uses.",
+              "4": "Two or three sentences establish the thing, the stakes and the candidate's place in it, every part of which is load-bearing later, and the answer moves on unprompted."
+            }
+          },
+          {
+            "id": "first_person_actions",
+            "description": "Describes the actions as this person's — decisions taken, things built, conversations had — rather than as a team's activity, so a listener can tell what would not have happened without them.",
+            "weight": 0.25,
+            "concept": "contribution-attribution",
+            "levels": {
+              "0": "Plural throughout. The answer reports what a group was doing and never isolates one thing this person decided or made; on the evidence given they could have been the lead or a bystander. First-person framing does not rescue it — 'I would pick this project', 'I learned a lot' and 'I should give you some background' are not actions.",
+              "2": "Mixed — some individual actions named, but the load-bearing parts stay collective, or the singular pronoun appears only once the story reaches the part that went well.",
+              "4": "Names specific things they did and in what order, is explicit about which parts were somebody else's, and is precise enough that a colleague who was there would recognise the division."
+            }
+          },
+          {
+            "id": "ending_that_can_be_checked",
+            "description": "Closes on an outcome with something observable attached — a figure, a date, a state of the world before and after — rather than on an assertion that it went well, or on nothing at all.",
+            "weight": 0.2,
+            "concept": "quantified-impact",
+            "levels": {
+              "0": "No outcome is stated, or the answer trails off into what the project generally became. Nothing is claimed that could be either true or false.",
+              "2": "An outcome is asserted but unattached — it worked, it is still in use, people were pleased — with nothing a listener could go and check.",
+              "4": "States what was different afterwards with a magnitude or a date on it, says how they know, and volunteers the part that did not work if there was one."
+            }
+          }
+        ]
+      },
+      "hints": [
+        "One piece of work, not a tour of the last two years. If you hear yourself say 'and then after that project', you have picked too much.",
+        "I still do not know what you personally were on the hook for. Tell me that before you go any further.",
+        "You have been setting the scene for a while now. Assume I have enough background, and go to what you actually did about it.",
+        "Finish it. What was different afterwards, and how would somebody other than you know? An answer with no ending does not score, however good the middle was."
+      ],
+      "follow_ups": [
+        "Now do it again in sixty seconds. What did you cut, and why those parts?",
+        "Which of that was yours alone, and which would a teammate also claim if I asked them?",
+        "You gave me the outcome as a claim. What would I go and look at to check it?",
+        "If the project had gone the other way, which sentences in what you just told me would be different?"
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
+    },
+    {
+      "id": "i.behav.0008",
+      "kind": "instance",
+      "domain": "behavioral",
+      "modality": "behavioral",
+      "archetype_id": "a.behav.0004",
+      "title": "Your most complicated work, in two minutes, to a stranger",
+      "statement_md": "Take the most technically involved thing you have built or investigated, and explain it\nto me in about two minutes. I do not work in your area, I cannot look anything up while\nyou talk, and I have a hard stop — whatever has not been said by then does not count.\n\nThe budget is the constraint, not a suggestion. Every sentence you spend is a sentence\nyou are not spending somewhere else, and I will not extend it because the interesting\npart was coming next.\n\nDo not swap it for something simpler to describe. I want the real thing, at whatever\ndepth still fits.",
+      "concepts": [
+        "star-structure",
+        "concise-narrative",
+        "situation-framing",
+        "contribution-attribution",
+        "quantified-impact"
+      ],
+      "primary_concept": "star-structure",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1500
+      },
+      "expected_minutes": 4,
+      "sources": [
+        {
+          "url": "https://www.aboutamazon.com/news/workplace/amazon-interview-best-tips",
+          "title": "Interview tips from Amazon recruiters",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A very large employer's own published hiring advice states that its interviewing is behaviour-based and asks candidates to answer in a fixed four-part shape. A quoted recruiting manager says the panel wants to hear what the individual personally delivered rather than what a team did, and the worked example carries figures on the outcome — so the shape of the answer, not only its content, is what the employer tells candidates to bring."
+        },
+        {
+          "url": "https://successworks.wisc.edu/the-basics/preparing-for-your-interview-2/the-star-method/",
+          "title": "The STAR Method — UW–Madison SuccessWorks",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A university careers office's guidance on this format. It says the prompt arrives as an open invitation to recall one occasion, that a general account of how you usually work does not count, that the pronoun should be singular rather than plural, and that candidates habitually have to be asked before they supply the outcome — which is precisely the failure this pattern is built to expose."
+        },
+        {
+          "url": "https://interviewing.io/blog/how-software-engineering-behavioral-interviews-are-evaluated-meta",
+          "title": "How software engineering behavioral interviews are evaluated at Meta",
+          "retrieved_at": "2026-08-21",
+          "evidence": "An ex-interviewer at a large employer enumerates the dimensions a behavioural round is scored against, and how clearly the candidate tells their stories is one of them in its own right, listed separately from the substance of what the stories contain. That is direct attestation that assembly of an answer is graded rather than being a matter of taste."
+        }
+      ],
+      "grading": {
+        "type": "rubric",
+        "criteria": [
+          {
+            "id": "structure_survives_the_budget",
+            "description": "Fits a whole arc inside the budget — enough setting to follow, what the candidate was solving, what they did, where it ended — by compressing the explanation rather than by dropping the end of the story.",
+            "weight": 0.35,
+            "concept": "star-structure",
+            "levels": {
+              "0": "The budget goes entirely on explaining. The answer is still describing how the thing works when the time is gone, and both what the candidate did about it and what came of it are missing. A vivid, well-organised explanation scores here too if that is all there is, and so does one that closes by appraising the work rather than reporting what changed.",
+              "2": "The arc is complete but the allocation is wrong: the setting takes over half the budget, or the actions are compressed into one sentence, or the ending is delivered as a rushed afterthought once the time is visibly gone.",
+              "4": "The setting is established in well under a third of the budget, the largest share goes to what this person actually did, and the answer lands its close deliberately rather than being cut off — the shape is a choice, and the choice is visible."
+            }
+          },
+          {
+            "id": "pitched_for_the_listener",
+            "description": "Explains at the level the stated listener can use — no unglossed jargon, no internal names, only the machinery that makes the candidate's decisions comprehensible — without flattening the work into something easier.",
+            "weight": 0.2,
+            "concept": "situation-framing",
+            "levels": {
+              "0": "Pitched at a colleague: internal system names, unexplained terms, a full architectural tour. Or the reverse — simplified until nothing technical is left and any engineer could have done it.",
+              "2": "Mostly accessible, but two or three terms go unglossed, or an analogy stands in where the actual mechanism would have been shorter.",
+              "4": "Every piece of machinery introduced is one the rest of the answer needs, explained once, in terms the stated listener can hold — and the difficulty of the work still comes through."
+            }
+          },
+          {
+            "id": "spent_the_budget_deliberately",
+            "description": "Comes in near the stated length and stops there rather than trailing off, restarting or having to be cut off, and shows evidence of having chosen what to leave out.",
+            "weight": 0.2,
+            "concept": "concise-narrative",
+            "levels": {
+              "0": "Far over or far under the budget, or it ends because the time ran out rather than because the answer was finished.",
+              "2": "Roughly the right length, but the shape is accidental — repetition, a false start, or an ending that arrives only because there was nothing left to say.",
+              "4": "Lands close to the budget, stops on purpose, and names or plainly implies at least one thing consciously left out because it did not fit."
+            }
+          },
+          {
+            "id": "their_own_hands_on_it",
+            "description": "Makes clear which part of the complicated thing was theirs — a large system being the easiest place to hide a small contribution.",
+            "weight": 0.15,
+            "concept": "contribution-attribution",
+            "levels": {
+              "0": "Describes the system rather than their work on it. The same answer would be true delivered by anyone else on that team.",
+              "2": "Claims a portion of it in general terms — worked on the ingestion side, owned the model — without naming a decision they made or a thing they built.",
+              "4": "Names the specific parts they built or decided, says what already existed when they arrived, and is unprompted about where the boundary of their contribution sits."
+            }
+          },
+          {
+            "id": "an_ending_with_a_number",
+            "description": "Ends on what changed, with a magnitude, even under compression — the result being the first thing a squeezed answer drops is the failure this criterion exists to price.",
+            "weight": 0.1,
+            "concept": "quantified-impact",
+            "levels": {
+              "0": "No result inside the budget. The answer ends on the description, or on what the plan had been.",
+              "2": "A result is reached, but qualitatively only, or it appears after the budget has clearly gone.",
+              "4": "Closes on what the work achieved with a figure or a comparison attached, inside the budget, delivered as the destination the answer was heading for all along."
+            }
+          }
+        ]
+      },
+      "hints": [
+        "Two minutes covers the whole thing, ending included. You are spending the budget already.",
+        "I do not need to understand the system to understand you. Give me only the part of the machinery that makes your decisions make sense.",
+        "You are most of the way through the budget and you have not yet told me what you did about any of this.",
+        "Land it. What was true at the end that was not true at the start, and what number says so?"
+      ],
+      "follow_ups": [
+        "Now the version for somebody who does work in your area. What changes, and what stays?",
+        "Which of the details you left out would you put back first, if I gave you another thirty seconds?",
+        "What was the hardest single decision in there, and who else could have made it?",
+        "You described the system. Which parts of it were already there when you arrived?"
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
     }
   ]
 }

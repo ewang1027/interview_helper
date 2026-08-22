@@ -25,10 +25,25 @@ from api.main import app
 from api.models import ConceptEvidence, Grading
 from api.routes.sessions import get_runner
 from api.schemas import Mode
+from corpus.loader import load_items
 
 pytestmark = pytest.mark.db
 
 REFERENCE = "def f(xs):\n    return xs\n"
+
+
+def evidence_rows_for(item_ids: list[str]) -> int:
+    """How many `concept_evidence` rows a fully graded session over these items writes —
+    one per concept tagged on each.
+
+    Computed from the corpus rather than written down. The previous wave learned that a
+    test naming a corpus item is really a test of how many items the corpus holds; these
+    are the same mistake spelled as a *count*, and they broke the first time an authoring
+    wave added coding items, because a 90-minute budget then fit four of them instead of
+    three.
+    """
+    by_id = {item.id: item for item in load_items()}
+    return sum(len(by_id[item_id].concepts) for item_id in item_ids)
 
 
 def make_client(run: RunResult | None = None, probe: ProbeOutcome | None = None) -> TestClient:
@@ -69,7 +84,8 @@ def test_a_session_returns_its_plan_up_front(created_sessions):
     assert created["state"] == "briefing"
     assert created["plan"]["adaptive"] is True
     assert created["plan"]["calibration"] is True  # no evidence yet, and it says so
-    assert len(created["plan"]["items"]) == 3
+    assert created["plan"]["items"], "a plan with nothing in it is not a plan"
+    assert created["plan"]["estimated_minutes"] <= 90
 
 
 def test_a_graded_submission_writes_evidence_against_every_concept(created_sessions):
@@ -148,10 +164,11 @@ def test_the_report_carries_the_evidence_it_wrote(created_sessions):
     for entry in created["plan"]["items"]:
         submit(client, created["id"], entry["item_id"])
 
+    planned = [entry["item_id"] for entry in created["plan"]["items"]]
     report = client.get(f"/api/v1/sessions/{created['id']}/report").json()
-    assert report["graded"] == 3
+    assert report["graded"] == len(planned)
     assert report["mean_score"] == pytest.approx(1.0)
-    assert len(report["evidence"]) == 11  # 4 + 4 + 3 concepts across the three items
+    assert len(report["evidence"]) == evidence_rows_for(planned)
     # A coding session, graded by tests alone and with no interviewer: the one note it
     # earns is that nobody was in the room. The notes are read off the session, so a claim
     # about what does or does not exist cannot go stale in the payload.
@@ -170,10 +187,11 @@ def test_ending_early_abandons_the_session_and_keeps_what_was_graded(created_ses
     assert ended.status_code == 200
     assert ended.json()["state"] == "abandoned"
 
+    planned = [entry["item_id"] for entry in created["plan"]["items"]]
     report = client.get(f"/api/v1/sessions/{created['id']}/report").json()
     assert report["graded"] == 1
-    assert report["not_attempted"] == 2
-    assert len(report["evidence"]) == 4
+    assert report["not_attempted"] == len(planned) - 1
+    assert len(report["evidence"]) == evidence_rows_for(planned[:1])
 
 
 def test_a_second_submission_for_the_same_item_is_refused(created_sessions):

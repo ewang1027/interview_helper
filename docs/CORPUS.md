@@ -1,8 +1,8 @@
 # The corpus and how it gets built
 
 > **Status:** Contract built and enforced (**Phase 0**) — schema and validator ship with
-> tests. A **thin Phase 1 slice is authored and verified**: 3 archetypes and 6 instances in
-> every one of the four domains (widened 2026-08-21). Every coding reference solution passes
+> tests. A **thin Phase 1 slice is authored and verified**: 4 archetypes and 8 instances in
+> every one of the four domains (widened twice on 2026-08-21). Every coding reference solution passes
 > its own tests in a real sandbox and measures inside its declared complexity band; every
 > quant answer was checked twice, by exact reasoning and by simulation. **Design and
 > behavioral items carry no comparable check** — nothing executes a rubric, so the validator

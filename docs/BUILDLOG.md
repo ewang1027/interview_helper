@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-08-21
+## Where things stand — 2026-08-22
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -20,10 +20,10 @@ detail behind it.
 | Phase | State | What exists | What it still owes |
 |---|---|---|---|
 | **0** Foundations | **complete** | workspace, 159-concept taxonomy, corpus schema + validator, CI | — |
-| **1** Corpus v1 | **partial** — thin slice | 36 items — 3 archetypes **and 6 instances** in every one of the four domains, so the planner can choose between items in all four modes | bulk authoring toward ~400/~150, and archetypes for concepts nothing measures as a primary |
+| **1** Corpus v1 | **partial** — thin slice | 48 items — 4 archetypes **and 8 instances** in every one of the four domains. The fourth archetype in each measures a **prerequisite** of a concept already served, which is what the planner's gate needs | bulk authoring toward ~400/~150, and archetypes for the other 143 concepts nothing measures as a primary |
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | a full session against a live provider — gated on Bedrock access, not on code |
-| **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within five sessions | weights are placeholders until real sessions calibrate them |
+| **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within ten sessions — five until `W_UNLOCKS` woke up | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus |
 | **5–8** Web, AWS, voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
 
@@ -3035,3 +3035,297 @@ disk, which is why none of this needed research: the pattern was already atteste
 **archetypes** need sources — two independent ones each, read and then closed — and they are
 what the prerequisite gate is waiting for, since it substitutes only toward a concept some
 item carries as its primary and there are still twelve of those across 159 concepts.
+
+---
+
+## Phase 1 (four new archetypes) — the prerequisite gate has somewhere to send you · 2026-08-22
+
+Four new archetypes, one per domain, each with two instances. **48 items: 4 archetypes and
+8 instances in every domain.** Every previous wave authored instances against an archetype
+already on disk, which is why none of them needed research and none of them added a
+primary concept. This one adds four, and they were chosen for one property: each is the
+**prerequisite of a concept the corpus already served**.
+
+```
+corpus validate    159 concepts · 48 items (16 archetypes, 32 instances) · 0 errors, 0 warnings
+make check 249 · make test-db 141 · make test-sandbox 28 · make test-e2e 1 · verify-solutions 8/8
+```
+
+| New archetype | Primary concept | Gates | Instances |
+|---|---|---|---|
+| `a.quant.0004` | `sample-space-counting` | `linearity-of-expectation` | `i.quant.0007` easy 1310 · `i.quant.0008` hard 1690 |
+| `a.code.0004` | `hash-map-counting` | `sliding-window` | `i.code.0007` easy 1340 · `i.code.0008` medium 1640 |
+| `a.design.0004` | `load-balancing` | `rate-limiting` | `i.design.0007` medium 1570 · `i.design.0008` hard 1730 |
+| `a.behav.0004` | `star-structure` | `conflict-resolution`, `failure-and-learning` | `i.behav.0007` warmup 1250 · `i.behav.0008` medium 1500 |
+
+Authored by four concurrent agents owning one domain file each, the same shape the earlier
+waves used. Sixteen source URLs were fetched and read; nine candidate sources were fetched
+and **discarded**, and the discards are recorded below because they are the more useful
+half.
+
+### What the gate actually does, which this repo had been describing too pessimistically
+
+`docs/ADAPTIVE.md` said substitution "needs an item whose *primary* concept is the
+prerequisite, and the corpus has twelve primaries across 159 concepts." True, but it
+implied a stricter rule than the code has. `_prerequisite_substitution` checks `serveable`
+only on the concept it substitutes **toward**. The gated concept is whatever the ranking
+threw up and may have no items at all — in which case substitution **rescues** a slot
+`build_plan` would otherwise drop for an empty pool.
+
+So there were two numbers, not one, and only the smaller was near zero:
+
+| | before | after |
+|---|---|---|
+| DAG edges the gate can honour | 15 | **34** |
+| …of which the gated concept has items of its own | 1 | **6** |
+| domains with such an edge | quant | **all four** |
+
+The second row is the one this wave was for: the planner turning away from a concept it
+*could* have served, because something underneath it is weaker.
+
+### The before and after, run rather than reasoned about
+
+Same planner, same simulated candidate — weakest at the new concept, second-weakest at the
+concept it gates — against HEAD's corpus and then this one. The loader was pointed at a
+checkout of the old corpus; no reseed was needed, because `eligible_items` reads the corpus
+directly and the `items` table only supplies live Elo.
+
+**Before**, in all four modes the prerequisite is never served, and the plan says why:
+
+```
+behavioral   i.behav.0004  targets=conflict-resolution
+                           note='star-structure gates it and is weaker, but no item measures it'
+coding       i.code.0004   targets=sliding-window
+                           note='hash-map-counting gates it and is weaker, but no item measures it'
+quant        i.quant.0006  targets=linearity-of-expectation
+                           note='sample-space-counting gates it and is weaker, but no item measures it'
+design       (rate-limiting not served at all)
+```
+
+**After**, the prerequisite is served in all four. But note *why*, because it is not the
+gate: a concept that is weakest and unlocks six others simply **ranks first on its own
+priority**, so it is served directly and the substitution branch never has to fire.
+
+Making the gate itself decide the slot needs the gated concept to *outrank* its
+prerequisite, which takes a term the prerequisite does not get — overdue. With the gated
+concept 30 days past a one-day interval and 20 Elo *stronger*:
+
+```
+design       rate-limiting prio=0.4036 (top-ranked)  vs  load-balancing prio=0.2354
+             i.design.0007  targets=load-balancing
+                            note='substituted for rate-limiting, whose prerequisite it is'
+```
+
+`rate-limiting` is the highest-priority concept in the domain and is not served at all.
+The same redirect fires in the other three modes. That is the branch that had one edge to
+run on before this wave and now has six.
+
+### `W_UNLOCKS` was inert, and authoring one concept woke it up
+
+The Phase 4 gate — an injected weakness drilled within **five** sessions — broke. It is
+the most interesting failure in this wave, and it is not a regression.
+
+`hash-map-counting` gates six coding concepts, so its `unlocks` term is **0.086** against
+`monotonic-stack`'s **0.014**. At cold start nothing is measured, so every weakness term
+sits at 0.199 and that gap decides the order. Measured over ten sessions:
+
+```
+1-2  i.code.0007  hash-map-counting   (unlocks 0.086)
+3    i.code.0004  sliding-window
+4-7  i.code.0002  monotonic-stack     <- the injected weakness
+8    i.code.0007  hash-map-counting   (anti-repetition rotates it off)
+9-10 i.code.0002  monotonic-stack
+```
+
+The engine still converges and still ends up rating `monotonic-stack` lowest (1509 against
+a 1550 default). It just pays three sessions establishing a foundational concept before
+drilling anything — which is precisely what `docs/ADAPTIVE.md` says the term is for: "a
+weak prerequisite that gates six downstream concepts is worth more than an isolated leaf."
+The term had simply never had a serveable high-`unlocks` concept to express itself on.
+
+Two things follow, and both will recur:
+
+- **A majority over a growing window is not a property this engine can satisfy.**
+  `W_EXPOSURE` guarantees it rotates off a sore spot, so the fraction is bounded above by
+  design. Counts measured at 6/8/10/12 sessions: 3, 4, 6, 8.
+- **The exploration prologue scales with unmeasured foundational corpus**, so the window
+  will need raising again. The gate now also asserts the weak item is the single
+  *most-served* one, which is the half that does not depend on window arithmetic.
+
+The window moved to ten sessions. `docs/ADAPTIVE.md`, the README and the phase table all
+say so, and say what moved it.
+
+### The probe generators, and proof they earn their design
+
+Both new coding items ship a worst-case generator, and both were checked by running an
+impostor rather than by reading the band table — the discipline `docs/CORPUS.md` picked up
+last wave.
+
+| item | reference | ceiling | impostor | slope | threshold |
+|---|---|---|---|---|---|
+| `i.code.0007` | 1.05 | 1.30 | nested pair scan | 2.05 | 1.65 |
+| `i.code.0007` | | | pair distinct values `O(d²)` | 2.03 | 1.65 |
+| `i.code.0008` | 1.08 | 1.30 | nested prefix scan | 2.14 | 1.65 |
+| `i.code.0008` | | | re-walk the map `O(n·d)` | 2.09 | 1.65 |
+
+All four impostors **pass every test their item ships** — they are the accepted-but-slow
+case only the probe can catch. The counter-experiment is the part worth keeping: swapping
+each generator for a lazy one lets the impostor escape.
+
+- `i.code.0007` with low-cardinality random values: the `O(d²)` impostor returns
+  **`inconclusive`** — largest sample 0.176 ms, under the 0.2 ms noise floor.
+- `i.code.0008` with only two distinct running totals: the `O(n·d)` impostor measures
+  **0.99** and is called **`matches`**. A clean escape.
+
+So the generators are worst-case on two axes, and both say so in comments: no early exit is
+ever valid, *and* the distinct-key count is forced to Θ(n) so a solution quadratic in
+distinct keys cannot hide.
+
+**A corpus-wide concern, flagged rather than fixed.** Largest probe samples run 0.33–0.49 ms
+against a 0.2 ms floor across *all* coding items (`i.code.0001` 0.493, `i.code.0004` 0.332,
+the new pair 0.362 and 0.441). A machine roughly 1.8× faster than this sandbox pushes
+`i.code.0007` under the floor. Widening two items unilaterally would break parity with the
+`[1000…8000]` range `docs/CORPUS.md` records as *measured* to catch a quadratic impostor on
+CI, so nothing was changed. It is a corpus-wide decision and it is now written down.
+
+### The discrimination read found real defects in both rubric domains
+
+Nothing executes a rubric, so for design and behavioral the whole check is the validator, a
+careful reading, and one scripted grading each. That proves an item **grades**; it proves
+nothing about whether its anchors discriminate. This wave added a step: write the
+confident, fluent, empty answer and check by hand where the anchors put it.
+
+It changed six of the four items.
+
+**Design** — five of ten anchors gave the boilerplate answer partial credit, for a weighted
+~0.21 and ~0.22. The failure was consistent: boilerplate *names the right noun* — "least
+connections", "consistent hashing", "connection draining", "exponential backoff" — while
+doing none of the reasoning, and the level-2 anchors were phrased as "names X but doesn't
+tie it to the numbers", which is exactly what boilerplate does. Fixed by naming the
+boilerplate move itself in the level-0 anchor on six criteria. Both generic answers now
+read **0.00**.
+
+**Behavioral** — three of four level-2 anchors were reachable by a 352-word answer that is
+65% background, says `we` eight times, contains three first-person clauses (all of them
+framing, none of them actions), has no digits and ends on "it was a really interesting
+project." First-pass ceiling ~0.40. Fixed by making the boundaries mechanical rather than
+judgemental: background must be **under half the answer** to clear level 0, and level 0 now
+explicitly claims a middle that reports team activity and a close that appraises the
+project instead of saying what changed. The answer now lands **0/4 on every criterion**,
+and even a grader ignoring both mechanical boundaries tops out at 0.50.
+
+Worth stating plainly: **the discrimination read was the only step in the design domain
+that changed anything.** The validator was green on the first try and stayed green; the
+scripted grading was green on the first try. Two items would have shipped giving a fifth of
+the marks to an answer that said nothing, and no gate in this repo would have noticed.
+
+### Three tests were measuring the corpus again, in a new way
+
+Last wave's finding was that a test naming a corpus item is a test of how many items the
+corpus holds. This wave found the same mistake spelled as a **count**.
+
+| Test | Pinned | Now |
+|---|---|---|
+| `test_a_session_returns_its_plan_up_front` | `len(plan["items"]) == 3` | the plan is non-empty and fits its budget |
+| `test_the_report_carries_the_evidence_it_wrote` | `graded == 3`, `len(evidence) == 11` | both computed from the plan the planner actually served |
+| `test_ending_early_...` | `not_attempted == 2`, `len(evidence) == 4` | same, from the plan |
+
+A 90-minute budget fit three coding items and now fits four. `evidence_rows_for()` sums the
+concept tags of the items actually planned, so the number tracks the corpus instead of
+asserting against it.
+
+### The e2e gate, pinned one layer deeper than it looked
+
+`test_a_coding_session_runs_from_plan_to_report` needs `i.code.0002` in the plan, because
+its quadratic impostor is hand-written against that item's entrypoint. Last wave narrowed
+it from pinning the *whole plan* to pinning only the impostor's item. That was still a bet
+on a **ranking**: with `hash-map-counting` authored, a cold start now serves
+`['i.code.0007', 'i.code.0004']` and the impostor's item is not in it.
+
+It now asks for the concept it needs — `focus_concepts: ["monotonic-stack", "sliding-window"]`
+— and takes whichever items the planner serves for them. The planner serves at most one
+item per concept, so two focus concepts give exactly the two this test needs. What the test
+is for is plan → submit → grade → report through a real sandbox; which items a cold start
+prefers belongs to `test_planner_db.py`.
+
+**This gate was run locally this time.** Last wave pushed with three of four green and CI
+caught the fourth. All five ran here, `make test-sandbox` included.
+
+### A latent test defect that had nothing to do with the corpus
+
+`make test-db` also failed two ledger tests, and the cause predates this wave: the dev
+database had 29 rows on it from earlier sessions, all dated *yesterday*.
+
+`spend_now()` summed the ledger for all time. The daily budget is enforced against
+`start_of_day()`, and `/costs/budget` reports the same window — so the helper agreed with
+the route only on a database holding nothing older than today.
+
+The worse of the two was `test_a_spent_daily_budget_refuses_the_next_call`, which sets the
+limit to just under what it reads. Summing all history quietly raised the bar to 16,359
+tokens against 120 actually spent today, so the call it expected to be **refused went
+through** and the test failed on `DID NOT RAISE`. Its docstring already claimed the right
+intent — "the limit is set below what is already on the ledger so the test does not depend
+on what else the database holds" — and the implementation read the wrong window. `spend_now`
+now mirrors enforcement: day-scoped with no session, session-scoped with one.
+
+Two stray rows written by this wave's own scripted grading were deleted. The other 29 were
+left alone — they are dev-database history, not this wave's to discard.
+
+### What "verified" means for each of these twelve items
+
+The word has to carry different weight per domain and the difference is not shrinking:
+
+- **Coding** — run. Both references pass their own tests in a real sandbox (11/11 and
+  13/13) and measure inside their declared band; four impostors were run through the real
+  probe and caught.
+- **Quant** — checked twice. `2/11` simulated 0.181785 and `63/128` simulated 0.491568 at
+  1M trials each; `i.quant.0008`'s space was additionally enumerated exhaustively at
+  2016/4096, with three independent counting routes agreeing. Both answers were then run
+  through the real `check_answer`, including a decoy battery — 12/12.
+- **Design and behavioral** — the validator, a careful reading, one scripted grading each,
+  and now the discrimination read. **No model judged anything.** The scripted verdicts were
+  chosen by the agent that wrote the item, which is the weakest link in this corpus and is
+  what `docs/GRADING.md`'s calibration harness is for. Still blocked on real transcripts.
+
+### Sources fetched and discarded, which is the more useful half
+
+Nine candidate sources were fetched or attempted and not cited:
+
+- **Dead or blocked:** `techinterviewhandbook.org/behavioral-interview/` returned **403** —
+  worth knowing, since that domain is cited by all three existing behavioral archetypes and
+  would not be re-fetchable today. `leetcode.com/discuss/...` 403. `interviewquery.com` and
+  `datainterview.com` both **429**. Two Google/Meta careers URLs 404, one rendered as an
+  empty SPA shell.
+- **Fetched, read, rejected as evidence:** `everythingquant.com` and `quantt.co.uk` never
+  name counting as a topic — and `quantt.co.uk` is *already cited* in this file for
+  `a.quant.0003`, where it is a good source. A source is evidence for a specific archetype,
+  not for a domain. `gov.uk`'s Success Profiles is a real competency framework that says
+  nothing about answer structure; citing it would have been evidence-density padding.
+- **A URL you can construct is not a URL you have read:** `systemdesignschool.io` has a
+  rate-limiter problem and no load-balancer one, despite the guessed path being plausible.
+
+One cited source is deliberately weak and labelled so in its own evidence note:
+`mayhemcode.com` is a personal prep blog stating predicted expectations rather than
+transcripts. It was kept because it is the source that most directly attests the shallow
+health-check trap `i.design.0007` grades hardest. If a reviewer wants it dropped,
+`a.design.0004` still has three independent sources.
+
+**The originality rule is process, not a gate.** The validator shingles a statement against
+the item's *own evidence notes* — it holds no copy of any page. What can be said is that no
+proprietary problem statement was in context and every statement was written from the
+pattern. That is a claim about how the work was done, not something a script proved.
+
+### Next
+
+Still the expensive half, and now with a sharper target. Twelve archetypes measure
+sixteen of 159 concepts as a primary, so **143 concepts still have nothing that measures
+them**. The highest-value ones are the remaining unmeasured *prerequisites* — the same
+selection rule this wave used — followed by the foundational concepts with the largest
+downstream subtrees: `functional-requirements` (36 concepts downstream),
+`nonfunctional-requirements` (27), `big-o-analysis` (35), `capacity-estimation` (25).
+
+Two known costs to plan for. Each new foundational concept with a large `unlocks` term
+lengthens the Phase 4 gate's exploration prologue again, so that window will keep moving
+until the weights are calibrated against real sessions. And the coding probe's noise-floor
+margin is thin corpus-wide; the fifth probe size that would fix it is a decision to take
+across every coding item at once, not per item.

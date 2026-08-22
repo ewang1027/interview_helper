@@ -99,8 +99,20 @@ def ledger() -> Iterator[list[str]]:
 
 
 def spend_now(session_id: str | None = None) -> int:
+    """What enforcement would see, in the window enforcement uses.
+
+    The day budget is scoped to `start_of_day` and the session budget is not. This helper
+    used to ignore the window entirely, which agreed with the route only on a ledger
+    holding nothing older than today — so two tests below passed for as long as the dev
+    database was young and failed the first time it carried a row from yesterday. The
+    daily-refusal test was the worse of the two: it sets the limit just under what it
+    reads, so summing all of history quietly raised the bar out of reach and the call it
+    expected to be refused went through.
+    """
     with Session(get_engine()) as db:
-        return llm.tokens_spent(db, session_id=session_id)
+        if session_id is not None:
+            return llm.tokens_spent(db, session_id=session_id)
+        return llm.tokens_spent(db, since=llm.start_of_day())
 
 
 # --- The call ----------------------------------------------------------------------------

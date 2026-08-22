@@ -10,12 +10,21 @@ engine expected you to score, and the priority terms behind that concept's rank.
 adaptation is untrustworthy adaptation, and a weight that turns out to be wrong is only
 findable if the plan says which term dominated.
 
-**Two honest limits at this corpus size.** With 24 items, three of them coding, the
-prerequisite gate usually has nowhere to send you: `monotonic-stack`'s prerequisite is
-`stack-simulation`, and no item measures it. So the substitution is attempted, and when
-the corpus cannot honour it the plan says the concept was kept and why. And a plan can
-only ever contain items that exist — a session may repeat what you saw last time simply
-because there is nothing else, which the anti-repetition term cannot fix by itself.
+**Two honest limits at this corpus size.** The prerequisite gate often still has nowhere
+to send you: `monotonic-stack`'s prerequisite is `stack-simulation`, and no item measures
+it. So the substitution is attempted, and when the corpus cannot honour it the plan says
+the concept was kept and why. It can be honoured for 34 of the DAG's edges as of 48 items,
+up from 15 — and for 6 of those the gated concept has items of its own, so the gate turns
+away from something it could have served rather than merely rescuing an empty slot. And a
+plan can only ever contain items that exist — a session may repeat what you saw last time
+simply because there is nothing else, which the anti-repetition term cannot fix by itself.
+
+**One thing that grew with the corpus rather than shrinking.** `W_UNLOCKS` was inert while
+every serveable concept was a leaf. Authoring a foundational concept that gates six others
+makes it the deciding term at cold start, where nothing is measured and every weakness term
+is equal — so the planner now spends its first sessions establishing prerequisites before
+it drills a weakness. That is the term working as documented, and it is why the Phase 4
+gate's window moved from five sessions to ten.
 """
 
 from __future__ import annotations

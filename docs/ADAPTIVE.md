@@ -182,8 +182,16 @@ A session is a **budget** (minutes) and a **mode**. The planner:
    **As far as the corpus allows:** substituting toward a concept no item measures would
    plan a session with nothing in it, so an unserveable prerequisite is reported in the
    plan and the original concept is kept. It is still the common case: substitution needs
-   an item whose *primary* concept is the prerequisite, and the corpus has twelve primaries
-   across 159 concepts.
+   an item whose *primary* concept is the prerequisite, and the corpus has sixteen
+   primaries across 159 concepts.
+
+   Note which side the corpus has to cover, because it is easy to state this too
+   pessimistically. The check is on the concept substituted *toward* — the gated concept
+   is whatever the ranking threw up and may have no items at all, in which case
+   substitution **rescues** a slot that would otherwise be dropped for an empty pool. At
+   48 items that holds for **34** edges of the DAG, up from 15. The stricter case, where
+   the planner turns away from a concept it *could* have served, needs both sides
+   measured: **6** edges, up from 1, and now in all four domains rather than only quant.
 4. Keeps a minority of due-for-review items that you are *good* at, so fluency on
    solved material does not rot. At most one per session — a session is about what you
    are bad at, and review is the seasoning. **The slot is reserved before the weakness
@@ -209,13 +217,31 @@ threshold, not on a fixed session count.
 ## How this gets verified
 
 The Phase 4 gate is a simulated candidate with an injected weakness: a synthetic user
-who scores poorly on a chosen concept cluster and well elsewhere. Within five sessions,
+who scores poorly on a chosen concept cluster and well elsewhere. Within ten sessions,
 a majority of served items must target that cluster. **Built, and it needed strengthening
 before it meant anything.** The first version passed while proving nothing: for want of a
 tie-break the planner served that item in session one, before any evidence existed, so the
 majority was satisfied by a default rather than by adaptation. It now also requires that
 the *first* session not be the weak item, and that the engine end up rating that concept
 lowest of everything it measured — behaviour a default cannot fake.
+
+**The window was five sessions until 2026-08-21, and what moved it is worth keeping.**
+Authoring `hash-map-counting` — a foundational concept gating six others — made
+`W_UNLOCKS` a term that could finally fire. Its value is 0.086 against `monotonic-stack`'s
+0.014, and at cold start every weakness term sits at 0.199 because nothing is measured, so
+that gap decides the order. Measured: the planner spends sessions 1–3 establishing the
+prerequisite, serves the weakness in 4–7, rotates off it in 8 on anti-repetition, and
+returns in 9–10. Nothing regressed — this is the term doing what the formula above says it
+is for, and it had simply never had a serveable high-`unlocks` concept to express itself
+on.
+
+Two consequences follow, and both will recur as authoring continues. A *majority over a
+growing window* is not a property this engine can satisfy indefinitely: `W_EXPOSURE`
+guarantees it rotates off a sore spot, so the fraction is bounded above by design. And the
+exploration prologue scales with how much unmeasured foundational corpus exists, so this
+window is expected to need raising again. The test therefore also asserts the weak item is
+the single **most-served** one, which is the half that does not depend on window
+arithmetic.
 
 Plus a replay test — recomputing `mastery` from `concept_evidence` alone must reproduce
 the live table exactly. **Built, and it earned its keep on its first run:** the

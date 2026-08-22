@@ -10678,6 +10678,929 @@
       },
       "corpus_version": 1,
       "created_at": "2026-08-21"
+    },
+    {
+      "id": "a.code.0004",
+      "kind": "archetype",
+      "domain": "coding",
+      "modality": "coding",
+      "archetype_id": null,
+      "title": "Answer a pairwise question in one pass by indexing what has already been seen",
+      "statement_md": "**Pattern.** The candidate is handed a flat sequence and asked something that looks like a question about pairs — how many elements have a partner reaching a target, how many positions share a value, how many stretches of the sequence carry a given total. Taken literally, every element is compared against every other and the work is quadratic.\n\nThe expected answer walks the sequence once, carrying a map of what it has already passed: a count per value, a last position per value, a count per running aggregate. At each step the candidate works out the **key they would need to have already seen**, and looks that key up instead of scanning for it. Memory grows to hold the map, and that is the trade being made — an interviewer will ask what it costs.\n\nWhat is actually being measured: whether the candidate can name the key before writing any code, and whether they get the update order right. Most of the wrong answers here insert the current element and then query, which quietly lets an element pair with itself.\n\nThis is not a windowing problem, and the difference is worth stating out loud. A window needs the quantity it tracks to move in one direction as the window grows, so a sequence with negative entries, or a pairing condition that ignores order entirely, has no window to slide. The map is what covers those.",
+      "concepts": [
+        "hash-map-counting",
+        "big-o-analysis",
+        "space-complexity",
+        "edge-case-enumeration"
+      ],
+      "primary_concept": "hash-map-counting",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1460
+      },
+      "expected_minutes": 20,
+      "sources": [
+        {
+          "url": "https://interviewing.io/hash-tables-interview-questions",
+          "title": "Hash Tables Interview Questions & Tips (interviewing.io)",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A firm whose product is recorded technical interviews keeps a standing topic hub for this structure, and the uses it puts first are keeping a tally against a key and remembering where something occurred, so that a later step need not go looking for it. Attestation from interview replays rather than from a study list."
+        },
+        {
+          "url": "https://www.techinterview.org/post/3233461740/hash-map-interview-patterns/",
+          "title": "Hash map interview patterns",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A pattern index that ranks this structure as the one interviewers reach for most after plain arrays and strings, and enumerates its sub-shapes separately: complement lookup, frequency tallies, running totals held in a map, and counting by difference. Each entry is a doubled comparison replaced by a keyed query."
+        },
+        {
+          "url": "https://algoark.io/blog/hash-map-patterns-for-interviews",
+          "title": "Hash Map Patterns for Coding Interviews (AlgoArk)",
+          "retrieved_at": "2026-08-21",
+          "evidence": "An interview-prep publisher builds a whole guide on the claim that this structure is what converts a doubled loop into a single walk of the input, and organises its practice list by which sub-shape is being drilled rather than by problem name."
+        },
+        {
+          "url": "https://scalemind.dev/dsa/java/hashmap-hashset-frequency-pattern/",
+          "title": "HashMap and HashSet frequency pattern (ScaleMind)",
+          "retrieved_at": "2026-08-21",
+          "evidence": "An independent engineering site rates the tally-and-membership shape among the highest-value things a candidate can drill, and frames what the interviewer is really probing as what gets stored, when it is read versus written, and why remembering beats recomputing."
+        }
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
+    },
+    {
+      "id": "i.code.0007",
+      "kind": "instance",
+      "domain": "coding",
+      "modality": "coding",
+      "archetype_id": "a.code.0004",
+      "title": "How many parcel pairs load a trolley to its exact rating",
+      "statement_md": "A depot loads parcels onto trolleys two at a time. A trolley is rated for an exact\ncombined weight and dispatch releases one only when its two parcels add up to that\nrating precisely — an under-loaded trolley wastes a run and an over-loaded one fails\nthe axle check.\n\nGiven `weights`, the parcel weights in the order they came off the belt, and `capacity`,\nthe trolley rating, return **how many pairs of parcels could be loaded together**. Two\nparcels form a pair when their weights add up to `capacity`; a pair is counted once, and\none parcel may take part in several different pairs.\n\n`weights` holds positive whole numbers and may be empty; `capacity` is a positive whole\nnumber. Parcels of equal weight are still separate parcels — three parcels that each\nweigh exactly half the rating give three usable pairs, not one. Return `0` when nothing\nfits.",
+      "concepts": [
+        "hash-map-counting",
+        "big-o-analysis",
+        "space-complexity",
+        "edge-case-enumeration"
+      ],
+      "primary_concept": "hash-map-counting",
+      "difficulty": {
+        "band": "easy",
+        "elo": 1340
+      },
+      "expected_minutes": 15,
+      "sources": [
+        {
+          "url": "https://interviewing.io/hash-tables-interview-questions",
+          "title": "Hash Tables Interview Questions & Tips (interviewing.io)",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A firm whose product is recorded technical interviews keeps a standing topic hub for this structure, and the uses it puts first are keeping a tally against a key and remembering where something occurred, so that a later step need not go looking for it. Attestation from interview replays rather than from a study list."
+        },
+        {
+          "url": "https://algoark.io/blog/hash-map-patterns-for-interviews",
+          "title": "Hash Map Patterns for Coding Interviews (AlgoArk)",
+          "retrieved_at": "2026-08-21",
+          "evidence": "An interview-prep publisher builds a whole guide on the claim that this structure is what converts a doubled loop into a single walk of the input, and organises its practice list by which sub-shape is being drilled rather than by problem name."
+        },
+        {
+          "url": "https://scalemind.dev/dsa/java/hashmap-hashset-frequency-pattern/",
+          "title": "HashMap and HashSet frequency pattern (ScaleMind)",
+          "retrieved_at": "2026-08-21",
+          "evidence": "An independent engineering site rates the tally-and-membership shape among the highest-value things a candidate can drill, and frames what the interviewer is really probing as what gets stored, when it is read versus written, and why remembering beats recomputing."
+        }
+      ],
+      "grading": {
+        "type": "tests",
+        "languages": [
+          "python"
+        ],
+        "entrypoint": "count_pairings",
+        "tests": [
+          {
+            "name": "belt_of_six",
+            "kind": "example",
+            "hidden": false,
+            "input": [
+              [
+                4,
+                6,
+                3,
+                7,
+                5,
+                5
+              ],
+              10
+            ],
+            "expected": 3
+          },
+          {
+            "name": "nothing_reaches_the_rating",
+            "kind": "example",
+            "hidden": false,
+            "input": [
+              [
+                1,
+                2,
+                3
+              ],
+              100
+            ],
+            "expected": 0
+          },
+          {
+            "name": "empty_belt",
+            "kind": "edge",
+            "input": [
+              [],
+              10
+            ],
+            "expected": 0
+          },
+          {
+            "name": "single_parcel",
+            "kind": "edge",
+            "input": [
+              [
+                5
+              ],
+              10
+            ],
+            "expected": 0
+          },
+          {
+            "name": "every_parcel_is_half_the_rating",
+            "kind": "edge",
+            "input": [
+              [
+                5,
+                5,
+                5,
+                5
+              ],
+              10
+            ],
+            "expected": 6
+          },
+          {
+            "name": "every_parcel_too_heavy",
+            "kind": "edge",
+            "input": [
+              [
+                7,
+                8,
+                9
+              ],
+              5
+            ],
+            "expected": 0
+          },
+          {
+            "name": "lone_half_rating_parcel",
+            "kind": "edge",
+            "input": [
+              [
+                5,
+                1,
+                2
+              ],
+              10
+            ],
+            "expected": 0
+          },
+          {
+            "name": "half_rating_mixed_with_pairs",
+            "kind": "adversarial",
+            "input": [
+              [
+                2,
+                8,
+                5,
+                5,
+                5,
+                1,
+                9
+              ],
+              10
+            ],
+            "expected": 5
+          },
+          {
+            "name": "two_weights_each_repeated",
+            "kind": "adversarial",
+            "input": [
+              [
+                1,
+                9,
+                1,
+                9
+              ],
+              10
+            ],
+            "expected": 4
+          },
+          {
+            "name": "partners_on_both_sides",
+            "kind": "adversarial",
+            "input": [
+              [
+                9,
+                1,
+                1,
+                9
+              ],
+              10
+            ],
+            "expected": 4
+          },
+          {
+            "name": "three_hundred_identical_parcels",
+            "kind": "stress",
+            "input": [
+              [
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5,
+                5
+              ],
+              10
+            ],
+            "expected": 44850
+          }
+        ],
+        "complexity_target": "O(n)",
+        "complexity_probe": {
+          "generator": "def make_input(n):\n    # Worst case by construction, in two separate ways.\n    #\n    # 1. Every parcel has a partner somewhere in the list, so the counting scan can\n    #    never stop early: it has to look at all n*(n-1)/2 ordered-by-position pairs\n    #    whatever it does.\n    # 2. All n weights are DISTINCT. That is the part a careless generator gets wrong.\n    #    A solution that first collapses the belt to a frequency table and then pairs\n    #    the distinct weights off against each other is quadratic in the number of\n    #    distinct weights, not in n -- so a generator that emitted a handful of repeated\n    #    weights would let that defect measure as linear and walk straight through.\n    #    Here the distinct count IS n, so it is measured honestly.\n    capacity = n + 1\n    weights = [0] * n\n    low, high = 1, n\n    for i in range(n):\n        if i % 2 == 0:\n            weights[i] = low\n            low += 1\n        else:\n            weights[i] = high\n            high -= 1\n    return [weights, capacity]\n",
+          "sizes": [
+            1000,
+            2000,
+            4000,
+            8000
+          ],
+          "repeats": 5
+        },
+        "reference_solutions": {
+          "python": "def count_pairings(weights, capacity):\n    seen = {}\n    pairs = 0\n    for w in weights:\n        # Query BEFORE recording: the tally holds only parcels strictly earlier on the\n        # belt, so no parcel can pair with itself and no pair is counted twice.\n        pairs += seen.get(capacity - w, 0)\n        seen[w] = seen.get(w, 0) + 1\n    return pairs\n"
+        },
+        "limits": {
+          "wall_ms": 5000,
+          "memory_mb": 256
+        }
+      },
+      "hints": [
+        "Cost the obvious version out loud first. For every parcel you are asking a question about every other parcel — what exactly is that question, and does the answer depend on the other parcels or only on this one?",
+        "The question has the same shape every time: is there a parcel weighing exactly `capacity` minus this one? That is a lookup by weight, not a search.",
+        "Walk the belt once and keep a tally of how many parcels of each weight you have already passed. At each parcel, ask the tally how many of its partner weight are in it and add that to the running answer.",
+        "Record the current parcel in the tally *after* you query it, never before. That is what stops a parcel pairing with itself, and it makes the half-rating case fall out for free — the third such parcel sees the two before it and contributes two pairs."
+      ],
+      "follow_ups": [
+        "Return the positions of one qualifying pair instead of the count. What changes in what you store, and which pair do you return when several exist?",
+        "A trolley now takes three parcels rather than two. What is the best you can do, and where does the single-pass lookup stop paying for itself?",
+        "The rating is a range now — any combined weight from `lo` to `hi` is accepted. Is a hash map still the structure you want?",
+        "Parcels arrive as a stream you cannot re-read and dispatch wants the running count after every one. Does anything about your answer change?"
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
+    },
+    {
+      "id": "i.code.0008",
+      "kind": "instance",
+      "domain": "coding",
+      "modality": "coding",
+      "archetype_id": "a.code.0004",
+      "title": "How many stretches of a shift ledger net out to a target",
+      "statement_md": "A warehouse keeps a shift ledger with one number per hour: the net change in units held\non the floor that hour, positive when a delivery lands and negative when picking outruns\nit. A quiet hour is recorded as `0`.\n\nAudit wants to know how often the floor moved by one particular amount over an unbroken\nrun of hours. Given `deltas`, the hourly net changes in order, and `target`, the amount\naudit is asking about, return **how many contiguous runs of one or more hours add up to\nexactly `target`**.\n\nRuns may overlap and may sit inside one another; every distinct choice of first and last\nhour counts on its own. `deltas` may be empty and may hold negatives and zeros, and\n`target` may be negative or zero. Return `0` when no run qualifies.",
+      "concepts": [
+        "hash-map-counting",
+        "prefix-sums",
+        "big-o-analysis",
+        "edge-case-enumeration"
+      ],
+      "primary_concept": "hash-map-counting",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1640
+      },
+      "expected_minutes": 25,
+      "sources": [
+        {
+          "url": "https://interviewing.io/hash-tables-interview-questions",
+          "title": "Hash Tables Interview Questions & Tips (interviewing.io)",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A firm whose product is recorded technical interviews keeps a standing topic hub for this structure, and the uses it puts first are keeping a tally against a key and remembering where something occurred, so that a later step need not go looking for it. Attestation from interview replays rather than from a study list."
+        },
+        {
+          "url": "https://www.techinterview.org/post/3233461740/hash-map-interview-patterns/",
+          "title": "Hash map interview patterns",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A pattern index that ranks this structure as the one interviewers reach for most after plain arrays and strings, and enumerates its sub-shapes separately: complement lookup, frequency tallies, running totals held in a map, and counting by difference. Each entry is a doubled comparison replaced by a keyed query."
+        },
+        {
+          "url": "https://codejeet.com/blog/prefix-sum-interview-questions-patterns",
+          "title": "Prefix Sum Interview Questions: Patterns and Strategies (CodeJeet)",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A prep site that indexes company-tagged question sets names the running-total-plus-map combination as a pattern in its own right for counting stretches that reach a given sum, and flags it as the approach that stays correct once entries are allowed to go negative."
+        }
+      ],
+      "grading": {
+        "type": "tests",
+        "languages": [
+          "python"
+        ],
+        "entrypoint": "count_balanced_stretches",
+        "tests": [
+          {
+            "name": "two_runs_reach_six",
+            "kind": "example",
+            "hidden": false,
+            "input": [
+              [
+                3,
+                1,
+                2,
+                4
+              ],
+              6
+            ],
+            "expected": 2
+          },
+          {
+            "name": "a_negative_hour_in_the_middle",
+            "kind": "example",
+            "hidden": false,
+            "input": [
+              [
+                1,
+                2,
+                -3,
+                4
+              ],
+              3
+            ],
+            "expected": 2
+          },
+          {
+            "name": "empty_ledger",
+            "kind": "edge",
+            "input": [
+              [],
+              5
+            ],
+            "expected": 0
+          },
+          {
+            "name": "one_hour_cancels_the_next",
+            "kind": "edge",
+            "input": [
+              [
+                3,
+                -3
+              ],
+              0
+            ],
+            "expected": 1
+          },
+          {
+            "name": "a_quiet_shift",
+            "kind": "edge",
+            "input": [
+              [
+                0,
+                0,
+                0
+              ],
+              0
+            ],
+            "expected": 6
+          },
+          {
+            "name": "single_hour_on_target",
+            "kind": "edge",
+            "input": [
+              [
+                7
+              ],
+              7
+            ],
+            "expected": 1
+          },
+          {
+            "name": "single_hour_off_target",
+            "kind": "edge",
+            "input": [
+              [
+                7
+              ],
+              3
+            ],
+            "expected": 0
+          },
+          {
+            "name": "nothing_qualifies",
+            "kind": "edge",
+            "input": [
+              [
+                1,
+                1,
+                1
+              ],
+              5
+            ],
+            "expected": 0
+          },
+          {
+            "name": "a_growing_window_would_overshoot",
+            "kind": "adversarial",
+            "input": [
+              [
+                2,
+                -1,
+                2,
+                -1,
+                2
+              ],
+              3
+            ],
+            "expected": 2
+          },
+          {
+            "name": "target_below_zero",
+            "kind": "adversarial",
+            "input": [
+              [
+                4,
+                -6,
+                3,
+                -1
+              ],
+              -2
+            ],
+            "expected": 1
+          },
+          {
+            "name": "only_the_whole_ledger_qualifies",
+            "kind": "adversarial",
+            "input": [
+              [
+                5,
+                5
+              ],
+              10
+            ],
+            "expected": 1
+          },
+          {
+            "name": "overlapping_runs_of_zero",
+            "kind": "adversarial",
+            "input": [
+              [
+                0,
+                0,
+                0,
+                0
+              ],
+              0
+            ],
+            "expected": 10
+          },
+          {
+            "name": "hundred_hours_of_cancellation",
+            "kind": "stress",
+            "input": [
+              [
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1,
+                1,
+                -1
+              ],
+              0
+            ],
+            "expected": 2500
+          }
+        ],
+        "complexity_target": "O(n)",
+        "complexity_probe": {
+          "generator": "def make_input(n):\n    # Worst case by construction, on three counts.\n    #\n    # 1. The entries alternate in sign, so a running total is not monotone and no scan\n    #    is entitled to stop early on the grounds that it has already overshot. The\n    #    nested version therefore does the full n*(n+1)/2 additions on every input.\n    # 2. The totals still climb overall, so roughly n/2 DISTINCT running totals pile up\n    #    in the map. This is the part that matters: had the entries merely oscillated\n    #    between two values, only a couple of distinct totals would ever exist, and a\n    #    solution that re-walks the whole map at each step would measure as linear.\n    # 3. The target is reached often rather than never, so the counting branch runs at\n    #    almost every position instead of being skipped.\n    deltas = [2 if i % 2 == 0 else -1 for i in range(n)]\n    return [deltas, 1]\n",
+          "sizes": [
+            1000,
+            2000,
+            4000,
+            8000
+          ],
+          "repeats": 5
+        },
+        "reference_solutions": {
+          "python": "def count_balanced_stretches(deltas, target):\n    # One occurrence of zero seeded up front: that is the total before any hour has been\n    # read, and it is what lets a run starting at the first hour be counted at all.\n    seen = {0: 1}\n    running = 0\n    found = 0\n    for d in deltas:\n        running += d\n        found += seen.get(running - target, 0)\n        seen[running] = seen.get(running, 0) + 1\n    return found\n"
+        },
+        "limits": {
+          "wall_ms": 5000,
+          "memory_mb": 256
+        }
+      },
+      "hints": [
+        "Write out the running total of the ledger after each hour, starting from zero before the first one. Every run you are asked to count is a difference between two of those numbers — which two?",
+        "A run covering hours `i+1` through `j` adds up to `target` exactly when the running total after `j` minus the running total after `i` equals `target`. So at each hour `j` the thing you want to know is how many earlier totals equal `total - target`.",
+        "Keep a tally of how many times each running total has been seen so far, and at every hour add the tally's count for `running - target` to the answer. Seed the tally with one occurrence of zero — the total before the shift began — or every run starting at hour one is missed.",
+        "It has to be a count and not a set of seen totals: several earlier hours can share a running total, and each of them starts a different qualifying run. Two indices sliding along the ledger cannot be made to work here either, because a negative entry means growing the run can move its sum in either direction."
+      ],
+      "follow_ups": [
+        "Return the longest qualifying run instead of the number of them. What do you store in the map instead of a count, and does the first occurrence or the last one win?",
+        "Suppose every entry were guaranteed non-negative. Which structure would you reach for then, and what does it buy you over the map?",
+        "Audit changes the question to runs whose total is any multiple of `target`. What is the key now?",
+        "The ledger is far longer than memory and arrives as a stream. What breaks first, and what would you be willing to keep?"
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
     }
   ]
 }

@@ -737,6 +737,246 @@
       },
       "corpus_version": 1,
       "created_at": "2026-08-21"
+    },
+    {
+      "id": "a.quant.0004",
+      "kind": "archetype",
+      "domain": "quant",
+      "modality": "quant",
+      "archetype_id": null,
+      "title": "Probability from a sample space the candidate has to choose and count",
+      "statement_md": "**Pattern.** The candidate is handed a physical setup — a shuffled stack, a queue, a\nshort burst of repeated draws — and asked for the probability of a described\nconfiguration. No distribution is named and no technique is signposted, so the whole\njob is deciding what a single equally likely outcome is and then working out how many\nof them qualify.\n\n**What it measures.** Whether the candidate commits to a sample space out loud before\ncomputing anything, and whether the one they pick is genuinely uniform — the coarse\ndescription that first comes to mind usually is not. Then whether they can tally the\nfavourable outcomes once each: keeping ordered selections ordered and unordered ones\nunordered, and spotting when a build-it-by-stages enumeration has produced the same\noutcome by two different routes. Interviewers keep this family because it is where a\nbroken method most often arrives at a right-looking figure, so the tally has to be\ndefended rather than reported — and because the standard escalation, redo it in the\nother sample space and show the answer survives, costs nothing to ask and cannot be\nbluffed.\n\n**Typical realisations.** The chance that a named position in a shuffled sequence holds\na marked item; the chance a run of repeated draws shows a given multiplicity pattern;\nthe chance a random split puts two named people in the same group.",
+      "concepts": [
+        "sample-space-counting",
+        "permutations-combinations",
+        "symmetry-arguments"
+      ],
+      "primary_concept": "sample-space-counting",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1440
+      },
+      "sources": [
+        {
+          "url": "https://www.quantblueprint.com/glossary/quant-interview-probability-questions",
+          "title": "Quant Interview Probability Questions",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A preparation glossary that lists combinatorics and counting as one of six standing question categories in quant loops, attaches the category to named market-making and hedge-fund employers, and describes what is being tested as systematic enumeration rather than recall of a formula. Attests a whole family, not one puzzle."
+        },
+        {
+          "url": "https://dataloopr.com/blog/quant-research-interview-questions-sig-and-jane-street-144/",
+          "title": "Quant Research Interview Questions - SIG and Jane Street",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A research-track write-up for two named firms whose summary of recurring concepts includes combinatorial enumeration, and which singles out telling distinguishable cases from indistinguishable ones, counting a complement instead, and pinning down exactly which cases an event covers before enumerating. The closest attestation of the specific failure this pattern targets."
+        },
+        {
+          "url": "https://myntbit.com/blog/jane-street-quant-interview-guide-2026",
+          "title": "Jane Street Quant Interview: Complete Prep Guide 2026",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A firm-specific process guide describing the screening round as four to six short problems drawn from conditional probability, counting and expected value, and stating that what is scored is the reasoning narrated aloud rather than the figure produced. A third domain, attesting at the level of the interview process rather than a topic taxonomy."
+        }
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
+    },
+    {
+      "id": "i.quant.0007",
+      "kind": "instance",
+      "domain": "quant",
+      "modality": "quant",
+      "archetype_id": "a.quant.0004",
+      "title": "Twelfth in the queue for a sealed envelope",
+      "statement_md": "A desk of thirty-three analysts is being paid out by envelope. Thirty-three sealed\nenvelopes are prepared: six of them hold a bonus voucher and the remaining twenty-seven\nhold nothing. The stack is shuffled until every ordering of the thirty-three envelopes\nis equally likely, and the envelopes are then dealt off the top of the stack, one to\neach analyst, in the order the analysts happen to be standing.\n\nYou are twelfth in that queue, and nobody opens anything until every analyst has an\nenvelope in hand.\n\nWhat is the probability that yours holds a voucher? Give the exact value — and before\nany arithmetic, say which collection of outcomes you are treating as equally likely and\nhow large it is.",
+      "concepts": [
+        "sample-space-counting",
+        "permutations-combinations",
+        "symmetry-arguments"
+      ],
+      "primary_concept": "sample-space-counting",
+      "difficulty": {
+        "band": "easy",
+        "elo": 1310
+      },
+      "expected_minutes": 6,
+      "sources": [
+        {
+          "url": "https://www.quantblueprint.com/glossary/quant-interview-probability-questions",
+          "title": "Quant Interview Probability Questions",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A preparation glossary that lists combinatorics and counting as one of six standing question categories in quant loops, attaches the category to named market-making and hedge-fund employers, and describes what is being tested as systematic enumeration rather than recall of a formula. Attests a whole family, not one puzzle."
+        },
+        {
+          "url": "https://dataloopr.com/blog/quant-research-interview-questions-sig-and-jane-street-144/",
+          "title": "Quant Research Interview Questions - SIG and Jane Street",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A research-track write-up for two named firms whose summary of recurring concepts includes combinatorial enumeration, and which singles out telling distinguishable cases from indistinguishable ones, counting a complement instead, and pinning down exactly which cases an event covers before enumerating. The closest attestation of the specific failure this pattern targets."
+        },
+        {
+          "url": "https://myntbit.com/blog/jane-street-quant-interview-guide-2026",
+          "title": "Jane Street Quant Interview: Complete Prep Guide 2026",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A firm-specific process guide describing the screening round as four to six short problems drawn from conditional probability, counting and expected value, and stating that what is scored is the reasoning narrated aloud rather than the figure produced. A third domain, attesting at the level of the interview process rather than a topic taxonomy."
+        }
+      ],
+      "hints": [
+        "Before any arithmetic: what is one outcome of this experiment, and what is it about the shuffle that makes each outcome as likely as every other?",
+        "Two descriptions both work — the full ordering of the stack, or just which six of the thirty-three places the vouchers land in. Choose one and stay inside it; you never need both at once.",
+        "Count in the second one. Of the ways to choose six places out of thirty-three for the vouchers, how many include place number twelve? Nail place twelve down as a voucher and scatter the other five over the thirty-two places left.",
+        "That ratio collapses to six over thirty-three. Notice that nothing in the count ever mentioned the number twelve — redo it for the analyst at the front of the queue and watch the same thing happen."
+      ],
+      "follow_ups": [
+        "The analyst directly ahead of you tears theirs open first and it is empty. What is your probability now, and which step of your original argument stopped being true?",
+        "What is the chance that you and the analyst right behind you both come away with vouchers? Would treating the two as independent give you the right number here?",
+        "Change the mechanism: instead of dealing off the top, each analyst in turn reaches into the pile and takes an envelope at random. Is that a different experiment, and does your answer move?"
+      ],
+      "grading": {
+        "type": "answer",
+        "answer": {
+          "exact": "2/11",
+          "numeric": 0.18181818181818182,
+          "tolerance": 1e-06,
+          "unit": null
+        },
+        "reasoning_rubric": [
+          {
+            "id": "equally_likely_outcomes",
+            "weight": 0.4,
+            "concept": "sample-space-counting",
+            "description": "Fixes a set of equally likely outcomes before computing anything — the orderings of the stack, or which places the six vouchers occupy — and says what about the shuffle makes them equally likely.",
+            "levels": {
+              "0": "Never fixes a sample space at all. Argues instead that eleven envelopes are gone and, on average, two vouchers with them, leaving four among the twenty-two still to come, and reports 4/22 — the right number out of a substitution of averages into a ratio, which is not a valid step in general.",
+              "1": "Gestures at 'all the ways it could come out' without ever saying what one of those ways is, or settles on outcomes that are not equally likely, such as how many vouchers remain undealt.",
+              "2": "Names a correct uniform space — the orderings of the stack, or the sets of six places for the vouchers — but does not say what makes it uniform.",
+              "3": "Names a correct uniform space, justifies it from the shuffle, and observes that the two descriptions are the same experiment seen at different resolutions, so either one has to give the same answer."
+            }
+          },
+          {
+            "id": "counting_the_favourable",
+            "weight": 0.35,
+            "concept": "permutations-combinations",
+            "description": "Counts the outcomes in which the twelfth place holds a voucher and divides by the total, rather than asserting a value, and the tally is right.",
+            "levels": {
+              "0": "No tally at all, or a numerator and a denominator drawn from two different sample spaces.",
+              "1": "Counts inside the right space but slips — treats the leftovers as ordered on one side of the fraction and unordered on the other, or forgets that the other five vouchers still have to be placed.",
+              "2": "Reaches the ratio correctly, by choosing the other five voucher places out of thirty-two or by fixing a voucher in the twelfth slot and permuting the rest, and reduces it to 2/11.",
+              "3": "Gets the tally right and then reduces it to its one-line form — the envelope in the twelfth place is equally likely to be any of the thirty-three, and six of those carry a voucher — showing the long enumeration and the short argument are the same argument."
+            }
+          },
+          {
+            "id": "position_irrelevance",
+            "weight": 0.25,
+            "concept": "symmetry-arguments",
+            "description": "Addresses whether standing twelfth matters, and why, instead of leaving the queue position as an unexamined ingredient of the answer.",
+            "levels": {
+              "0": "Treats the pile as depleting in a way that matters, and concludes the answer depends on where you stand — that going early is better, or worse.",
+              "1": "Asserts that the position does not matter, with no reason offered beyond the arithmetic having come out that way.",
+              "2": "Says the answer is the same at every position because a uniform shuffle makes the envelopes exchangeable across places.",
+              "3": "Says it and tests it — the identical count with twelve replaced by any other place gives the same six over thirty-three — and names what would break the symmetry, such as being told what an earlier analyst found, or a queue whose order was chosen after the stack was fixed."
+            }
+          }
+        ]
+      },
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
+    },
+    {
+      "id": "i.quant.0008",
+      "kind": "instance",
+      "domain": "quant",
+      "modality": "quant",
+      "archetype_id": "a.quant.0004",
+      "title": "Four capsules, exactly three flavours",
+      "statement_md": "A vending machine is loaded with a large, thoroughly mixed supply of capsules in eight\nflavours. Each time you pay, one capsule drops; every flavour is equally likely on every\npurchase, and what has already dropped tells you nothing about what comes next.\n\nYou buy four capsules, one after another.\n\nWhat is the probability that the four you walk away with show **exactly three** distinct\nflavours — one flavour turning up twice, and each of the other two capsules carrying a\nflavour of its own?\n\nGive the exact probability. State what a single equally likely outcome is in the space\nyou count over, and show that no favourable outcome has been counted more than once.",
+      "concepts": [
+        "sample-space-counting",
+        "permutations-combinations"
+      ],
+      "primary_concept": "sample-space-counting",
+      "difficulty": {
+        "band": "hard",
+        "elo": 1690
+      },
+      "expected_minutes": 11,
+      "sources": [
+        {
+          "url": "https://www.quantblueprint.com/glossary/quant-interview-probability-questions",
+          "title": "Quant Interview Probability Questions",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A preparation glossary that lists combinatorics and counting as one of six standing question categories in quant loops, attaches the category to named market-making and hedge-fund employers, and describes what is being tested as systematic enumeration rather than recall of a formula. Attests a whole family, not one puzzle."
+        },
+        {
+          "url": "https://dataloopr.com/blog/quant-research-interview-questions-sig-and-jane-street-144/",
+          "title": "Quant Research Interview Questions - SIG and Jane Street",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A research-track write-up for two named firms whose summary of recurring concepts includes combinatorial enumeration, and which singles out telling distinguishable cases from indistinguishable ones, counting a complement instead, and pinning down exactly which cases an event covers before enumerating. The closest attestation of the specific failure this pattern targets."
+        },
+        {
+          "url": "https://myntbit.com/blog/jane-street-quant-interview-guide-2026",
+          "title": "Jane Street Quant Interview: Complete Prep Guide 2026",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A firm-specific process guide describing the screening round as four to six short problems drawn from conditional probability, counting and expected value, and stating that what is scored is the reasoning narrated aloud rather than the figure produced. A third domain, attesting at the level of the interview process rather than a topic taxonomy."
+        }
+      ],
+      "hints": [
+        "Settle the sample space first. Is the bag of four capsules you end up holding an equally likely outcome, or is it the four purchases taken in the order they dropped?",
+        "Take the ordered view — there are eight to the fourth of those, all equally likely. Now build a favourable one by a sequence of choices, and make sure no two different sequences of choices can ever build the same one.",
+        "Choose the flavour that repeats, then which two of the four slots carry it, then fill the remaining two slots. Be careful in the middle step: picking slot two and then slot four gives you the same outcome as picking slot four and then slot two.",
+        "Eight times six times seven times six is 2016, out of 4096. Now check it another way: choose the three flavours involved, then count how many ways four slots can be filled from exactly those three with none of them left out."
+      ],
+      "follow_ups": [
+        "Give the whole picture: the chance of four different flavours, of two separate pairs, of a triple, and of four alike. Do your five numbers add to one?",
+        "The machine is restocked with only four flavours. Which way does your answer move, and can you argue it before recomputing?",
+        "Suppose you never see the order the capsules dropped in — only the handful you are holding. Does the probability change, and does the sample space you should be counting in change?"
+      ],
+      "grading": {
+        "type": "answer",
+        "answer": {
+          "exact": "63/128",
+          "numeric": 0.4921875,
+          "tolerance": 1e-06,
+          "unit": null
+        },
+        "reasoning_rubric": [
+          {
+            "id": "sample_space_choice",
+            "weight": 0.3,
+            "concept": "sample-space-counting",
+            "description": "Fixes the equally likely outcome as an ordered quadruple of purchases, 8^4 of them, and says why the description in terms of what you end up holding is not uniform.",
+            "levels": {
+              "0": "Counts over the unordered handfuls as though those were equally likely — the 330 multisets of four flavours out of eight — and divides one count of them by another.",
+              "1": "Works with the purchases in order but never says that is the choice being made, leaving the tally that follows with nothing to be checked against.",
+              "2": "States the space as the ordered quadruples of purchases and notes they are equally likely because each purchase is uniform and unaffected by the others.",
+              "3": "States it, justifies it from the independence of the purchases, and says exactly what is wrong with the tempting alternative — four alike arises in one order while four different flavours arise in twenty-four, so the unordered outcomes cannot carry equal weight."
+            }
+          },
+          {
+            "id": "counting_without_double_counting",
+            "weight": 0.45,
+            "concept": "sample-space-counting",
+            "description": "Tallies the favourable quadruples once each, keeping the ordered choices ordered and the unordered ones unordered, and arrives at 2016.",
+            "levels": {
+              "0": "Picks the repeated flavour eight ways, the two matching slots as an ordered pair (four then three), and the two remaining flavours as an unordered pair (twenty-one), reaching 8 x 12 x 21 = 2016. The right tally out of two errors that cancel: the ordered slot pair counts every outcome twice, and the unordered flavour pair loses each outcome's two arrangements.",
+              "1": "Exactly one of those two slips survives, so the tally comes out at 1008 or at 4032, and it is reported without any doubt attached.",
+              "2": "Reaches 2016 by a consistent enumeration — eight repeated flavours, six ways to place that flavour in two of the four slots, and seven times six ordered fillings of the remaining two — and divides by 4096.",
+              "3": "Reaches 2016 consistently and audits it: describes what one favourable quadruple looks like, runs the enumeration backwards to show each such quadruple is produced exactly once, and reduces the ratio to 63/128."
+            }
+          },
+          {
+            "id": "independent_recount",
+            "weight": 0.25,
+            "concept": "permutations-combinations",
+            "description": "Confirms the tally by a second, structurally different route instead of trusting a single enumeration.",
+            "levels": {
+              "0": "No check offered, or a 'check' that restates the same enumeration in different words.",
+              "1": "Starts a second route and abandons it, or gets a different figure from it and picks one of the two without resolving the disagreement.",
+              "2": "Recovers 2016 a second way — choosing which three flavours appear and counting the fillings of four slots that leave none of the three out, or subtracting the all-different, two-pair, triple and all-alike tallies from 4096.",
+              "3": "Recovers 2016 a second way, lays out the full breakdown of the 4096 outcomes by multiplicity pattern and checks that the parts add back to the whole, and remarks that the answer sits just under a half."
+            }
+          }
+        ]
+      },
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
     }
   ]
 }

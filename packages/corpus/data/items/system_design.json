@@ -762,6 +762,295 @@
       },
       "corpus_version": 1,
       "created_at": "2026-08-21"
+    },
+    {
+      "id": "a.design.0004",
+      "kind": "archetype",
+      "domain": "system_design",
+      "modality": "design",
+      "archetype_id": null,
+      "title": "Distribute traffic across a pool whose membership keeps changing",
+      "statement_md": "**Pattern.** One entry point stands in front of a pool of backends, and the interviewer keeps changing the pool underneath it: an instance degrades rather than dies, a deploy cycles every member, a dependency they all share has a bad minute, capacity is added and removed mid-answer. The candidate has to say which backend an arriving request goes to, and defend that rule while the pool moves.\n\n**What it measures.** Whether the distribution rule is derived from the shape of the work instead of picked off a list — handing requests out in turn equalises arrivals, which stops being the same thing as equalising load once service times spread over two orders of magnitude, and every work-aware rule has one failure it actively makes worse, since an instance that fails instantly looks like the idlest member of the pool. Whether the health probe is treated as a signal that can be wrong in two directions: too shallow and a broken process keeps being fed, too deep and one shared dependency fails every member at once and empties the pool. Whether taking a backend away is a period rather than an event — what becomes of work already in flight, and of whatever a client was relying on staying put. And whether affinity is argued from what a backend actually holds, rather than reached for by default or refused by reflex.\n\n**Typical realisations.** An HTTP tier serving request-scoped work; a fleet terminating connections that live for hours; a tier where a request has exactly one correct destination and evenness is a constraint rather than the goal.",
+      "concepts": [
+        "load-balancing",
+        "failure-modes",
+        "statelessness",
+        "horizontal-scaling"
+      ],
+      "primary_concept": "load-balancing",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1580
+      },
+      "expected_minutes": 40,
+      "sources": [
+        {
+          "url": "https://www.geeksforgeeks.org/system-design/load-balancer-system-design-interview-question/",
+          "title": "Load balancer — system design interview question (GeeksforGeeks)",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A 37-question guide devoted to this one component, framed explicitly as interview preparation: it works through choosing among round robin, weighted variants, source-IP hash, least connections and least response time by workload, then through active versus passive probing, session persistence and failover. Aggregator material rather than a first-hand account, but unambiguous that the topic stands on its own rather than appearing only as a box inside a larger design."
+        },
+        {
+          "url": "https://algomaster.io/learn/system-design-interviews/design-load-balancer",
+          "title": "Design a load balancer (AlgoMaster)",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A worked breakdown that ranks designing the balancer itself as a high-priority interview topic and builds the answer up in stages the way the event runs. Health checking is stated as a functional requirement rather than an aside; the page argues for a weighted work-aware rule when backends differ and request cost varies, and covers letting existing connections finish when a backend is withdrawn."
+        },
+        {
+          "url": "https://www.cracktheoffer.com/system-design-load-balancing",
+          "title": "Load balancing in system design: algorithms and interview use cases (Crack The Offer)",
+          "retrieved_at": "2026-08-21",
+          "evidence": "Presents the topic as senior-level reasoning and — the part that matters for grading — contrasts a weak answer that reaches for the simplest rotation with a strong one that ties the choice to traffic shape, separates short uniform calls from long-lived sockets, and folds probing and the loss of an availability zone into the same answer."
+        },
+        {
+          "url": "https://www.mayhemcode.com/2026/05/what-interviewers-actually-want-to-hear.html",
+          "title": "What interviewers actually want to hear about load balancing (mayhemcode)",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A prep post whose claim is that the probe's depth is what gets pushed on, not its existence — an endpoint that answers 200 while the process cannot reach its database is the trap it names — and that affinity should be argued from what the process keeps in memory. Written as predicted expectations rather than from transcripts, so it corroborates the emphasis without independently proving the question is put."
+        }
+      ],
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
+    },
+    {
+      "id": "i.design.0007",
+      "kind": "instance",
+      "domain": "system_design",
+      "modality": "design",
+      "archetype_id": "a.design.0004",
+      "title": "Fronting a render tier whose jobs differ by three orders of magnitude",
+      "statement_md": "You run a document rendering service. A customer posts a description and gets back a PDF. One entry point sits in front of 120 render workers.\n\nWhat a render costs:\n\n| statistic | render time |\n|---|---|\n| median | 45 ms |\n| mean | 610 ms |\n| 90th percentile | 900 ms |\n| 99th percentile | 11 s |\n| hard timeout | 90 s |\n\n- peak is about 900 renders a second;\n- a worker runs 8 renders at a time and queues anything beyond that;\n- the pool is two hardware generations, and the older third is roughly 40% slower on the same document;\n- every worker reads fonts and customer templates from one shared object store, and checks a licence against one internal service.\n\nThe pool does not hold still. A rolling deploy replaces all 120 workers over 20 minutes; autoscaling adds or drops around 15 workers on a five-minute cycle; and about once a week one worker ends up in a state where its renderer subprocess is dead, so it accepts the connection and returns a 500 in about 3 ms.\n\nDesign how work is distributed. Cover at least:\n\n- the rule that picks a worker for an arriving render, and why it fits the cost distribution above rather than some other rule;\n- what that rule does with the broken worker that answers in 3 ms;\n- what the health probe tests, how often, and what the entry point does during the minute when the shared object store is degraded and every worker is failing its probe;\n- what happens to renders already running on a worker that a deploy or a scale-in is about to take away;\n- whether one customer's requests should keep landing on the same worker, and what would have to be true for that to be worth it.",
+      "concepts": [
+        "load-balancing",
+        "failure-modes",
+        "horizontal-scaling",
+        "statelessness"
+      ],
+      "primary_concept": "load-balancing",
+      "difficulty": {
+        "band": "medium",
+        "elo": 1570
+      },
+      "expected_minutes": 40,
+      "sources": [
+        {
+          "url": "https://www.geeksforgeeks.org/system-design/load-balancer-system-design-interview-question/",
+          "title": "Load balancer — system design interview question (GeeksforGeeks)",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A 37-question guide devoted to this one component, framed explicitly as interview preparation: it works through choosing among round robin, weighted variants, source-IP hash, least connections and least response time by workload, then through active versus passive probing, session persistence and failover. Aggregator material rather than a first-hand account, but unambiguous that the topic stands on its own rather than appearing only as a box inside a larger design."
+        },
+        {
+          "url": "https://algomaster.io/learn/system-design-interviews/design-load-balancer",
+          "title": "Design a load balancer (AlgoMaster)",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A worked breakdown that ranks designing the balancer itself as a high-priority interview topic and builds the answer up in stages the way the event runs. Health checking is stated as a functional requirement rather than an aside; the page argues for a weighted work-aware rule when backends differ and request cost varies, and covers letting existing connections finish when a backend is withdrawn."
+        },
+        {
+          "url": "https://www.cracktheoffer.com/system-design-load-balancing",
+          "title": "Load balancing in system design: algorithms and interview use cases (Crack The Offer)",
+          "retrieved_at": "2026-08-21",
+          "evidence": "Presents the topic as senior-level reasoning and — the part that matters for grading — contrasts a weak answer that reaches for the simplest rotation with a strong one that ties the choice to traffic shape, separates short uniform calls from long-lived sockets, and folds probing and the loss of an availability zone into the same answer."
+        },
+        {
+          "url": "https://www.mayhemcode.com/2026/05/what-interviewers-actually-want-to-hear.html",
+          "title": "What interviewers actually want to hear about load balancing (mayhemcode)",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A prep post whose claim is that the probe's depth is what gets pushed on, not its existence — an endpoint that answers 200 while the process cannot reach its database is the trap it names — and that affinity should be argued from what the process keeps in memory. Written as predicted expectations rather than from transcripts, so it corroborates the emphasis without independently proving the question is put."
+        }
+      ],
+      "hints": [
+        "Read the cost table before choosing anything. A rule that hands renders out in turn equalises one quantity — is it the quantity that runs out on a worker?",
+        "There are two questions hiding inside \"is this worker healthy\": is this process broken, and is the world broken. What should the entry point do when the answer to the second is yes for all 120 at once?",
+        "Take whatever rule you picked and walk one specific worker through it — the one whose renderer is dead and which answers in three milliseconds. Where does it rank?",
+        "Consider: rank workers by renders currently outstanding against their 8 slots rather than in turn; keep the shared object store out of the pass-or-fail decision and add a floor below which the entry point stops believing the probes at all; eject on error rates seen in real responses, not only on probe results; and stop assigning new work before a worker is removed, with the wait set from the render tail rather than a round number."
+      ],
+      "follow_ups": [
+        "One customer starts submitting 300-page reports at 50 a second on a single key. What does your rule do, and what do the other customers see?",
+        "The entry point is one box on your diagram. How many of them are actually running, and how do they agree about which workers are healthy?",
+        "Renders move behind a queue instead — clients submit and poll for the result. Which parts of your answer survive, and which stop being distribution problems at all?"
+      ],
+      "grading": {
+        "type": "rubric",
+        "criteria": [
+          {
+            "id": "distribution_rule",
+            "description": "Picks the rule that assigns an arriving render to a worker and derives it from the cost distribution and the 8-slot concurrency, rather than naming an algorithm from a list.",
+            "weight": 0.26,
+            "concept": "load-balancing",
+            "levels": {
+              "0": "Hands renders out in turn because it is simple and even, or defers a work-aware rule to later if imbalance shows up without saying what would show it, or says the load balancer will take care of it — in every case with no reference to a mean that is thirteen times the median and no mention of the two hardware generations.",
+              "2": "Names a work-aware rule such as fewest connections and says it copes better with uneven requests, but never ties it to the numbers given, does not say what the entry point must track to run it, and leaves the slower generation to a weight someone sets by hand.",
+              "4": "Argues that evening out arrivals is not evening out work at this spread, so ranks workers by renders outstanding against their 8 slots (or by shortest expected queue), notes that the same rule absorbs the 40% slower generation with no weight to tune, and names the price — the entry point now carries per-worker state, which rules out a stateless DNS or connection-level spray."
+            }
+          },
+          {
+            "id": "health_check_design",
+            "description": "Says what the probe actually tests and what the entry point does when the shared object store degrades and the whole pool starts failing that probe simultaneously.",
+            "weight": 0.24,
+            "concept": "load-balancing",
+            "levels": {
+              "0": "Adds a health endpoint without saying what it tests, or proposes a deep probe that exercises the object store and the licence service on every check — and either way treats a failed check as proof that the worker should leave the pool.",
+              "2": "Splits a shallow liveness probe from a deeper readiness probe, or sets reasonable intervals and consecutive-failure thresholds, but still lets the pool empty in the case where the shared dependency is the thing that is broken.",
+              "4": "Scopes the probe to what is genuinely local to a worker — the renderer subprocess, its own queue depth — keeps the shared object store out of the pass-or-fail decision, and gives the entry point a floor: below some healthy fraction it stops trusting the probes and spreads across everyone, on the argument that a degraded worker beats no worker. States the interval and the failure count and what those cost in probe traffic against 120 workers."
+            }
+          },
+          {
+            "id": "broken_worker_attraction",
+            "description": "Works out what the chosen rule does with the worker that returns a 500 in 3 ms, and reacts to it on observed traffic rather than only on a probe.",
+            "weight": 0.2,
+            "concept": "failure-modes",
+            "levels": {
+              "0": "Does not consider it, or asserts the health probe will catch it without saying how much traffic the worker takes in the meantime.",
+              "2": "Sees that the broken worker has to be ejected and leaves that to the periodic probe, without noticing that a rule based on outstanding work ranks an instantly-failing worker as the least busy member of the pool.",
+              "4": "States the interaction plainly: a worker that answers in 3 ms is never busy, so a work-aware rule steers a growing share of traffic into it and the failure amplifies itself — then answers with a signal taken from real responses, such as error-rate or latency outlier ejection, gives a re-admission rule that does not flap, and estimates what share of renders the worker swallows before it goes."
+            }
+          },
+          {
+            "id": "removal_and_inflight",
+            "description": "Says what happens to renders already running on a worker that a rolling deploy or a scale-in is about to remove, and bounds the wait with a number taken from the render tail.",
+            "weight": 0.16,
+            "concept": "horizontal-scaling",
+            "levels": {
+              "0": "Removes the worker and lets whatever it was rendering fail, never mentions in-flight work at all, or claims that turning connection draining on makes the deploy zero-downtime without once comparing the drain window against a 90-second render.",
+              "2": "Says the worker is drained before it goes, but chooses no window, or chooses one without reference to the 90-second timeout and the 11-second 99th percentile the wait has to outlast.",
+              "4": "Stops new assignments first and lets running renders finish, sets the window from the tail rather than a round number, says what happens to a render still going when the window expires — killed and resubmitted elsewhere, against the client's own timeout — and notes that draining 120 workers inside 20 minutes overlaps, so usable capacity dips while the deploy runs."
+            }
+          },
+          {
+            "id": "affinity_decision",
+            "description": "Decides whether a customer's renders should keep landing on the same worker, and argues it from what a worker actually keeps between requests.",
+            "weight": 0.14,
+            "concept": "statelessness",
+            "levels": {
+              "0": "Pins each customer to a worker so their template cache stays warm, without asking what a worker holds between renders or what pinning costs when the pool changes every five minutes.",
+              "2": "Rules stickiness out because stateless is better, or rules it in because caching is good, without naming the state a render actually needs or what the pool's churn does to any pinning.",
+              "4": "Names what a worker holds — a font and template cache that is a hit-rate optimisation and not correctness — and concludes that renders stay interchangeable, so no affinity is taken and the pool may change freely. If affinity is argued for anyway, it is a preference that may be dropped the moment balance demands it, and the candidate says what becomes of it across a deploy that replaces all 120 workers."
+            }
+          }
+        ]
+      },
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
+    },
+    {
+      "id": "i.design.0008",
+      "kind": "instance",
+      "domain": "system_design",
+      "modality": "design",
+      "archetype_id": "a.design.0004",
+      "title": "Placing live editing sessions across a 400-node collaboration tier",
+      "statement_md": "A collaborative editor keeps each open document in memory on exactly one backend, so concurrent edits are merged without a round trip to storage. Editors arrive over WebSocket and stay for a work session: the median connection lasts 40 minutes, and the 95th percentile runs past six hours.\n\nAt the afternoon peak:\n\n- 400 backends carrying about 1.6 million concurrent connections, so roughly 4,000 each;\n- 700 thousand documents open at once, the median one with 2 people in it;\n- a handful of published documents are opened read-only by 30 thousand people at a time;\n- a backend holds about 1,700 documents and 6 GB of in-memory state;\n- an edit must be applied and echoed to the other editors within 80 ms.\n\nOperationally:\n\n- the tier is deployed twice a week, rolling, one backend at a time;\n- the cloud provider reclaims a backend without warning a few times a month;\n- clients reconnect on their own as soon as a socket closes.\n\nDesign how a connection reaches a backend. Cover at least:\n\n- how the entry point chooses a backend for a new connection, given that a document lives in exactly one place;\n- what happens to that mapping when the pool goes from 400 backends to 401, and how many open documents move;\n- how a document with 30 thousand read-only viewers is kept from sinking the single backend that owns it, without giving up single ownership of the edit path;\n- what a failed health probe should mean for a backend holding 4,000 live connections;\n- what becomes of those 4,000 connections during a rolling deploy, and what the tier looks like in the seconds after they all come back.",
+      "concepts": [
+        "load-balancing",
+        "sharding-partitioning",
+        "failure-modes",
+        "retries-timeouts"
+      ],
+      "primary_concept": "load-balancing",
+      "difficulty": {
+        "band": "hard",
+        "elo": 1730
+      },
+      "expected_minutes": 45,
+      "sources": [
+        {
+          "url": "https://www.geeksforgeeks.org/system-design/load-balancer-system-design-interview-question/",
+          "title": "Load balancer — system design interview question (GeeksforGeeks)",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A 37-question guide devoted to this one component, framed explicitly as interview preparation: it works through choosing among round robin, weighted variants, source-IP hash, least connections and least response time by workload, then through active versus passive probing, session persistence and failover. Aggregator material rather than a first-hand account, but unambiguous that the topic stands on its own rather than appearing only as a box inside a larger design."
+        },
+        {
+          "url": "https://algomaster.io/learn/system-design-interviews/design-load-balancer",
+          "title": "Design a load balancer (AlgoMaster)",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A worked breakdown that ranks designing the balancer itself as a high-priority interview topic and builds the answer up in stages the way the event runs. Health checking is stated as a functional requirement rather than an aside; the page argues for a weighted work-aware rule when backends differ and request cost varies, and covers letting existing connections finish when a backend is withdrawn."
+        },
+        {
+          "url": "https://www.cracktheoffer.com/system-design-load-balancing",
+          "title": "Load balancing in system design: algorithms and interview use cases (Crack The Offer)",
+          "retrieved_at": "2026-08-21",
+          "evidence": "Presents the topic as senior-level reasoning and — the part that matters for grading — contrasts a weak answer that reaches for the simplest rotation with a strong one that ties the choice to traffic shape, separates short uniform calls from long-lived sockets, and folds probing and the loss of an availability zone into the same answer."
+        },
+        {
+          "url": "https://www.mayhemcode.com/2026/05/what-interviewers-actually-want-to-hear.html",
+          "title": "What interviewers actually want to hear about load balancing (mayhemcode)",
+          "retrieved_at": "2026-08-21",
+          "evidence": "A prep post whose claim is that the probe's depth is what gets pushed on, not its existence — an endpoint that answers 200 while the process cannot reach its database is the trap it names — and that affinity should be argued from what the process keeps in memory. Written as predicted expectations rather than from transcripts, so it corroborates the emphasis without independently proving the question is put."
+        }
+      ],
+      "hints": [
+        "Before choosing an algorithm, decide whether the entry point has a choice at all. If a document lives in exactly one place, what is left for a distribution rule to decide?",
+        "Add one backend. Write down what changed about the mapping, and then write down what that change does to sockets that were already open.",
+        "A single healthy-or-not verdict has to answer two different questions here: may this backend take a new document, and should the 4,000 people already on it be thrown off. Are those the same question?",
+        "Sketch one step of the rolling deploy minute by minute: a backend goes, 4,000 clients see their socket close, they reconnect. Where do they land, how fast do they arrive, and what does the receiving backend see? Then say what you would change on the client so that step is survivable 400 times in a row."
+      ],
+      "follow_ups": [
+        "A backend is reclaimed with no warning. How long until its 1,700 documents are editable again, and which component owns that number?",
+        "Product wants a document to stay editable offline and sync when the client comes back. Does that change where the document has to live?",
+        "You are asked to run this tier in two regions. What is the first thing about your mapping that stops working?"
+      ],
+      "grading": {
+        "type": "rubric",
+        "criteria": [
+          {
+            "id": "placement_rule",
+            "description": "Explains how a connection reaches the backend that owns its document, and why a rule that chases the least busy backend is the wrong instrument here.",
+            "weight": 0.24,
+            "concept": "load-balancing",
+            "levels": {
+              "0": "Spreads new connections over the 400 backends by rotation or by fewest connections, terminates them anywhere and reads the document from storage on each edit, or asserts a least-busy rule and a per-document shard in the same answer without noticing they name different destinations — single ownership is dropped without it being noticed.",
+              "2": "Routes by hashing the document identifier so the owner is found, but presents that as a way of spreading load, and never separates where a document lives from how busy the backend holding it is.",
+              "4": "Holds the two questions apart: the destination follows ownership — a hash or a directory every entry point agrees on — and evenness is bought somewhere else, in how ownership is assigned rather than in where a socket is sent. Says what the entry point must know to route a connection and what that lookup costs on connect, and notes that once a socket is open no rebalancing may move it without breaking it."
+            }
+          },
+          {
+            "id": "remap_on_pool_change",
+            "description": "Quantifies what going from 400 backends to 401 does to the document mapping, and connects a remapped document to the live connections it costs.",
+            "weight": 0.2,
+            "concept": "load-balancing",
+            "levels": {
+              "0": "Maps documents with a hash taken modulo the backend count, claims both that mapping and consistent hashing without noticing they are different mappings, or does not say what happens when a backend is added or lost.",
+              "2": "Names a hash ring or consistent hashing and says most keys stay put, but gives no figure for how much moves at 400 to 401, and never says that a moved document means live sockets closed.",
+              "4": "Gives the fraction — about one four-hundredth of open documents, on the order of 1,700 of the 700 thousand, roughly one backend's worth — says those editors are disconnected and their in-memory state is rebuilt from storage on the new owner, and contrasts it with a modulo mapping, where nearly every document changes hands and the whole tier reconnects at once."
+            }
+          },
+          {
+            "id": "hot_document_skew",
+            "description": "Handles the published document with 30 thousand viewers on a backend sized for 4,000 connections, without abandoning single ownership of the edit path.",
+            "weight": 0.18,
+            "concept": "sharding-partitioning",
+            "levels": {
+              "0": "Assumes hashing spreads the load evenly, or moves the popular document to a larger backend and treats that as the answer.",
+              "2": "Notices the owning backend will be swamped and reaches for replication or caching, but does not separate the editors, who must reach the owner, from the read-only viewers, who need not.",
+              "4": "Splits the two populations: edits still go to the single owner, while viewers are served by a relay tier that subscribes to the owner once and re-broadcasts, so the owner's connection count is bounded by editors rather than by audience. Says how a viewer who starts editing is promoted, and what signal tells the system a document has gone hot in the first place."
+            }
+          },
+          {
+            "id": "health_and_ejection",
+            "description": "Says what a failed probe should mean for a backend holding 4,000 live connections, and what the tier does with one that can serve what it has but should take nothing new.",
+            "weight": 0.18,
+            "concept": "failure-modes",
+            "levels": {
+              "0": "Applies the policy an HTTP pool uses — two failed probes and the backend leaves rotation — with no acknowledgement that removing it disconnects four thousand people.",
+              "2": "Notes the stakes are higher and stretches the interval or the failure count, but keeps one healthy-or-unhealthy verdict, so a backend that should merely stop taking new documents can only be removed outright.",
+              "4": "Separates may-take-new-sessions from is-still-serving-the-ones-it-has and drives them from different signals, argues the ejection threshold from what an ejection costs — a false positive here is a mass disconnection, so it is slower and more hysteretic than an HTTP pool's — and says what a genuinely dead backend's 1,700 documents do: who notices, who takes ownership, and how the editors find the new owner."
+            }
+          },
+          {
+            "id": "deploy_reconnect_storm",
+            "description": "Works out what a rolling deploy does to connections that outlive it, and what the tier sees in the seconds after a backend's clients reconnect.",
+            "weight": 0.2,
+            "concept": "retries-timeouts",
+            "levels": {
+              "0": "Says connections are drained gracefully before each backend is replaced, without noticing that the 95th percentile session runs past six hours and a deploy cannot wait it out — or leaves the return traffic to the clients' own backoff without ever asking what rate they come back at.",
+              "2": "Accepts that connections have to be broken and mentions reconnect backoff, but does not say where the 4,000 clients land, or assumes their return is spread out simply because clients retry.",
+              "4": "Treats the disconnection as deliberate and shaped: the server closes with a reason and a randomised delay rather than letting every socket race back, the candidate compares the resulting arrival rate against the tier's steady connect rate, and observes that reconnects re-derive the same owner, so the surge lands on whichever backends the mapping names rather than on the pool as a whole. Says what paces the deploy so 400 steps do not add up to a rolling brownout."
+            }
+          }
+        ]
+      },
+      "corpus_version": 1,
+      "created_at": "2026-08-21"
     }
   ]
 }
