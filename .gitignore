@@ -44,3 +44,6 @@ Thumbs.db
 
 # Executor scratch
 apps/executor/scratch/
+
+# Local database dumps — `make backup`. Personal data, and large.
+/backups/

@@ -4,7 +4,8 @@ COMPOSE := docker compose -f infra/compose/docker-compose.yml
 
 .PHONY: help setup dev dev-api dev-web down check check-web lint typecheck test fmt \
         corpus-validate seed test-sandbox test-e2e test-db cost-report secret-scan \
-        doc-links doc-check hygiene verify-solutions login test-llm build-web clean
+        doc-links doc-check hygiene verify-solutions login test-llm build-web \
+        backup restore clean
 
 help: ## Show this help
 	@# [a-zA-Z0-9_-] not [a-z-]: the narrower class silently dropped `test-e2e`
@@ -113,6 +114,12 @@ test-llm: ## The only tests that call a real model — costs money, needs creden
 
 cost-report: ## Per-session token and dollar spend from the llm_calls ledger
 	uv run python -m api.cost_report
+
+backup: ## Dump the local database to backups/ (gzipped pg_dump)
+	@bash scripts/backup_db.sh dump
+
+restore: ## Restore the database from a dump: make restore FILE=backups/... CONFIRM=1
+	@CONFIRM=$(CONFIRM) bash scripts/backup_db.sh restore "$(FILE)"
 
 clean: ## Remove caches and build artifacts
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +

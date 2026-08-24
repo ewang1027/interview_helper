@@ -1,7 +1,8 @@
 # Operations
 
-> **Status:** Specification — nothing here is exercised yet. Lands in **Phase 8**,
-> though the backup and rollback pieces become real as soon as Phase 6 deploys.
+> **Status:** Specification, **except local backup/restore, which is built and drilled
+> (2026-08-24)**. The rest lands in **Phase 8**, though the deployed backup pieces become
+> real as soon as Phase 6 deploys.
 > Related: [INFRA](INFRA.md) (what is being operated) · [COST](COST.md) (spend alarms) · [SECURITY](SECURITY.md) (incident boundaries)
 
 Running this thing after it exists. Single operator, so the goal is not a formal on-call
@@ -27,6 +28,53 @@ That is the point of the projection design in
 append-only history.
 
 ## Backups
+
+### Locally, today
+
+Everything this project knows about one person's mastery lives in a **single Docker
+volume** (`compose_postgres_data`) with nothing copying it anywhere. That was true from
+Phase 3 and the plan below did not cover it, because the plan is about a deployment that
+does not exist yet — so the gap was between "what is written down" and "what is running on
+the machine actually holding the data".
+
+```sh
+make backup                                     # backups/interview_helper-<stamp>.sql.gz
+make restore FILE=backups/… CONFIRM=1           # replaces the database with that file
+```
+
+`CONFIRM=1` is typed out for the same reason `ALLOW_UNDOCUMENTED=1` is: the destructive
+thing should be visible in the command that does it. The dump uses `--clean --if-exists`,
+so it replays over a populated database — a restore that only works into an empty one is a
+restore nobody can perform in the situation they need it.
+
+**What survives, measured rather than assumed** — a marker row was written, the stack was
+torn down with `make down`, and it was still there afterwards:
+
+| Action | Data |
+|---|---|
+| Killing `uvicorn` or `next dev` | Safe — both are stateless |
+| `make down` then `make dev` | **Safe — verified** |
+| `colima stop`, or rebooting the machine | Safe — the volume is on the VM's disk |
+| `docker compose down -v` | **Destroyed** |
+| `docker volume rm compose_postgres_data` | **Destroyed** |
+| `colima delete`, Docker Desktop "reset" | **Destroyed** |
+
+The last three are one flag or one menu item away from the first three, which is the
+argument for `make backup` existing before Phase 6 rather than after it.
+
+### The restore was drilled, not assumed
+
+This document's own rule is that an untested backup is a belief. So, against the live
+stack: dump taken, **every session row deleted** (15 → 0), restored, and 15 came back with
+the corpus intact and the app still serving. `POST /mastery/recompute` was run afterwards
+as step 3 below, and the app answered 200 on every page.
+
+The one thing that drill does *not* prove is the Phase 8 gate below, which diffs a restored
+projection against production's. There is no production.
+
+### Deployed, later
+
+
 
 - RDS automated backups with point-in-time recovery, 7-day window.
 - A weekly `pg_dump` to S3 with versioning and lifecycle rules, as a second mechanism.

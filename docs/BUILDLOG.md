@@ -4836,3 +4836,56 @@ then deleted and the projection replayed to `{"evidence_replayed": 0, "concepts"
 the log starts empty for its actual user.
 
 Still not verified: none of it has been looked at in a browser.
+
+---
+
+## Local backup — one Docker volume, nothing copying it · 2026-08-24
+
+Prompted by a question rather than a finding: *does this get saved locally, will I lose
+progress when I restart?* Worth answering by measurement, since the person asking was about
+to start putting real data in.
+
+**Restarting loses nothing, and that was verified rather than reasoned.** A marker row was
+written, `make down` tore the stack out — container removed, network removed — and after
+`make dev` the marker was still there along with all 15 sessions and the corpus. The
+compose file has always declared a named volume; what had never been checked is that the
+teardown path people actually use preserves it.
+
+| Action | Data |
+|---|---|
+| Killing `uvicorn` or `next dev` | safe — stateless |
+| `make down` then `make dev` | **safe — verified** |
+| `colima stop`, rebooting | safe — the volume is on the VM disk |
+| `docker compose down -v` · `docker volume rm` · `colima delete` | **destroyed** |
+
+The bottom row is one flag away from the row above it. And docs/OPERATIONS.md's backup
+plan — RDS snapshots, weekly `pg_dump` to S3 — is entirely Phase 6 or later, because it was
+written about a deployment. So everything this project knows about one person's mastery sat
+in a single Docker volume with nothing copying it anywhere, and the document covering
+backups did not consider that a gap because it was not thinking about this machine.
+
+`make backup` and `make restore FILE=… CONFIRM=1` now exist. `CONFIRM=1` is typed out for
+the same reason `ALLOW_UNDOCUMENTED=1` is. The dump is `--clean --if-exists`, so it replays
+over a populated database — a restore that only works into an empty one is a restore nobody
+can perform in the situation they need it.
+
+**Drilled, because this document says an untested backup is a belief.** Dump taken (88K),
+then every session row deleted — 15 → 0 — then restored: 15 back, corpus intact, every page
+still 200, and `POST /mastery/recompute` run afterwards as step 3 of the drill this file
+already specified. The one thing it does not prove is the Phase 8 gate, which diffs a
+restored projection against production's; there is no production.
+
+### The doc gate caught the README, twice
+
+Marking OPERATIONS as partly built broke `make doc-check` immediately:
+
+```
+README: OPERATIONS is indexed as 'Spec', but docs/OPERATIONS.md says:
+        'Specification, **except local backup/restore, which is built'
+```
+
+Which is the check doing exactly what it is for. The second failure is the more interesting
+one: the fix `Spec · ✅ local backup built` *also* failed, because the rule is
+`cell.startswith("spec")` and the cell still led with the word. The wording changed to lead
+with the built claim rather than the gate loosening to accept a cell that reads as a spec —
+a gate bent to fit one row's phrasing stops catching the drift it exists for.

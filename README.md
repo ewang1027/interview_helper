@@ -104,7 +104,7 @@ buildlog disagree about what exists, the buildlog is right.**
 | [WEB](docs/WEB.md) | Routes, the four mode workspaces, dashboard | 5 | ✅ All nine routes built |
 | [INFRA](docs/INFRA.md) | AWS from first principles — written to teach | 6 | Spec |
 | [VOICE](docs/VOICE.md) | Vapi adapter, latency budget, what changes for speech | 7 | Spec |
-| [OPERATIONS](docs/OPERATIONS.md) | Backups, deploys, alarms, runbook | 8 | Spec |
+| [OPERATIONS](docs/OPERATIONS.md) | Backups, deploys, alarms, runbook | 8 | ✅ Local backup built · rest is spec |
 | [PRACTICE_LOG](docs/PRACTICE_LOG.md) | External problem tracker: LLM classification, spaced re-solve queue | 9 (needs 3+4) | ✅ Built |
 
 ## Quick start
@@ -124,7 +124,9 @@ make test-sandbox     # every test needing real Docker: escapes, /execute, /prob
 make test-e2e         # one scripted coding session — needs Postgres AND Docker
 make test-llm         # the only tests that call a real model — costs money, needs credentials
 make verify-solutions # every reference solution through the same harness candidates get
-make down             # tear down the local stack
+make backup           # dump the local database to backups/ (nothing else backs it up)
+make restore FILE=... CONFIRM=1   # replace the database with a dump
+make down             # tear down the local stack — data survives; `down -v` does not
 ```
 
 `make dev` currently brings up Postgres only — the `api`, `web` and `executor`
