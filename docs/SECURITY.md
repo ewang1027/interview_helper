@@ -355,6 +355,43 @@ mind for the rest of the build:
 - Enable GitHub secret scanning and push protection on the repo. **Still open**, and it is
   the only control that catches a shape `scripts/secret_scan.sh` does not know.
 
+## The frontend's dependency surface
+
+The web app landed on 2026-08-24 and brought **25 advisories** with it — the first
+substantial npm tree in this repo. They are recorded here rather than quietly patched,
+because the shape of them is the useful part.
+
+Eight were in `next` itself, and one of those matters more than its severity suggests:
+**SSRF in rewrites via an attacker-controlled destination host.** Rewrites are exactly the
+mechanism this app's API proxy is built on ([WEB](WEB.md#one-origin-and-why)). The
+destination here is a single value from `API_ORIGIN` with no request-derived component, so
+the vulnerable pattern is not present — but the overlap between "the advisory" and "the
+one piece of Next configuration this app depends on" is close enough to write down.
+
+All eight were fixed by moving 15.5.20 → **15.5.23**, inside the Next 15 line the spec
+pins. The remaining nine were transitive and unreachable from the parent's own version, so
+they are forced in `pnpm-workspace.yaml`:
+
+| Package | Forced | Reached through | Real exposure here |
+|---|---|---|---|
+| `postcss` | `>=8.5.23` | `next` | Build-time CSS only, and the CSS is authored in this repo |
+| `sharp` | `>=0.35.0` | `next` | `next/image` optimisation, which this app does not use |
+| `dompurify` | `>=3.4.13` | `@monaco-editor/react` → `monaco-editor` | Monaco's hover renderer, over the candidate's own code |
+
+`pnpm audit` is clean as of that change, and **CI fails the build on `high`** while
+reporting everything below it. Not on `moderate`: a gate that breaks every build the
+moment somebody publishes an advisory against a transitive dependency — possibly with no
+fix available — is a gate that gets skipped, which is the same reasoning that keeps
+`make hygiene` non-failing.
+
+An override that has become unnecessary is an override silently holding a version back, so
+the list is to be revisited whenever `next` or `@monaco-editor/react` moves.
+
+One dependency is a known gap rather than a vulnerability: **`@monaco-editor/react` loads
+Monaco from a CDN by default**, so the editor is a runtime network dependency on a service
+this project does not control, and a deployment with no egress has no editor. Vendoring it
+means bundling Monaco's web workers, which belongs with the Phase 6 packaging work.
+
 ## Explicitly out of scope
 
 Named so their absence is a decision rather than an oversight:

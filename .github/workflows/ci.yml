@@ -186,3 +186,16 @@ jobs:
       # — a hook in a server component typechecks and then fails at render.
       - name: Build
         run: pnpm build
+
+      # Fails on `high` only, and reports the rest. A gate that breaks the build
+      # the moment anyone publishes a moderate advisory against a transitive
+      # dependency is a gate people learn to skip — the same reasoning that
+      # keeps `make hygiene` non-failing. High is rare and actionable.
+      #
+      # The frontend brought 25 advisories with it on the day it landed, so this
+      # is not hypothetical: 8 were in `next` itself, including SSRF in rewrites,
+      # which is the mechanism this app's API proxy is built on.
+      - name: Audit dependencies
+        run: |
+          pnpm audit || true
+          pnpm audit --audit-level high

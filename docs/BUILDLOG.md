@@ -4437,3 +4437,45 @@ Still not verified, and still the most important sentence here: **nothing has be
 in a browser.** Layout, contrast in situ, focus order and keyboard reachability are
 unproven. The component tests assert structure and class names, which would not catch a
 collision, an overflow, or a control nothing can tab to.
+
+---
+
+## Phase 5 (dependencies) — the frontend arrived with 25 advisories · 2026-08-24
+
+GitHub reported them on the push, which is the first useful thing that happened after it.
+`apps/web` is the first substantial npm tree in this repo, and the audit is worth recording
+because one advisory lands squarely on the design decision made two commits earlier.
+
+```
+before   17 found:  6 high · 9 moderate · 2 low
+after     0 found
+```
+
+Eight were in `next` itself, all fixed by **15.5.20 → 15.5.23** — inside the Next 15 line
+docs/WEB.md pins, so honouring the spec and clearing them were not in tension after all.
+That is worth noting against the earlier decision: pinning back from the Next 16 that
+`create-next-app` installs did *not* mean accepting known holes, it meant reading which
+patch release closed them.
+
+The one to read twice: **"SSRF in rewrites via attacker-controlled destination host"**,
+high. Rewrites are the mechanism the whole same-origin proxy is built on. The destination
+is one value out of `API_ORIGIN` with nothing request-derived in it, so the vulnerable
+pattern is not present here — but an advisory naming the single piece of framework
+configuration this app depends on is not one to skim.
+
+The remaining nine were transitive and could not be reached by moving the parent, so they
+are forced in `pnpm-workspace.yaml`: `postcss >=8.5.23` and `sharp >=0.35.0` under `next`,
+`dompurify >=3.4.13` under `monaco-editor`. Real exposure was low in all three — build-time
+CSS this repo authors, an image optimiser this app does not use, and Monaco's hover
+renderer over the candidate's own code — which is the reason to patch them cheaply rather
+than to argue about them.
+
+**CI now fails on `high` and reports everything below.** Not on `moderate`: a gate that
+breaks every build the moment somebody publishes a moderate advisory against a transitive
+dependency, possibly with no fix available, is a gate people learn to skip — the same
+reasoning that keeps `make hygiene` non-failing. docs/SECURITY.md carries the table and the
+rule that an override which has become unnecessary is an override holding a version back.
+
+Verified after the change: `pnpm audit` clean, and lint, typecheck, 26 tests and a
+production build all still pass — an override that breaks the build is worse than the
+advisory it closed.
