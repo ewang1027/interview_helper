@@ -140,6 +140,7 @@ worse, would *not* raise inside Phase 4's date arithmetic.
 | `concept_evidence` | **Immutable.** The source of truth for mastery. Three producers, distinguished by `source`: graded sessions, the interviewer's own mid-session observations (`interviewer_observation` — same columns, lowest confidence), and from Phase 9 the practice log. `item_id`/`session_id` are nullable and `practice_problem_id` marks the third. Only a grading moves an item's rating; the others are not attempts at it. |
 | `mastery` | Derived projection: ability, observations, stability, due_at, last_seen, and the scheduler's own card. Rebuilt from `concept_evidence` by `POST /mastery/recompute`, never hand-edited. |
 | `llm_calls` | Cost ledger: model, tokens in/out/cache, computed $, latency, session. Written by `api.llm` in its own transaction, so a caller that fails afterwards cannot erase the record of spend. |
+| `idempotency_keys` | One row per `Idempotency-Key` a client has used, with the response it got. PK `(user_id, endpoint, key)` — the insert is what refuses a concurrent retry, since a read-then-write cannot. No expiry yet ([API](API.md#conventions)) |
 | `research_runs` | Provenance for corpus builds. |
 | `practice_problems`, `practice_solves` | Phase 9. External (LeetCode/Codeforces) problems logged manually, their classification against the corpus taxonomy, and their spaced re-solve schedule. See [PRACTICE_LOG](PRACTICE_LOG.md). |
 

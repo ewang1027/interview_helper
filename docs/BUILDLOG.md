@@ -4595,3 +4595,81 @@ had not been exercised by deleting real rows out from under a populated table. T
 practical lesson is narrower and worth stating: **`make test-db` runs against the same
 local database development uses**, so anything written there for a screenshot is something
 the next gate run will read.
+
+---
+
+## Phase 3 (`Idempotency-Key`) — owed before the web app, built after it · 2026-08-24
+
+docs/API.md carried this line from Phase 3 until today:
+
+> **Idempotency:** `POST /sessions` and `/submissions` are specified to accept
+> `Idempotency-Key`; **neither does yet**. […] Owed before the web app, which will retry
+> on flaky networks.
+
+The web app arrived first and spent two commits sending a header the server dropped, with
+a comment in `api.ts` saying so. This closes it, and the line in API.md now records that it
+landed after rather than before — a promise this repo did not keep is more useful visible
+than tidied away.
+
+### The primary key is the feature
+
+`idempotency_keys(user_id, endpoint, key)`, composite PK, response stored against it. Two
+concurrent retries of one request both find no row and both proceed unless the *insert*
+refuses the second — which is the same finding as `artifacts(session_id, item_id)` and
+`turns(session_id, seq)` in c4a71f2e83b0, and deliberately the same fix rather than a lock.
+The reservation row is committed **before** the handler runs, because a reservation held in
+an open transaction is invisible to the retry it exists to stop.
+
+Four states, four answers: unused runs it; same body finished replays; same body still
+running is `409`; different body is `422`. A *failed* request deletes its own reservation —
+a `422` is expected to be retried, and a row left behind would answer that retry with a
+`409` for as long as it lived.
+
+### What it does not replace
+
+The one-submission-per-item `409` protects a different thing and both stay. That rule
+refuses a second artifact for one item however it arrives; a key stops one client's retry
+being told its submission failed when it had not. Worth stating because the older rule was
+described in API.md as covering "the harmful half" of idempotency, which is true about
+evidence and not true about what a retrying client is told.
+
+### Two things found on the way
+
+**The model and the migrations had drifted.** `--autogenerate` proposed dropping
+`ix_llm_calls_status_created` — the composite `(status, created_at)` index enforcement
+filters on, added deliberately in c4a71f2e83b0 — and replacing it with a single-column
+index, because `LlmCall.status` said `index=True` while the composite lived only in the
+migration. It would have been a quiet performance regression one careless review away, and
+it would have been proposed again by every future autogenerate. The index is now declared
+in `__table_args__`, so the model and the database agree and autogenerate has nothing to
+say about `llm_calls` at all.
+
+**The test suite was not repeatable.** The first version of the tests used fixed keys, and
+`_cleanup` deleted sessions but not idempotency rows — so a second run replayed the *first
+run's* responses, pointing at sessions the teardown had already deleted:
+
+```
+run 1:  7 passed
+run 2:  5 failed, 2 passed
+```
+
+Which is the feature working exactly as designed against a database nobody cleaned. The
+fixture now clears the table, and the suite was run three times in a row to prove it rather
+than once to prove it passes.
+
+### Verified
+
+- **7 tests**, each counting rows rather than trusting the response body — a replay that
+  returned the right JSON while creating a second session would pass a shallower test and
+  be the bug this exists to prevent.
+- The concurrent case drives two real threads through a barrier and asserts one session,
+  with either `[201, 201]` or `[201, 409]` as the pair of answers.
+- Against the live server through the web proxy: the same key twice returned
+  `01M0THAQ1J5RZ5FM6X7TZESB29` both times, the same key with `budget_minutes: 90` returned
+  `idempotency-key-reused`, and two keyless posts made two sessions.
+- `upgrade`, `downgrade`, `upgrade` on the migration.
+
+**Not built: expiry.** Rows are kept indefinitely, so the table grows with every keyed
+request. Nothing here is remotely large enough for that to bite, and a reaper belongs with
+the operational work rather than bolted on now — but it is a growth curve with no ceiling,
+which is the kind of thing this repo would rather have written down than discovered.

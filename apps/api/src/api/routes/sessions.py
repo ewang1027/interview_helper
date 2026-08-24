@@ -17,13 +17,14 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Annotated, Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query
 from sqlmodel import Session
 
 from api import sessions as service
 from api.auth import CurrentPrincipal, Principal
 from api.db import get_session
 from api.executor_client import CodeRunner, ExecutorClient
+from api.idempotency import run_once
 from api.models import InterviewSession
 from api.schemas import CreateSessionRequest, SubmissionRequest, TurnRequest
 
@@ -54,6 +55,10 @@ def get_model_client() -> Any:
 DbSession = Annotated[Session, Depends(get_session)]
 Runner = Annotated[CodeRunner, Depends(get_runner)]
 ModelClient = Annotated[Any, Depends(get_model_client)]
+# Optional, and deliberately so: requiring it would break every client written before it
+# existed, and the two routes that take it are safe without one in every way they were
+# before (docs/API.md).
+IdemKey = Annotated[str | None, Header(alias="Idempotency-Key")]
 
 
 def _owned(db: Session, session_id: str, principal: Principal) -> InterviewSession:
@@ -64,7 +69,10 @@ def _owned(db: Session, session_id: str, principal: Principal) -> InterviewSessi
 
 @router.post("/sessions", status_code=201)
 def create_session(
-    body: CreateSessionRequest, db: DbSession, principal: CurrentPrincipal
+    body: CreateSessionRequest,
+    db: DbSession,
+    principal: CurrentPrincipal,
+    idempotency_key: IdemKey = None,
 ) -> dict[str, Any]:
     """Create a session and plan it.
 
@@ -74,15 +82,28 @@ def create_session(
     either way, which is the property that mattered: you can see what it decided to drill
     you on before you start.
     """
-    session_row = service.create_session(
+
+    def create() -> dict[str, Any]:
+        session_row = service.create_session(
+            db,
+            user_id=principal.user_id,
+            mode=body.mode,
+            budget_minutes=body.budget_minutes,
+            focus_concepts=body.focus_concepts,
+            difficulty_bias=body.difficulty_bias,
+        )
+        return {"id": session_row.id, "state": session_row.status, "plan": session_row.plan}
+
+    # Without this, the retry a flaky network provokes creates a second session — the
+    # case docs/API.md named when it listed the header as owed before the web app.
+    return run_once(
         db,
         user_id=principal.user_id,
-        mode=body.mode,
-        budget_minutes=body.budget_minutes,
-        focus_concepts=body.focus_concepts,
-        difficulty_bias=body.difficulty_bias,
+        endpoint="POST /sessions",
+        key=idempotency_key,
+        body=body.model_dump(),
+        handler=create,
     )
-    return {"id": session_row.id, "state": session_row.status, "plan": session_row.plan}
 
 
 @router.get("/sessions")
@@ -146,26 +167,42 @@ def create_submission(
     runner: Runner,
     model: ModelClient,
     principal: CurrentPrincipal,
+    idempotency_key: IdemKey = None,
 ) -> dict[str, Any]:
     session_row = _owned(db, session_id, principal)
-    artifact = service.record_submission(
+
+    def submit() -> dict[str, Any]:
+        artifact = service.record_submission(
+            db,
+            session_row,
+            item_id=body.item_id,
+            kind=body.kind,
+            content=body.content,
+            language=body.language,
+            elapsed_seconds=body.elapsed_seconds,
+        )
+        # The model client goes with the runner: a rubric-graded item needs one, and a
+        # test that stubs the executor but not the model would reach a provider from a
+        # `db` test.
+        background.add_task(service.grade_artifact, artifact.id, runner, model)
+        return {
+            "artifact_id": artifact.id,
+            "item_id": artifact.item_id,
+            "state": "grading",
+            "poll": f"/api/v1/sessions/{session_id}",
+        }
+
+    # A replay returns the first response and never reaches `submit`, so the background
+    # grading is queued once. The one-per-item `409` already stopped two *artifacts*; it
+    # could not stop a retry being told its submission failed when it had not.
+    return run_once(
         db,
-        session_row,
-        item_id=body.item_id,
-        kind=body.kind,
-        content=body.content,
-        language=body.language,
-        elapsed_seconds=body.elapsed_seconds,
+        user_id=principal.user_id,
+        endpoint="POST /sessions/{id}/submissions",
+        key=idempotency_key,
+        body=body.model_dump(),
+        handler=submit,
     )
-    # The model client goes with the runner: a rubric-graded item needs one, and a test
-    # that stubs the executor but not the model would reach a provider from a `db` test.
-    background.add_task(service.grade_artifact, artifact.id, runner, model)
-    return {
-        "artifact_id": artifact.id,
-        "item_id": artifact.item_id,
-        "state": "grading",
-        "poll": f"/api/v1/sessions/{session_id}",
-    }
 
 
 @router.post("/sessions/{session_id}/end")

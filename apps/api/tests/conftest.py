@@ -25,7 +25,15 @@ from api.auth import SESSION_COOKIE, session_token
 from api.db import get_engine
 from api.main import app
 from api.mastery import recompute
-from api.models import Artifact, ConceptEvidence, Grading, InterviewSession, LlmCall, Turn
+from api.models import (
+    Artifact,
+    ConceptEvidence,
+    Grading,
+    IdempotencyKey,
+    InterviewSession,
+    LlmCall,
+    Turn,
+)
 from api.settings import Settings, get_settings
 from api.users import LOCAL_GITHUB_ID, single_user
 
@@ -103,6 +111,13 @@ def _cleanup(session_ids: list[str]) -> None:
             db.exec(delete(Artifact).where(col(Artifact.session_id).in_(session_ids)))
             db.exec(delete(InterviewSession).where(col(InterviewSession.id).in_(session_ids)))
             db.commit()
+        # Idempotency rows are keyed by (user, endpoint, key) and outlive the sessions
+        # they created, so a test using a fixed key replays the *previous run's* response
+        # — pointing at a session this teardown has already deleted. Measured: a suite
+        # that passed on a clean database failed five ways on the second run. Cleared
+        # user-wide for the same reason the replay below is unconditional.
+        db.exec(delete(IdempotencyKey))
+        db.commit()
         recompute(db, single_user(db).id)
 
 

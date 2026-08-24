@@ -7,12 +7,13 @@
 > (`/auth/login`, `/auth/callback`, `/auth/me`, `/auth/logout`, and a session cookie
 > required by every `/api/v1` route), and RFC 9457 errors on all of it. `/health` stays at
 > the root deliberately — see below.
-> **Not built:** the SSE stream and every agent tool (there is no interviewer agent, so no
-> model call has ever been made), the cost routes, `GET /corpus/items/{id}`,
-> `Idempotency-Key`, and rate limiting. The cost routes and the model-call path are built
-> (2026-08-20), and so are **the interviewer** (`POST /sessions/{id}/turns`, three of the
-> five tools) and **the SSE stream**, carrying the interviewer's text as it is generated.
-> Vapi in **Phase 7**.
+> **Not built:** ~~the SSE stream and every agent tool~~, ~~the cost routes~~,
+> ~~`Idempotency-Key`~~, `GET /corpus/items/{id}`, and rate limiting. The struck items
+> landed after this line was written and are kept struck rather than deleted, because what
+> a document got wrong is usually the most useful thing on the page: the cost routes and
+> the model-call path (2026-08-20), **the interviewer** (`POST /sessions/{id}/turns`, all
+> five tools) and **the SSE stream** carrying its text as it is generated (2026-08-20), and
+> **`Idempotency-Key`** (2026-08-24). Vapi in **Phase 7**.
 > (The executor's `POST /execute` and `POST /probe` are built on their own contract — see
 > [SECURITY](SECURITY.md) — and `api.executor_client` is what speaks to them.)
 > Related: [ARCHITECTURE](ARCHITECTURE.md) · [GRADING](GRADING.md) (what the graders do with submissions) · [ADAPTIVE](ADAPTIVE.md) (where the planner gets its input) · [VOICE](VOICE.md) (the second transport) · [WEB](WEB.md) (the first consumer)
@@ -195,10 +196,48 @@ Results arrive on the SSE stream as `grading.started` and then `grading.result` 
 for a *failed* grading, which is the outcome somebody most needs telling about. Polling
 `GET /sessions/{id}` still works and reports the same thing.
 
-**One submission per item per session**, enforced with `409`. That is not
-`Idempotency-Key` support — a client cannot tell a retry from a genuine second attempt —
-but it refuses the harmful half of it: one item cannot write two sets of evidence into one
-session. Iterating on a submission is the interviewer loop's job, and that does not exist.
+**One submission per item per session**, enforced with `409`. This is not the same thing
+as `Idempotency-Key` (below) and neither replaces the other: the `409` refuses a second
+artifact for one item *however it arrives*, including from a different client, while a key
+stops one client's retry being told its submission failed when it had not. Before the key
+existed, the `409` was all there was, and it left a retrying client unable to tell a
+duplicate from a genuine refusal. Iterating on a submission is the interviewer loop's job.
+
+**`Idempotency-Key`**
+
+Optional on `POST /sessions` and `POST /sessions/{id}/submissions`. Sending the same key
+twice replays the first response and the handler does not run a second time — so a retried
+`POST /sessions` returns the session it already made rather than making another, and a
+retried submission queues one grading rather than two.
+
+| State of the key | Answer |
+|---|---|
+| Unused | The request runs; its response is stored against the key |
+| Used, same body, finished | `200`-equivalent replay of the stored response |
+| Used, same body, still running | `409` `idempotency-key-in-flight` |
+| Used, **different** body | `422` `idempotency-key-reused` |
+| Absent | Unchanged behaviour — a retry is a second request |
+
+Three things worth knowing about the semantics:
+
+- **The key is scoped to the caller and the endpoint.** One key sent to `/sessions` and to
+  `/submissions` is two keys; a key is never shared across users.
+- **A failed request releases its key.** A `422` or a `503` is expected to be retried, and
+  a reservation left behind would answer that retry with a `409` for as long as the row
+  lived.
+- **The database decides, not a read-then-write.** Two concurrent retries both find no row
+  and both proceed unless the insert itself refuses the second — the same finding, and the
+  same fix, as the unique constraints on `artifacts(session_id, item_id)` and
+  `turns(session_id, seq)`.
+
+This does not replace the one-submission-per-item `409`, which protects a different thing:
+that rule stops two *artifacts* for one item however they arrive, and a key stops one
+client's retry being told its submission failed when it had not.
+
+**Not built:** expiry. Rows are kept indefinitely, so the table grows with every keyed
+request. Nothing here is large enough for that to matter yet, and a reaper belongs with the
+operational work in [OPERATIONS](OPERATIONS.md) rather than bolted on now — but it is a
+growth curve with no ceiling, which is the kind of thing this repo prefers written down.
 
 ### Mastery and planning
 
@@ -471,8 +510,8 @@ slug a client can branch on; matching on prose is how error handling rots:
 | `401` | No session cookie, one this server did not sign, or an expired one — the three are indistinguishable on the wire on purpose |
 | `403` | Authenticated with GitHub, and not the account this deployment serves |
 | `404` | Unknown session or item — including one belonging to somebody else |
-| `409` | Wrong state — e.g. report requested before `complete` |
-| `422` | Well-formed but invalid, e.g. submission for an item not in the plan |
+| `409` | Wrong state — e.g. report requested before `complete`, or a retry arriving while the request it repeats is still running (`idempotency-key-in-flight`) |
+| `422` | Well-formed but invalid, e.g. submission for an item not in the plan, or an `Idempotency-Key` reused with a different body (`idempotency-key-reused`) |
 | `429` | **Token budget exceeded** (`budget-exceeded`) — refused, never silently downgraded ([COST.md](COST.md#hard-budgets)), and refused *before* the provider is called. Also `provider-rate-limited`, when the throttling is the provider's rather than ours: same status, different slug, because one means wait and the other means stop |
 | `503` | Executor or model provider unavailable, or the server is missing configuration the request needs (`not-configured`) |
 
@@ -484,10 +523,9 @@ corrupts mastery.
 
 - **IDs** are ULIDs — sortable by creation time, which makes transcript ordering free.
 - **Timestamps** are RFC 3339 UTC with `Z`.
-- **Idempotency:** `POST /sessions` and `/submissions` are specified to accept
-  `Idempotency-Key`; **neither does yet**. `/submissions` is protected by the
-  one-per-item rule above rather than by a key, and `POST /sessions` retried twice creates
-  two sessions. Owed before the web app, which will retry on flaky networks.
+- **Idempotency:** `POST /sessions` and `/submissions` accept `Idempotency-Key`
+  (**built 2026-08-24**, after the web app rather than before it, as this line used to
+  promise). The header is optional; without one, behaviour is exactly what it was.
 - **Pagination** is cursor-based (`?cursor=&limit=`). Offsets drift when rows are inserted
   under you.
 - **Versioning:** the path carries `v1`. Additive changes ship in place; breaking ones get

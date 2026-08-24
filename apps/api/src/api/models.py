@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, Column, DateTime, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, DateTime, Index, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
@@ -279,6 +279,39 @@ class Mastery(SQLModel, table=True):
 # --- Cost governance -------------------------------------------------------------------
 
 
+class IdempotencyKey(SQLModel, table=True):
+    """One row per `Idempotency-Key` a client has used, holding the answer it got.
+
+    docs/API.md specified this on `POST /sessions` and `/submissions` from Phase 3 and
+    listed it as owed *before* the web app, "which will retry on flaky networks". The web
+    app landed first; this is the catch-up.
+
+    The primary key is the whole point. Two concurrent retries of one request both read no
+    row and both proceed unless the *database* refuses the second — the same shape as
+    `artifacts(session_id, item_id)` and `turns(session_id, seq)`, and the same fix. A
+    check that reads, decides and writes with nothing between the read and the write is
+    correct serially and loses when overlapped.
+
+    Scoped by `user_id` so one caller's key cannot collide with another's, and by
+    `endpoint` so the same key sent to two routes is two keys.
+
+    `response_json` is null while the first request is still running. That is a real state,
+    not a placeholder: a client that retries mid-flight is told the original is in
+    progress rather than being given a second execution or an empty answer.
+    """
+
+    __tablename__ = "idempotency_keys"
+
+    user_id: str = Field(primary_key=True, foreign_key="users.id")
+    endpoint: str = Field(primary_key=True)
+    key: str = Field(primary_key=True)
+    # sha256 of the request body. A key reused with a different body is a client bug —
+    # answering with the first request's response would be silently wrong.
+    request_fingerprint: str
+    response_json: str | None = Field(default=None)
+    created_at: datetime = Field(default_factory=_utcnow, sa_column=_ts())
+
+
 class LlmCall(SQLModel, table=True):
     """One row per model call **attempt**, not per success.
 
@@ -291,11 +324,18 @@ class LlmCall(SQLModel, table=True):
     only ever written on success; the caller had already been handed billed tokens."""
 
     __tablename__ = "llm_calls"
+    # The index enforcement actually uses is the composite `(status, created_at)` added in
+    # c4a71f2e83b0, because that is what it filters on. It was declared in the migration
+    # only, while the field below said `index=True` — so every `--autogenerate` proposed
+    # dropping the composite and creating a single-column index in its place, which is a
+    # regression one careless review away from landing. Declared here instead, so the
+    # model and the database agree and autogenerate has nothing to say about it.
+    __table_args__ = (Index("ix_llm_calls_status_created", "status", "created_at"),)
 
     id: str = Field(default_factory=new_id, primary_key=True)
     # "reserved" while the call is in flight, then "settled" (usage is real) or "failed"
     # (the call did not complete; usage is whatever the provider admitted to).
-    status: str = Field(default="settled", index=True)
+    status: str = Field(default="settled")
     # What the call was allowed to spend, counted against the budget while it is in
     # flight. Zero once settled, because `input_tokens` and the rest are then real.
     reserved_tokens: int = 0
