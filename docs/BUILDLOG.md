@@ -4479,3 +4479,38 @@ rule that an override which has become unnecessary is an override holding a vers
 Verified after the change: `pnpm audit` clean, and lint, typecheck, 26 tests and a
 production build all still pass — an override that breaks the build is worse than the
 advisory it closed.
+
+---
+
+## Phase 5 (the gate met a bot) — every Dependabot PR was red on arrival · 2026-08-24
+
+A consequence of adding an npm tree, found by reading a failing CI run rather than by
+thinking about it. Dependabot opened a pull request bumping `next` 15.5.20 → 15.5.21 and
+CI refused it:
+
+```
+docs_with_code: 1 commit(s) change code and no documentation:
+  3fa7822 chore(deps): bump next from 15.5.20 to 15.5.21 in /apps/web
+```
+
+The gate is behaving exactly as specified. `apps/**` is code, a lockfile is under
+`apps/web/`, and the commit carries no `.md` — so **every dependency bump a bot will ever
+open fails by construction**, and a bot cannot write the document that would fix it. A
+gate that is permanently red for a whole class of change is one people learn to merge
+past, and then it is not protecting the class of change it was built for either.
+
+`scripts/docs_with_code.sh` now exempts a commit when the author is a bot **and** every
+file in it is a manifest or a lockfile. Narrow on purpose, and verified in all four
+directions on a throwaway repository rather than assumed:
+
+| Commit | Result |
+|---|---|
+| bot · `package.json` + `pnpm-lock.yaml` | exempt |
+| bot · manifest **and one `.ts` file** | refused |
+| human · manifest only | refused |
+| bot · manifest plus a doc | passes the ordinary way |
+
+The second row is the one worth having a test for: the exemption is about who cannot write
+documentation, not about which paths are exempt, so a bot smuggling source past it would
+be the exemption becoming a hole. The third keeps the rule intact for people — the
+15.5.20 → 15.5.23 bump in the previous entry *did* owe a document, and wrote one.

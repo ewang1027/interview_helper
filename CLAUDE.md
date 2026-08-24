@@ -60,6 +60,14 @@ The pre-push hook refuses a push whose commits change code — `apps/`, `package
 `.md` file. The gates are on that list deliberately: every commit in this repo's history
 that changed code and documented nothing was a change to a gate.
 
+One exemption beyond `wip:` and merges: **a bot's dependency bump that touches nothing
+but manifests and lockfiles.** Dependabot changes `package.json` and a lockfile, both
+under `apps/`, and has no document to write — so before this every such pull request was
+red on arrival, and a gate that is always red for a whole class of change is one people
+learn to merge past. It is narrow in both directions: the author must be a bot *and*
+every file must be a manifest, so a bot commit carrying one line of source is still
+refused, and a human bumping a dependency still owes the doc.
+
 None of that can check whether a document is **true**. That is the rule above, and it is
 kept by reading.
 

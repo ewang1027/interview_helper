@@ -13,6 +13,7 @@
 # exits 0, which is how `make hygiene` uses it. Exempt, deliberately:
 #   - `wip:` commits — a checkpoint is not a unit of work (CLAUDE.md, cadence)
 #   - merge commits — they introduce no content of their own
+#   - a bot's dependency bump touching nothing but manifests — see BOT_* below
 #   - ALLOW_UNDOCUMENTED=1 — the deliberate exception, typed out where it is visible
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -45,6 +46,18 @@ fi
 CODE_RE='^(apps|packages|scripts|infra|hooks|\.github)/|^(Makefile|pyproject\.toml)$'
 DOC_RE='\.md$'
 
+# A dependency bump opened by a bot cannot satisfy this gate: it changes a manifest and a
+# lockfile, both under `apps/`, and a bot has no document to write. Before this exemption
+# every Dependabot pull request was red on arrival — and a gate that is always red for a
+# whole class of change is one people learn to merge past, which costs more than it saves.
+#
+# Kept as narrow as it can be: the author must be a bot *and* every file in the commit
+# must be a manifest or a lockfile. A bot commit touching one line of source is still
+# refused, and a human bumping a dependency still owes the doc — as the 15.5.20 → 15.5.23
+# bump did, which is recorded in docs/SECURITY.md precisely because it was not routine.
+BOT_AUTHOR_RE='^(dependabot|renovate|github-actions)(\[bot\])?$'
+BOT_FILES_RE='(^|/)(package\.json|package-lock\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|yarn\.lock|uv\.lock|poetry\.lock)$'
+
 undocumented=()
 inspected=0
 for range in "${ranges[@]}"; do
@@ -62,11 +75,19 @@ for range in "${ranges[@]}"; do
     if [[ $(git log -1 --format=%s "$sha") == wip:* ]]; then
       continue
     fi
+    # `-c core.quotepath=false` for the same reason it is set below.
+    sha_files=$(git -c core.quotepath=false diff-tree --no-commit-id --name-only -r "$sha")
+    if [[ $(git log -1 --format=%an "$sha") =~ $BOT_AUTHOR_RE ]] &&
+      ! grep -qvE "$BOT_FILES_RE" <<<"$sha_files"; then
+      echo "docs_with_code: exempt (bot dependency bump) $(git log -1 --format='%h %s' "$sha")"
+      continue
+    fi
     inspected=$((inspected + 1))
-    # `-c core.quotepath=false`: with the default, git wraps any path containing a
-    # non-ASCII byte in double quotes and C-escapes it, so `CODE_RE`'s `^` anchor never
-    # matched and a code-only commit touching such a path passed the gate.
-    files=$(git -c core.quotepath=false diff-tree --no-commit-id --name-only -r "$sha")
+    # `-c core.quotepath=false` (set where `sha_files` is built): with the default, git
+    # wraps any path containing a non-ASCII byte in double quotes and C-escapes it, so
+    # `CODE_RE`'s `^` anchor never matched and a code-only commit touching such a path
+    # passed the gate.
+    files=$sha_files
     if grep -qE "$CODE_RE" <<<"$files" && ! grep -qE "$DOC_RE" <<<"$files"; then
       undocumented+=("$(git log -1 --format='%h %s' "$sha")")
     fi
