@@ -306,7 +306,7 @@ export interface ReviewQueue {
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
 export interface Principal {
+  authenticated: boolean;
   user_id: string;
   github_id: number;
-  expires_at?: string;
 }

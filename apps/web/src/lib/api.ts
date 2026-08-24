@@ -83,11 +83,17 @@ export class ApiError extends Error {
 }
 
 function loginRedirect(): never {
+  // To this app's own `/login`, not to the API's `/auth/login`. Sending the
+  // browser straight at the API route is what docs/WEB.md literally asks for,
+  // and it dead-ends the moment OAuth is unconfigured: that route answers
+  // `503 not-configured` and the user is left looking at raw problem+json.
+  // `/login` works out which state the deployment is in and says so.
+  //
   // Server components have no window; there the 401 propagates and the route's
   // error boundary handles it. In the browser this replaces the history entry
   // so Back does not bounce off a page that will only 401 again.
-  if (typeof window !== "undefined") {
-    window.location.replace("/auth/login");
+  if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+    window.location.replace("/login");
   }
   throw new ApiError(401, null, "Not signed in");
 }

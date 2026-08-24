@@ -28,6 +28,25 @@ request needs `credentials: "include"`, an unauthenticated route should send the
 `/auth/login` rather than rendering an error, and a `401` mid-session means the cookie
 expired ([API.md](API.md#auth)).
 
+**A 401 goes to `/login`, this app's own page, not to the API's `/auth/login`.** The
+instruction above says to send the browser to `/auth/login`, and doing that literally
+dead-ends: that route answers `503 not-configured` when OAuth is unset, so the user is
+handed a raw `application/problem+json` document with no way forward. Correct of the
+server — an OAuth app with no `GITHUB_ALLOWED_ID` would admit *any* GitHub user to a
+single-user deployment, so it refuses rather than running weakened — and useless to a
+person. `/login` works out which of three states the deployment is in first: signed in
+(go back), OAuth ready (offer the button), or unconfigured (say what is unset, and that
+`make login` is the supported way in locally). It never adds an unsupported one: there is
+deliberately no dev-login route and no `AUTH_MODE` flag ([API](API.md#auth)), because a
+flag is a thing that can be wrong in production.
+
+**Running the OAuth flow through this origin means `GITHUB_REDIRECT_URI` is the web app's
+port, not the API's.** The callback's `Set-Cookie` is stored against whichever origin
+answered the request, so a callback on `:8000` produces a cookie the browser will not send
+to `:3000` — the same cross-site problem the proxy exists to remove, arriving through the
+one route that bypasses it. Next forwards `/auth/*` and passes `Set-Cookie` back unchanged
+(verified), so the whole flow runs on one origin.
+
 `credentials: "include"` is necessary and **not sufficient**, which is the first thing
 building this found. The cookie is `SameSite=Lax` and set on the API's origin, and
 `apps/api` mounts no CORS middleware — so a page on `localhost:3000` fetching
@@ -46,6 +65,7 @@ maintain, for a service with exactly one browser client.
 
 | Route | Purpose |
 |---|---|
+| `/login` | Sign in — and, when OAuth is unconfigured, what to do instead |
 | `/` | Dashboard — mastery heatmap, due queue, weakness list, recent sessions |
 | `/session/new` | Pick mode and budget; shows the plan **before** you commit to it |
 | `/session/[id]` | The live interview. Mode-specific workspace (below) |

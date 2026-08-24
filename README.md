@@ -138,6 +138,12 @@ route answers `503` naming it rather than running open. `make login` then prints
 for `curl`; a browser logs in through GitHub, which additionally needs an OAuth app and
 `GITHUB_ALLOWED_ID` — see [`.env.example`](.env.example) and [API](docs/API.md#auth).
 
+Without an OAuth app the web app still opens: `/login` reports what is unset and how to
+mint a cookie by hand. With one, set `GITHUB_REDIRECT_URI` to the **web app's** origin
+(`http://localhost:3000/auth/callback`) and give the OAuth app the same callback — a
+cookie set on the API's port is cross-site to the browser and will not come back
+([WEB](docs/WEB.md#one-origin-and-why)).
+
 ## Build status
 
 **Phases 0 and 2 complete for what they were scoped to; 4 and 9 built; 1 and 3 partially

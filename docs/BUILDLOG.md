@@ -4673,3 +4673,67 @@ than once to prove it passes.
 request. Nothing here is remotely large enough for that to bite, and a reaper belongs with
 the operational work rather than bolted on now — but it is a growth curve with no ceiling,
 which is the kind of thing this repo would rather have written down than discovered.
+
+---
+
+## Phase 5 (`/login`) — the redirect docs/WEB.md asked for was a dead end · 2026-08-24
+
+Found by opening the app in a browser for the first time, which is the thing every entry
+above says had not happened yet.
+
+docs/WEB.md's rule reads: an unauthenticated route "should send the browser to
+`/auth/login` rather than rendering an error". Followed literally — and it was — the
+browser lands on an **API** route, and with OAuth unconfigured that route answers:
+
+```json
+{"type": ".../not-configured", "status": 503,
+ "detail": "OAuth is not configured: GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_ALLOWED_ID unset."}
+```
+
+The server is right. An OAuth app with no `GITHUB_ALLOWED_ID` would admit *any* GitHub
+user to a single-user deployment, so the flow refuses rather than running weakened. But
+the user is looking at raw `application/problem+json` with no way forward, on a fresh
+clone, at the front door — and the rule that produced it was followed exactly. A doc can
+be right about the mechanism and wrong about the outcome.
+
+`/login` is now the redirect target, and it establishes which of three states the
+deployment is in before rendering: signed in (go back), OAuth ready (offer the button), or
+unconfigured (name the unset variables and give the supported way in). It adds no
+unsupported one — there is still no dev-login route and no `AUTH_MODE` flag, because a
+flag is a thing that can be wrong in production. What it does is explain that `make login`
+signs a cookie *outside* the process with the same secret, which was always the documented
+local path and was written down only in the README.
+
+Distinguishing "unconfigured" from "ready" without a new endpoint: fetch `/auth/login` with
+`redirect: "manual"`. A configured server answers a 3xx toward github.com, which arrives as
+an opaque response rather than a cross-origin fetch that throws; an unconfigured one
+answers a 503 the client can read. A *network* failure stays `unknown` and is not reported
+as a configuration problem — telling somebody their OAuth app is broken when their API is
+merely down is a worse error than saying nothing.
+
+### The redirect URI is the web app's port, not the API's
+
+Worth its own note, because the default in `.env.example` is wrong for this setup and the
+failure is silent. `GITHUB_REDIRECT_URI` defaults to `http://localhost:8000/auth/callback`.
+The callback's `Set-Cookie` is stored against **whichever origin answered the request**, so
+a callback on `:8000` produces a cookie the browser will not send to `:3000` — the same
+cross-site problem the proxy was built to remove, arriving through the one route that would
+otherwise bypass it. Sign-in would appear to succeed and every subsequent request would be
+a 401.
+
+Verified rather than assumed, since the whole approach depends on it:
+
+```
+POST :3000/auth/logout  →  204, set-cookie: ih_session=""; Path=/; SameSite=lax
+POST :8000/auth/logout  →  204, set-cookie: ih_session=""; Path=/; SameSite=lax
+```
+
+Next passes `Set-Cookie` back through the rewrite unchanged, so the entire OAuth flow can
+run on one origin.
+
+### Verified
+
+30 component tests, up from 26: the four probe states, including that a network failure is
+not reported as a misconfiguration. `/login` renders 200, and the three server responses it
+branches on were checked live — `/auth/login` 503, `/auth/me` 401 without a cookie and 200
+with one.
