@@ -74,6 +74,8 @@ maintain, for a service with exactly one browser client.
 | `/concepts/[id]` | One concept: ability over time, the evidence behind it, related items |
 | `/history` | Session history, filterable by mode and date |
 | `/corpus` | Browse the corpus. Statements of unseen items stay redacted |
+| `/practice` | The practice log — log a problem solved elsewhere, and what is due to re-solve |
+| `/practice/[id]` | One logged problem: confirm its concept, record a re-solve, read its evidence |
 | `/costs` | Token and dollar spend from the ledger |
 
 `/corpus` shows what `GET /corpus/status` reports and then says plainly that browsing is
@@ -84,6 +86,31 @@ browser looks broken; a stated gap is a gap.
 
 `/concepts` assembles the taxonomy from four weakness rankings, one per mode, for the
 reason given under **Dashboard** — there is no `GET /concepts`.
+
+### The practice log
+
+Added 2026-08-24, and it was missing rather than deferred: this document is a **Phase 5**
+spec written before **Phase 9** existed, so its route table never gained a page for the
+practice log. The six endpoints shipped on 2026-08-21, a logged solve moved the same
+mastery a graded submission does — and there was no way to log one. The dashboard's "due
+for review" card read the queue and nothing could fill it.
+
+The state the pages are designed around is **`pending_classification`**. A classification
+below 0.75 confidence writes no evidence, and neither does one whose provider was
+unreachable; the problem is recorded, listed, kept out of the review queue and feeds
+nothing until a human confirms the tag ([PRACTICE_LOG](PRACTICE_LOG.md)). Since no model
+provider is reachable yet, that is *every* entry today — so confirming a tag is the common
+path, not the exception, and it gets a searchable picker over the whole 159-concept
+taxonomy rather than a 159-option `<select>`.
+
+Three refusals are surfaced rather than hidden, because each one means something:
+
+- A problem awaiting its tag shows **needs a tag** and says plainly that it counts for
+  nothing yet.
+- Recording a re-solve against such a problem is a `409`, so the control is disabled with
+  the reason given — the solve would have nowhere to write its evidence.
+- A resolved classification cannot be re-tagged. `concept_evidence` is immutable, so the
+  page says so instead of offering an edit that would be refused.
 
 ## The live session view
 

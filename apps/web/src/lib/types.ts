@@ -292,15 +292,70 @@ export interface BudgetStatus {
 
 // ─── Practice log ────────────────────────────────────────────────────────────
 
+export type ProblemStatus = "pending_classification" | "active" | "retired";
+
+export type SourceSite = "leetcode" | "codeforces" | "other";
+
+export interface PracticeProblem {
+  id: string;
+  title: string;
+  url: string;
+  source_site: SourceSite;
+  notes: string | null;
+  difficulty_label: string | null;
+  primary_concept_id: string | null;
+  secondary_concept_ids: string[];
+  classification: {
+    confidence: number | null;
+    model: string | null;
+    /** False while the tag is unconfirmed — that problem feeds nothing. */
+    auto_accepted: boolean;
+  };
+  status: ProblemStatus;
+  solve_count: number;
+  stability_days: number | null;
+  due_at: string | null;
+  graduated_at: string | null;
+  created_at: string;
+}
+
+export interface PracticeSolve {
+  review_number: number;
+  is_success: boolean;
+  attempted_at: string;
+  notes: string | null;
+  concept_evidence_id: string | null;
+}
+
+export interface ProblemDetail extends PracticeProblem {
+  solves: PracticeSolve[];
+  evidence: {
+    concept_id: string;
+    score: number;
+    confidence: number;
+    grader_version: string;
+    ts: string;
+  }[];
+}
+
+export interface ProblemList {
+  problems: PracticeProblem[];
+  next_cursor: string | null;
+}
+
+export interface LogProblemBody {
+  title: string;
+  url: string;
+  source_site?: SourceSite;
+  notes?: string | null;
+  difficulty_label?: string | null;
+  solved_at?: string | null;
+}
+
+/** The server names this `days_overdue`, and each entry is a whole problem row. */
 export interface ReviewQueue {
   as_of: string;
-  due: {
-    problem_id: string;
-    title: string;
-    concept_id: string | null;
-    due_at: string;
-    overdue_days: number;
-  }[];
+  due: (PracticeProblem & { days_overdue: number })[];
 }
 
 // ─── Auth ────────────────────────────────────────────────────────────────────

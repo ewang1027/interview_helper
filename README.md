@@ -69,7 +69,7 @@ breakdown, because adaptation you cannot inspect is adaptation you cannot trust.
 | Path | What it is |
 |---|---|
 | `apps/api/` | FastAPI — `/health` and `/auth/*` at the root, and behind a session cookie under `/api/v1` the **session layer** (plan → submit → grade → report), mastery, costs and `corpus/status`. The deterministic coding grader, GitHub OAuth, the model-call path, the **interviewer agent** and the **SSE stream** live here too |
-| `apps/web/` | Next.js 15 app — all nine routes: dashboard, session creation with its plan preview, the live interview and its four workspaces, the report, concepts, history, corpus and costs |
+| `apps/web/` | Next.js 15 app — dashboard, session creation with its plan preview, the live interview and its four workspaces, the report, concepts, history, corpus, costs, and the practice log |
 | `apps/executor/` | Sandboxed code runner (no network, non-root, resource-capped) — isolation, `POST /execute` and `POST /probe` (the complexity probe) are built |
 | `packages/corpus/` | Versioned question corpus + JSON Schema + validator (48 items today) |
 | `research/` | *Empty placeholder.* Corpus ingestion pipeline, Phase 1 — the 48 items were hand-authored, not pipeline-produced |

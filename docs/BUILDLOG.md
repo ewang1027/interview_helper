@@ -4766,3 +4766,73 @@ Verified live after configuring a real OAuth app: `/auth/login` answers `302` to
 github.com with `redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fcallback` and sets
 the state cookie on `:3000`. The new test asserts the `303`, the `Location`, and that the
 session cookie is still set — a redirect that forgot the cookie would loop forever.
+
+---
+
+## Phase 5 (practice log) — six endpoints with no way in · 2026-08-24
+
+Asked for by the person using it, which is how the gap surfaced: *where do I add problems
+I've already done, and get reminded to redo them?*
+
+Nowhere. Phase 9 shipped the practice log on 2026-08-21 — six endpoints, a confidence
+gate, an FSRS-inspired re-solve schedule, and a logged solve that moves the same mastery a
+graded submission does. docs/WEB.md is a **Phase 5** spec written before Phase 9 existed,
+so its route table never gained a page for it, and Phase 5 was built from that table. The
+dashboard's "due for review" card read the queue faithfully; nothing could ever put
+anything in it.
+
+Worth naming the failure mode, because it is not "someone forgot": a spec written for
+phase N and implemented at phase N does not notice a feature that landed at phase N+4 in
+between. Nothing in the doc set was *wrong* — the routes table was simply complete for the
+world it was written in.
+
+### The design centre is `pending_classification`, because that is every entry today
+
+A classification below 0.75 confidence writes no evidence, and neither does one whose
+provider was unreachable. No provider is reachable here, so **every** logged problem lands
+in that state — confirmed by logging one:
+
+```
+POST /practice/problems  →  status pending_classification, confidence 0.0, model null
+GET  /practice/review-queue  →  due 0        # correctly out of the queue
+PATCH …/classification (sliding-window)  →  active, due in 3 days, 1 evidence row
+GET  /mastery  →  sliding-window ability 1566.8, observations 1
+```
+
+So confirming a tag is the ordinary path rather than the exception, and it gets a
+searchable picker over all 159 concepts rather than a `<select>` with 159 options in it.
+The re-solve then behaved as PRACTICE_LOG.md describes — a success stretched the interval
+from 3 days to 8 (stability 7.5), wrote a second evidence row, and a re-solve attempted
+against an *untagged* problem was refused `409`.
+
+Three refusals are surfaced rather than hidden, each because it means something: a problem
+awaiting a tag says it counts for nothing yet; the re-solve control is disabled with the
+reason, since the solve would have nowhere to write evidence; and a resolved
+classification cannot be re-tagged, because `concept_evidence` is immutable — so the page
+says so rather than offering an edit that would be refused.
+
+### A dashboard bug the types caught
+
+`GET /practice/review-queue` returns whole problem rows with `days_overdue`. The dashboard
+card, written from a guess at the shape rather than from the handler, read `problem_id`
+and `overdue_days` — so its React key was `undefined` for every row and the overdue badge
+could never fire, since `undefined > 0` is false. Writing the real types surfaced both as
+compile errors:
+
+```
+src/app/page.tsx(148,36): Property 'problem_id' does not exist
+src/app/page.tsx(150,42): Property 'overdue_days' does not exist
+```
+
+The reason it went unnoticed is that the queue has been empty all along, which is the same
+reason the whole feature was missing. It is also the case *for* reading the handler rather
+than the doc: `types.ts` says at the top not to guess a shape, and this one was guessed.
+
+### Verified
+
+Logged, tagged, re-solved and refused against the live stack through the web proxy, with
+mastery checked after each step; all three pages answer 200. The two test problems were
+then deleted and the projection replayed to `{"evidence_replayed": 0, "concepts": 0}`, so
+the log starts empty for its actual user.
+
+Still not verified: none of it has been looked at in a browser.

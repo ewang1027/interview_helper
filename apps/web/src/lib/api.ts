@@ -17,6 +17,7 @@
 import type {
   BudgetStatus,
   ConceptDetail,
+  LogProblemBody,
   CorpusStatus,
   CostRollup,
   CreateSessionBody,
@@ -25,6 +26,8 @@ import type {
   Mode,
   Plan,
   Principal,
+  ProblemDetail,
+  ProblemList,
   Report,
   ReviewQueue,
   SessionDetail,
@@ -198,4 +201,29 @@ export const api = {
 
   // Practice log
   reviewQueue: () => request<ReviewQueue>("/practice/review-queue"),
+  logProblem: (body: LogProblemBody, key: string) =>
+    post<ProblemDetail>("/practice/problems", body, key),
+  listProblems: (params: { status?: string; conceptId?: string; cursor?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (params.status) query.set("status", params.status);
+    if (params.conceptId) query.set("concept_id", params.conceptId);
+    if (params.cursor) query.set("cursor", params.cursor);
+    query.set("limit", "50");
+    return request<ProblemList>(`/practice/problems?${query}`);
+  },
+  problem: (id: string) => request<ProblemDetail>(`/practice/problems/${id}`),
+  /** Confirming or correcting the tag is what writes the held evidence. */
+  setClassification: (id: string, primary: string, secondary: string[] = []) =>
+    request<ProblemDetail>(`/practice/problems/${id}/classification`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        primary_concept_id: primary,
+        secondary_concept_ids: secondary,
+      }),
+    }),
+  recordReview: (id: string, isSuccess: boolean, notes?: string) =>
+    post<ProblemDetail>(`/practice/problems/${id}/reviews`, {
+      is_success: isSuccess,
+      notes: notes || null,
+    }),
 };

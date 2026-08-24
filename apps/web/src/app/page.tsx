@@ -138,6 +138,11 @@ export default function Dashboard() {
             <CardHeader
               title="Due for review"
               hint="Problems logged elsewhere, scheduled back by the practice log."
+              action={
+                <Link href="/practice" className="text-ink-secondary text-xs hover:underline">
+                  All
+                </Link>
+              }
             />
             <CardBody>
               {queue.isLoading ? (
@@ -145,16 +150,32 @@ export default function Dashboard() {
               ) : queue.data?.due.length ? (
                 <ul className="divide-hairline divide-y text-sm">
                   {queue.data.due.slice(0, 6).map((entry) => (
-                    <li key={entry.problem_id} className="flex items-baseline gap-2 py-1.5">
-                      <span className="min-w-0 flex-1 truncate">{entry.title}</span>
-                      <Badge tone={entry.overdue_days > 0 ? "critical" : "neutral"}>
+                    <li key={entry.id} className="flex items-baseline gap-2 py-1.5">
+                      <Link
+                        href={`/practice/${entry.id}`}
+                        className="min-w-0 flex-1 truncate hover:underline"
+                      >
+                        {entry.title}
+                      </Link>
+                      <Badge tone={entry.days_overdue > 0 ? "critical" : "neutral"}>
                         {relativeDue(entry.due_at)}
                       </Badge>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <Empty title="Nothing due" detail="The re-solve queue is empty." />
+                <Empty
+                  title="Nothing due"
+                  detail={
+                    <>
+                      Nothing scheduled to re-solve.{" "}
+                      <Link href="/practice" className="underline">
+                        Log a problem you solved elsewhere
+                      </Link>
+                      .
+                    </>
+                  }
+                />
               )}
             </CardBody>
           </Card>
