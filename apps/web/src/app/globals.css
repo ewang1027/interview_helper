@@ -1,0 +1,163 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens.
+ *
+ * Colours come from the dataviz skill's validated reference palette, used
+ * unchanged so its measured numbers still hold. The ability ramp below was
+ * re-validated for this app against these exact surfaces, as an *ordinal*
+ * ramp rather than a continuous sequential one: a heatmap cell's lightest
+ * step here means "weak", which is a real value that must stay visible, not
+ * "near zero", which is allowed to recede into the surface.
+ *
+ *   light  #86b6ef #5598e7 #2a78d6 #1c5cab #104281   surface #fcfcfb
+ *   dark   #cde2fb #9ec5f4 #6da7ec #3987e5 #184f95   surface #1a1a19
+ *
+ * Both pass monotone lightness, adjacent ΔL, light-end contrast and single-hue.
+ */
+
+:root {
+  color-scheme: light;
+
+  --surface-1: #fcfcfb;
+  --surface-page: #f9f9f7;
+  --surface-sunken: #f2f1ed;
+
+  --ink-primary: #0b0b0b;
+  --ink-secondary: #52514e;
+  --ink-muted: #898781;
+
+  --line-hairline: #e1e0d9;
+  --line-axis: #c3c2b7;
+  --ring-border: rgba(11, 11, 11, 0.1);
+
+  --accent: #2a78d6;
+  --accent-ink: #ffffff;
+
+  /* Ability ramp — weakest to strongest. */
+  --ability-1: #86b6ef;
+  --ability-2: #5598e7;
+  --ability-3: #2a78d6;
+  --ability-4: #1c5cab;
+  --ability-5: #104281;
+  /* Never measured. Deliberately outside the ramp: absence is not a low score. */
+  --ability-none: #f2f1ed;
+
+  /* Status — fixed, never themed, and never carrying meaning without a label. */
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-serious: #ec835a;
+  --status-critical: #d03b3b;
+  --status-good-text: #006300;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --surface-1: #1a1a19;
+    --surface-page: #0d0d0d;
+    --surface-sunken: #232322;
+
+    --ink-primary: #ffffff;
+    --ink-secondary: #c3c2b7;
+    --ink-muted: #898781;
+
+    --line-hairline: #2c2c2a;
+    --line-axis: #383835;
+    --ring-border: rgba(255, 255, 255, 0.1);
+
+    --accent: #3987e5;
+    --accent-ink: #0d0d0d;
+
+    --ability-1: #cde2fb;
+    --ability-2: #9ec5f4;
+    --ability-3: #6da7ec;
+    --ability-4: #3987e5;
+    --ability-5: #184f95;
+    --ability-none: #232322;
+
+    --status-good-text: #0ca30c;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --surface-1: #1a1a19;
+  --surface-page: #0d0d0d;
+  --surface-sunken: #232322;
+
+  --ink-primary: #ffffff;
+  --ink-secondary: #c3c2b7;
+  --ink-muted: #898781;
+
+  --line-hairline: #2c2c2a;
+  --line-axis: #383835;
+  --ring-border: rgba(255, 255, 255, 0.1);
+
+  --accent: #3987e5;
+  --accent-ink: #0d0d0d;
+
+  --ability-1: #cde2fb;
+  --ability-2: #9ec5f4;
+  --ability-3: #6da7ec;
+  --ability-4: #3987e5;
+  --ability-5: #184f95;
+  --ability-none: #232322;
+
+  --status-good-text: #0ca30c;
+}
+
+@theme inline {
+  --color-surface: var(--surface-1);
+  --color-page: var(--surface-page);
+  --color-sunken: var(--surface-sunken);
+
+  --color-ink: var(--ink-primary);
+  --color-ink-secondary: var(--ink-secondary);
+  --color-ink-muted: var(--ink-muted);
+
+  --color-hairline: var(--line-hairline);
+  --color-axis: var(--line-axis);
+
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+
+  --color-ability-1: var(--ability-1);
+  --color-ability-2: var(--ability-2);
+  --color-ability-3: var(--ability-3);
+  --color-ability-4: var(--ability-4);
+  --color-ability-5: var(--ability-5);
+  --color-ability-none: var(--ability-none);
+
+  --color-good: var(--status-good);
+  --color-warning: var(--status-warning);
+  --color-serious: var(--status-serious);
+  --color-critical: var(--status-critical);
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+html,
+body {
+  background: var(--surface-page);
+  color: var(--ink-primary);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Columns that must align vertically get tabular figures; standalone numbers
+   keep the default proportional ones. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

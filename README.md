@@ -69,7 +69,7 @@ breakdown, because adaptation you cannot inspect is adaptation you cannot trust.
 | Path | What it is |
 |---|---|
 | `apps/api/` | FastAPI — `/health` and `/auth/*` at the root, and behind a session cookie under `/api/v1` the **session layer** (plan → submit → grade → report), mastery, costs and `corpus/status`. The deterministic coding grader, GitHub OAuth, the model-call path, the **interviewer agent** and the **SSE stream** live here too |
-| `apps/web/` | *Empty placeholder.* Next.js 15 app, Phase 5 |
+| `apps/web/` | Next.js 15 app — the shell, the typed API client, the SSE reducer and the **dashboard**. The rest of the routes are Phase 5's remainder |
 | `apps/executor/` | Sandboxed code runner (no network, non-root, resource-capped) — isolation, `POST /execute` and `POST /probe` (the complexity probe) are built |
 | `packages/corpus/` | Versioned question corpus + JSON Schema + validator (48 items today) |
 | `research/` | *Empty placeholder.* Corpus ingestion pipeline, Phase 1 — the 48 items were hand-authored, not pipeline-produced |
@@ -101,7 +101,7 @@ buildlog disagree about what exists, the buildlog is right.**
 | [API](docs/API.md) | Endpoints, session state machine, SSE events, agent tools | 3 | ✅ Sessions, agent, SSE, auth and all five tools built |
 | [COST](docs/COST.md) | Model routing, hard budgets, the ledger | 3 → 6 | Policy set |
 | [ADAPTIVE](docs/ADAPTIVE.md) | Elo + FSRS, evidence, weakness priority, planning | 4 | ✅ Built |
-| [WEB](docs/WEB.md) | Routes, the four mode workspaces, dashboard | 5 | Spec |
+| [WEB](docs/WEB.md) | Routes, the four mode workspaces, dashboard | 5 | ✅ Shell + dashboard built |
 | [INFRA](docs/INFRA.md) | AWS from first principles — written to teach | 6 | Spec |
 | [VOICE](docs/VOICE.md) | Vapi adapter, latency budget, what changes for speech | 7 | Spec |
 | [OPERATIONS](docs/OPERATIONS.md) | Backups, deploys, alarms, runbook | 8 | Spec |
@@ -115,7 +115,9 @@ make dev        # bring up Postgres and run migrations
 make seed       # load the corpus into the database
 make dev-api    # run the API against it (uvicorn --reload)
 make login      # mint a session cookie — every /api/v1 route needs one
-make check      # ruff + mypy + pytest + corpus validate + doc gates + secret scan, then hygiene
+make dev-web    # run the web app (proxies /api and /auth to the API — one origin)
+make check      # ruff + mypy + pytest + corpus validate + doc gates + web checks, then hygiene
+make check-web  # just the web app: eslint, tsc, component tests
 make test-db    # seeds the corpus, then the schema and session tests against live Postgres
 
 make test-sandbox     # every test needing real Docker: escapes, /execute, /probe, grading
@@ -126,7 +128,10 @@ make down             # tear down the local stack
 ```
 
 `make dev` currently brings up Postgres only — the `api`, `web` and `executor`
-containers land in Phase 6, when they have Dockerfiles.
+containers land in Phase 6, when they have Dockerfiles. Until then the three run from
+`make dev-api`, `make dev-web` and the executor directly. The web app talks to the API
+through a same-origin proxy rather than to `localhost:8000`, because the session cookie is
+`SameSite=Lax` and the API mounts no CORS — see [WEB](docs/WEB.md#one-origin-and-why).
 
 Set `SESSION_SECRET` in `.env` before the API is useful: without one, every `/api/v1`
 route answers `503` naming it rather than running open. `make login` then prints a cookie
@@ -176,7 +181,13 @@ owes.
       priority and the planner landed 2026-08-20, verified against both gates in
       [ADAPTIVE](docs/ADAPTIVE.md). Weights are placeholders until real sessions calibrate
       them*
-- [ ] **5 — Web app**
+- [ ] **5 — Web app** — *the shell and the dashboard landed 2026-08-24: Next.js 15
+      behind a same-origin proxy, a typed client over all 25 routes, the SSE event
+      contract and its reducer, and a mastery heatmap over the whole 159-concept taxonomy
+      with the weakness ranking's priority breakdown beside it. Gated by `make check-web`
+      and a CI job — eslint, tsc, 20 component tests against recorded SSE fixtures, and a
+      production build. **Nothing has been opened in a browser yet**, so the visual layer
+      is unreviewed; the remaining eight routes and the Playwright gate are owed*
 - [ ] **6 — AWS deploy**
 - [ ] **7 — Voice via Vapi**
 - [ ] **8 — Hardening**

@@ -1,0 +1,8 @@
+# `create-next-app` leaves esbuild's entry as the literal string
+# "set this to true or false", which fails every `pnpm install` until a human
+# answers it. vitest bundles with esbuild and esbuild ships a native binary, so
+# its install script has to run; nothing else here needs one.
+allowBuilds:
+  esbuild: true
+  sharp: false
+  unrs-resolver: false

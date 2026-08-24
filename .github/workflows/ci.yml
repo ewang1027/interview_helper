@@ -143,3 +143,46 @@ jobs:
           fi
         env:
           GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+
+  web:
+    name: Web (lint · types · components · build)
+    runs-on: ubuntu-latest
+
+    # Its own job rather than a step in `python`: it shares no toolchain with
+    # that one, and running in parallel keeps a frontend typo from waiting on
+    # Postgres, Docker and the sandbox suite to find out.
+    defaults:
+      run:
+        working-directory: apps/web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # Component tests run against recorded SSE fixtures, so no API, no
+      # database and no model provider are involved (docs/WEB.md).
+      - name: Component tests
+        run: pnpm test
+
+      # A build is the only thing that catches a server/client boundary mistake
+      # — a hook in a server component typechecks and then fails at render.
+      - name: Build
+        run: pnpm build

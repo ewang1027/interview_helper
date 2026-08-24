@@ -2,9 +2,9 @@
 SHELL := /bin/bash
 COMPOSE := docker compose -f infra/compose/docker-compose.yml
 
-.PHONY: help setup dev dev-api down check lint typecheck test fmt \
+.PHONY: help setup dev dev-api dev-web down check check-web lint typecheck test fmt \
         corpus-validate seed test-sandbox test-e2e test-db cost-report secret-scan \
-        doc-links doc-check hygiene verify-solutions login test-llm clean
+        doc-links doc-check hygiene verify-solutions login test-llm build-web clean
 
 help: ## Show this help
 	@# [a-zA-Z0-9_-] not [a-z-]: the narrower class silently dropped `test-e2e`
@@ -31,10 +31,27 @@ dev: ## Bring up Postgres (api/web/executor containers land in Phase 6 — see i
 dev-api: ## Run the API against the compose Postgres (uvicorn --reload)
 	uv run uvicorn api.main:app --reload --app-dir apps/api/src
 
+dev-web: ## Run the web app against the API (next dev, proxies /api and /auth to API_ORIGIN)
+	cd apps/web && pnpm dev
+
+build-web: ## Production build of the web app
+	cd apps/web && pnpm build
+
 down: ## Tear down the local stack
 	$(COMPOSE) down
 
-check: lint typecheck test corpus-validate doc-links doc-check secret-scan hygiene ## Everything CI runs, then a commit-hygiene report
+check: lint typecheck test corpus-validate doc-links doc-check check-web secret-scan hygiene ## Everything CI runs, then a commit-hygiene report
+
+check-web: ## Web app: eslint, tsc and the component tests
+	@# Skipped with a message rather than failing when dependencies are not
+	@# installed: `make check` is the gate a Python-only change runs, and making
+	@# it depend on a pnpm install nobody asked for would be a gate people learn
+	@# to skip. CI installs them, so CI always runs it.
+	@if [ -d apps/web/node_modules ]; then \
+	  cd apps/web && pnpm lint && pnpm typecheck && pnpm test; \
+	else \
+	  echo "skipping web checks: apps/web/node_modules absent (run make setup)"; \
+	fi
 
 lint: ## Ruff (ESLint joins in Phase 5, with apps/web)
 	uv run ruff check .

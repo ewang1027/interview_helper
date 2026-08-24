@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-08-22 (post-audit)
+## Where things stand — 2026-08-24
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -24,7 +24,8 @@ detail behind it.
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | a full session against a live provider — gated on Bedrock access, not on code |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within ten sessions — five until `W_UNLOCKS` woke up | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus |
-| **5–8** Web, AWS, voice, hardening | **not started** | — | — |
+| **5** Web app | **partial** — the shell and the dashboard | Next.js 15 app behind a same-origin proxy, the typed API client, the SSE reducer, and the **dashboard** — mastery heatmap over the whole taxonomy, weakness ranking with its priority breakdown, due queue, recent sessions. `make check` and CI both gate it | `/session/new`, the live session view and its four workspaces, the report, and the four read-only routes |
+| **6–8** AWS, voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
 
 One thing worth knowing before reading anything else as further along than it is:
@@ -4239,3 +4240,116 @@ Worth keeping as a finding in its own right: the ranking is honest and the servi
 narrower than the ranking, on purpose. An engine that plans well and explains itself
 imprecisely is a better engine than one that plans badly and explains itself exactly — but
 only the second of those is visible without running the gate, which is why the gate exists.
+
+---
+
+## Phase 5 (the shell) — a client that cannot reach its own API · 2026-08-24
+
+The first Phase 5 work. `apps/web` had been an empty directory since Phase 0, and
+docs/WEB.md a specification nothing had tested. Two of its assumptions did not survive
+contact with the running server.
+
+### The API is unreachable from a browser on another port
+
+docs/WEB.md says the web app is "a pure consumer of API.md" and sets `credentials:
+"include"` on every request. That is necessary and not sufficient. The session cookie is
+`HttpOnly; SameSite=Lax`, set on the API's origin — and **`apps/api` mounts no CORS
+middleware at all**. A page at `localhost:3000` fetching `localhost:8000` is cross-site, so
+the browser withholds the cookie, and the request would be refused before that mattered.
+
+Two ways out: relax the cookie to `SameSite=None; Secure` behind a CORS allowlist, or put
+both services on one origin. This takes the second. `next.config.ts` rewrites `/api/*`,
+`/auth/*` and `/health` to `API_ORIGIN`, so the browser only ever talks to one host, the
+cookie stays first-party, and the API keeps no browser-origin allowlist to get wrong. It is
+also the deployment shape already planned — one ALB routing by path (docs/INFRA.md) — so
+development and production differ in hostnames and nothing else.
+
+Verified against the running stack, not reasoned about:
+
+```
+GET localhost:3000/api/v1/mastery         no cookie    → 401
+GET localhost:3000/api/v1/mastery         with cookie  → {"concepts":[…],"measured":16}
+GET localhost:3000/api/v1/corpus/status   with cookie  → 159 concepts, 48 items
+```
+
+### Every SSE frame is named, so `onmessage` never fires
+
+`Event.as_sse` writes `event: <type>` on every frame. A browser `EventSource` dispatches a
+named frame to a listener registered for that name, and `onmessage` receives **only unnamed
+frames** — so the obvious client, the one that reads `source.onmessage`, sits silent for an
+entire session and reports no error. `EVENT_TYPES` in `src/lib/stream.ts` is the subscribed
+list, kept beside the type union so a new event type cannot be added without appearing in
+it.
+
+The same file records the other end of it: the server closes the stream when the session
+reaches a terminal state, and `EventSource` treats any close as a fault and reconnects
+forever. A finished session left open in a tab reopens a stream every few seconds unless the
+client closes it itself, which it now does on the terminal `session.state`.
+
+### A gap the server cannot see
+
+docs/API.md promises `stream.gap` when a client resumes from before the buffer — and audit
+wave 8 measured a single turn emitting **603 events against a 256-slot buffer**, evicting the
+session's history "with no `stream.gap`, because that check runs once, at stream open". So
+the reducer also checks `seq` itself, on every event, and reports a jump as loss with
+`source: "client"`. That is the case the server is structurally unable to report.
+
+`agent.message.done` is treated as authoritative by *replacing* the delta buffer rather than
+reconciling against it, which is the only handling that survives a dropped delta — asserted
+by a test that deletes one delta from the recorded fixture and expects the finished text.
+
+### The heatmap was one colour, and the reason was arithmetic
+
+`mastery_row_view` helpfully returns `normalized_ability`, and colouring cells by it is the
+obvious thing to do. It divides by the whole rating scale — floor 600, ceiling 2800 — so the
+1550 every concept starts at normalises to **0.43**, and a concept moved 200 points by real
+evidence still lands between 0.34 and 0.52. Sixteen measured concepts spanning 1501 to 1560
+Elo all fell inside one band of five, and the heatmap rendered as a single shade.
+
+Cells band on **Elo** instead, on cutoffs centred at the 1550 start, and the legend prints
+them. `normalized_ability` is not wrong — it is a scale for a 2200-point range being asked
+to resolve a 60-point one.
+
+The two rules docs/WEB.md sets for this chart are structural rather than stylistic, and each
+has a test: ability is a single-hue sequential ramp (never red-to-green), overdue is a ring
+**and a corner wedge** so it survives greyscale, and the observation count is printed in every
+cell because 0.4 from two attempts and 0.4 from thirty are different situations.
+
+The ramp was validated rather than eyeballed — the dataviz skill's checker, against these
+surfaces, as an *ordinal* ramp because the lightest step here means "weak", a real value that
+must stay visible, not "near zero", which may recede:
+
+```
+light  #86b6ef #5598e7 #2a78d6 #1c5cab #104281   on #fcfcfb   ALL CHECKS PASS
+dark   #cde2fb #9ec5f4 #6da7ec #3987e5 #184f95   on #1a1a19   ALL CHECKS PASS
+```
+
+### Two smaller things the scaffold got wrong
+
+`create-next-app@latest` installs **Next 16**, against docs/WEB.md's Next 15 and the 15.5.20
+already used in `backtest-lab`. Pinned back to 15.5.20 / React 19.1.0 rather than taking a
+major-version jump no document had sanctioned; the generated `eslint.config.mjs` imports
+flat configs that only exist in 16's package, so it is bridged through `FlatCompat`.
+
+It also writes `allowBuilds: esbuild: set this to true or false` into
+`pnpm-workspace.yaml` — a literal placeholder that fails **every** `pnpm install` until a
+human answers it, which is a fresh clone with no working test runner.
+
+### What was verified
+
+- `pnpm lint`, `pnpm typecheck`, `pnpm build` — clean.
+- **20 component tests** against recorded SSE fixtures and a hand-built concept set,
+  covering delta reconciliation, both kinds of gap, tool-result pairing, replay after
+  reconnect, the overdue shape, the never-measured neutral, and the Elo banding.
+- The proxy, against the live API, both with and without a cookie.
+- `make check` (Python side) still green — 272 passed.
+
+Not verified: **nothing has been looked at in a browser.** There are no browser tools in
+this environment, so layout, contrast in situ and focus order are unproven; the tests assert
+structure and class names, which is not the same claim. The Playwright run docs/WEB.md names
+as the Phase 5 gate is still owed, and so are the other eight routes.
+
+The dashboard was read against 54 fixture evidence rows written into the local database
+through `apply_evidence`, stamped `grader_version="dev.fixture"`. They are not in the repo,
+and they are undone by deleting those rows and re-running `POST /mastery/recompute` — which
+is exactly the property docs/ADAPTIVE.md claims for a projection.
