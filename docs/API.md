@@ -100,7 +100,7 @@ errors are `application/problem+json`.
 | Method | Path | Purpose | State |
 |---|---|---|---|
 | `POST` | `/sessions` | Create and plan | ✅ built |
-| `GET` | `/sessions/{id}` | Current state, plan, per-item grading status, elapsed time | ✅ built |
+| `GET` | `/sessions/{id}` | Current state, plan, per-item grading status, elapsed time, spend | ✅ built |
 | `GET` | `/sessions/{id}/events` | **SSE stream** — the live channel (below) | ✅ built |
 | `POST` | `/sessions/{id}/turns` | Candidate says something | ✅ built |
 | `POST` | `/sessions/{id}/submissions` | Candidate submits code or an answer | ✅ built |
@@ -141,6 +141,15 @@ adaptation.
 The state in that response is `briefing`, not `planning`: planning is expected to take a
 model call, and the placeholder planner is synchronous, so it is already finished by the
 time the response is written.
+
+**`GET /sessions/{id}` reports `tokens_consumed`, `token_budget` and `budget_enforced`**,
+read from the `llm_calls` ledger and scoped to that session. All three were a constant
+until 2026-08-24 — `0`, absent, and `false` — under a comment saying budgets were "enforced
+nowhere" and no model call had ever been made. Both halves had been untrue since the
+model-call path landed on 2026-08-20, so the route was telling every client budgets were
+off while `enforce_budget` refused calls and `/costs` reported the spend. Nothing caught it
+because nothing asserted on the two fields; a test does now, and the limit ships beside the
+figure because a consumed count with no denominator reads as smaller than it is.
 
 **`POST /sessions/{id}/turns`**
 

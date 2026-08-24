@@ -4514,3 +4514,84 @@ The second row is the one worth having a test for: the exemption is about who ca
 documentation, not about which paths are exempt, so a bot smuggling source past it would
 be the exemption becoming a hole. The third keeps the rule intact for people — the
 15.5.20 → 15.5.23 bump in the previous entry *did* owe a document, and wrote one.
+
+---
+
+## Phase 3 (correction) — the session route said budgets were off · 2026-08-24
+
+Found while writing the web client's types, fixed here because a client cannot fix it.
+
+```python
+# apps/api/src/api/sessions.py, until today
+# docs/COST.md's budgets are read into settings and enforced nowhere, and no model
+# call has ever been made. Reporting a consumed figure would imply a meter exists.
+"tokens_consumed": 0,
+"budget_enforced": False,
+```
+
+Every word of that comment was true when it was written and neither half survived
+2026-08-20, when the model-call path landed with `enforce_budget` refusing a spent session
+and every call writing an `llm_calls` row. So for four days `GET /sessions/{id}` told every
+client that budgets were off and nothing had been spent, while `/costs` reported **29 real
+calls** against the same database and `enforce_budget` was live in front of every one of
+them.
+
+It survived because **nothing asserted on those two fields.** The suite had a test for the
+budget route, for the enforcement, for concurrent calls against a spent ceiling — and none
+for the third place the same fact is published. A constant is invisible to a test that
+never reads it.
+
+Now read from the ledger, scoped to the session, with the ceiling beside it:
+
+```jsonc
+"tokens_consumed": 1_240,   // llm.tokens_spent(db, session_id=…)
+"token_budget":  400_000,   // the limit enforce_budget refuses on
+"budget_enforced": true
+```
+
+`token_budget` is additive rather than decorative: a consumed figure with no denominator
+reads as smaller than it is, which is the same reasoning that puts `measured` next to
+`GET /mastery`'s rows.
+
+The test asserts against `spend_now(session_id)` rather than a literal — hardcoding the
+number would be the same mistake one layer up — and it was checked by putting the old
+constants back and watching it fail:
+
+```
+>       assert before["budget_enforced"] is True
+E       assert False is True
+```
+
+The web app's session header now shows the pair, which is the first time that number has
+been visible anywhere outside `/costs`.
+
+### A side effect worth keeping: the projection claim, tested by accident
+
+The dashboard was read against 54 fixture evidence rows written into the local database.
+`make test-db` then failed **10 tests** — `test_a_cold_start_plan_says_it_is_calibrating`,
+`test_an_injected_weakness_gets_drilled`, and eight others:
+
+```
+>       assert plan["calibration"] is True
+E       assert False is True
+```
+
+Correctly. A cold-start plan is not calibrating once evidence exists, and the fixture rows
+were evidence. Nothing was wrong with the code; the gate was reading a database somebody
+had put data in.
+
+Undoing it is the interesting part, because it is the claim docs/ADAPTIVE.md makes about
+`mastery` being a projection rather than a source:
+
+```
+deleted 54 dev.fixture evidence rows
+POST /api/v1/mastery/recompute  →  {"evidence_replayed": 0, "concepts": 0}
+make test-db                    →  150 passed
+```
+
+Delete the evidence, replay, and the projection is exactly what it was — no hand-patching,
+no residue in `mastery` or in `items.elo`. That property is asserted by a gate already; it
+had not been exercised by deleting real rows out from under a populated table. The
+practical lesson is narrower and worth stating: **`make test-db` runs against the same
+local database development uses**, so anything written there for a screenshot is something
+the next gate run will read.

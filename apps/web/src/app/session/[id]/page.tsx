@@ -10,7 +10,7 @@ import { Badge, Button, Card, Skeleton } from "@/components/ui/primitives";
 import { Workspace, type Draft } from "@/components/workspaces";
 import { api, idempotencyKey } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { duration, percent } from "@/lib/format";
+import { compactNumber, duration, percent } from "@/lib/format";
 import { keys } from "@/lib/queries";
 import { REPORTABLE, type ItemOutcome } from "@/lib/types";
 import { useSessionStream } from "@/lib/use-session-stream";
@@ -122,6 +122,7 @@ export default function LiveSession() {
         <Badge tone={finished ? "good" : "accent"}>{state}</Badge>
         <ConnectionDot connection={stream.connection} finished={finished} />
         <Timer elapsed={detail.elapsed_seconds} budgetMinutes={detail.budget_minutes} />
+        <Spend consumed={detail.tokens_consumed} limit={detail.token_budget} />
         <div className="ml-auto flex items-center gap-2">
           {finished ? (
             <Link
@@ -240,6 +241,31 @@ function Timer({ elapsed, budgetMinutes }: { elapsed: number; budgetMinutes: num
       className={cn("tabular text-sm", over ? "text-[var(--status-critical)]" : "text-ink-muted")}
     >
       {duration(seconds)} of {budgetMinutes}m
+    </span>
+  );
+}
+
+/**
+ * Token spend against the session ceiling.
+ *
+ * Both numbers come from the ledger — until 2026-08-24 this route answered a
+ * hardcoded zero and `budget_enforced: false`, so there was nothing honest to
+ * show here. The limit is shown beside the figure because a consumed count
+ * with no denominator reads as smaller than it is.
+ */
+function Spend({ consumed, limit }: { consumed: number; limit: number }) {
+  if (!limit) return null;
+  const fraction = consumed / limit;
+
+  return (
+    <span
+      className={cn(
+        "tabular text-xs",
+        fraction >= 0.9 ? "text-[var(--status-critical)]" : "text-ink-muted",
+      )}
+      title={`${consumed.toLocaleString()} of ${limit.toLocaleString()} tokens — refused, not downgraded, at the ceiling`}
+    >
+      {compactNumber(consumed)}/{compactNumber(limit)} tokens
     </span>
   );
 }

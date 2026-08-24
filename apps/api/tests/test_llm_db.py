@@ -294,6 +294,44 @@ def _a_session(created_sessions: list[str]) -> str:
     return str(created.json()["id"])
 
 
+def test_the_session_view_reports_the_spend_the_ledger_holds(ledger, created_sessions):
+    """`GET /sessions/{id}` reports real spend, not a constant.
+
+    It used to answer `tokens_consumed: 0, budget_enforced: false` unconditionally, under
+    a comment saying budgets were "enforced nowhere" and no model call had ever been made.
+    Both halves stopped being true the day the model-call path landed, and nothing caught
+    it because nothing asserted on those two fields — so the route told every client that
+    budgets were off while `enforce_budget` was refusing calls and `/costs` was reporting
+    the spend.
+
+    Asserted against the ledger rather than against a literal: a test that hardcodes the
+    number is the same mistake one layer up.
+    """
+    session_id = _a_session(created_sessions)
+    client = sign_in(TestClient(app))
+
+    before = client.get(f"/api/v1/sessions/{session_id}").json()
+    assert before["tokens_consumed"] == 0
+    assert before["budget_enforced"] is True
+
+    llm.complete(
+        job="interviewing",
+        messages=[{"role": "user", "content": "hi"}],
+        session_id=session_id,
+        client=FakeAnthropic(),
+        settings=llm_settings(),
+    )
+
+    after = client.get(f"/api/v1/sessions/{session_id}").json()
+    assert after["tokens_consumed"] == spend_now(session_id) > 0
+    assert after["token_budget"] == llm_settings().max_tokens_per_session
+    assert after["budget_enforced"] is True
+
+    # Scoped to this session, like every other figure under /api/v1.
+    other = _a_session(created_sessions)
+    assert client.get(f"/api/v1/sessions/{other}").json()["tokens_consumed"] == 0
+
+
 # --- The routes ------------------------------------------------------------------------------
 
 

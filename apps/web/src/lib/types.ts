@@ -117,7 +117,10 @@ export interface SessionDetail {
   elapsed_seconds: number;
   plan: Plan | null;
   items: ItemOutcome[];
+  /** Real spend from the `llm_calls` ledger, scoped to this session. */
   tokens_consumed: number;
+  /** The per-session ceiling `enforce_budget` refuses on. */
+  token_budget: number;
   budget_enforced: boolean;
 }
 

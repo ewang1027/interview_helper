@@ -34,6 +34,7 @@ from sqlalchemy import update
 from sqlmodel import Session, col, select
 
 from api import events as event_bus
+from api import llm
 from api.agent import loop as agent_loop
 from api.db import get_engine
 from api.errors import ProblemError, not_found, unavailable, unprocessable, wrong_state
@@ -49,6 +50,7 @@ from api.grading.rubric import RubricGrade, grade_rubric
 from api.mastery import apply_evidence, lock_projection
 from api.models import Artifact, ConceptEvidence, Grading, InterviewSession, Item, Turn
 from api.planner import build_plan, eligible_items, plan_item_ids
+from api.settings import get_settings
 from corpus.loader import load_items
 from corpus.models import Item as CorpusItem
 
@@ -708,10 +710,19 @@ def session_view(db: Session, session_row: InterviewSession) -> dict[str, Any]:
         "elapsed_seconds": int((ended - session_row.started_at).total_seconds()),
         "plan": session_row.plan,
         "items": _item_outcomes(db, session_row),
-        # docs/COST.md's budgets are read into settings and enforced nowhere, and no model
-        # call has ever been made. Reporting a consumed figure would imply a meter exists.
-        "tokens_consumed": 0,
-        "budget_enforced": False,
+        # Both of these were hardcoded, with a comment saying "budgets are read into
+        # settings and enforced nowhere, and no model call has ever been made". Both
+        # halves stopped being true on 2026-08-20, when the model-call path landed with
+        # `enforce_budget` refusing a spent session and every call writing `llm_calls` —
+        # so this route was telling every client that budgets were off while `/costs`
+        # reported real spend. Read from the ledger now, like `GET /costs/budget` does.
+        #
+        # The limit ships beside the figure deliberately: a consumed count with no
+        # denominator reads as small, which is the same reason `GET /mastery` reports
+        # `measured` next to its rows.
+        "tokens_consumed": llm.tokens_spent(db, session_id=session_row.id),
+        "token_budget": get_settings().max_tokens_per_session,
+        "budget_enforced": True,
     }
 
 
