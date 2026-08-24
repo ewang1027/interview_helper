@@ -69,7 +69,7 @@ breakdown, because adaptation you cannot inspect is adaptation you cannot trust.
 | Path | What it is |
 |---|---|
 | `apps/api/` | FastAPI — `/health` and `/auth/*` at the root, and behind a session cookie under `/api/v1` the **session layer** (plan → submit → grade → report), mastery, costs and `corpus/status`. The deterministic coding grader, GitHub OAuth, the model-call path, the **interviewer agent** and the **SSE stream** live here too |
-| `apps/web/` | Next.js 15 app — the shell, the typed API client, the SSE reducer and the **dashboard**. The rest of the routes are Phase 5's remainder |
+| `apps/web/` | Next.js 15 app — all nine routes: dashboard, session creation with its plan preview, the live interview and its four workspaces, the report, concepts, history, corpus and costs |
 | `apps/executor/` | Sandboxed code runner (no network, non-root, resource-capped) — isolation, `POST /execute` and `POST /probe` (the complexity probe) are built |
 | `packages/corpus/` | Versioned question corpus + JSON Schema + validator (48 items today) |
 | `research/` | *Empty placeholder.* Corpus ingestion pipeline, Phase 1 — the 48 items were hand-authored, not pipeline-produced |
@@ -101,7 +101,7 @@ buildlog disagree about what exists, the buildlog is right.**
 | [API](docs/API.md) | Endpoints, session state machine, SSE events, agent tools | 3 | ✅ Sessions, agent, SSE, auth and all five tools built |
 | [COST](docs/COST.md) | Model routing, hard budgets, the ledger | 3 → 6 | Policy set |
 | [ADAPTIVE](docs/ADAPTIVE.md) | Elo + FSRS, evidence, weakness priority, planning | 4 | ✅ Built |
-| [WEB](docs/WEB.md) | Routes, the four mode workspaces, dashboard | 5 | ✅ Shell + dashboard built |
+| [WEB](docs/WEB.md) | Routes, the four mode workspaces, dashboard | 5 | ✅ All nine routes built |
 | [INFRA](docs/INFRA.md) | AWS from first principles — written to teach | 6 | Spec |
 | [VOICE](docs/VOICE.md) | Vapi adapter, latency budget, what changes for speech | 7 | Spec |
 | [OPERATIONS](docs/OPERATIONS.md) | Backups, deploys, alarms, runbook | 8 | Spec |
@@ -181,13 +181,17 @@ owes.
       priority and the planner landed 2026-08-20, verified against both gates in
       [ADAPTIVE](docs/ADAPTIVE.md). Weights are placeholders until real sessions calibrate
       them*
-- [ ] **5 — Web app** — *the shell and the dashboard landed 2026-08-24: Next.js 15
-      behind a same-origin proxy, a typed client over all 25 routes, the SSE event
-      contract and its reducer, and a mastery heatmap over the whole 159-concept taxonomy
-      with the weakness ranking's priority breakdown beside it. Gated by `make check-web`
-      and a CI job — eslint, tsc, 20 component tests against recorded SSE fixtures, and a
-      production build. **Nothing has been opened in a browser yet**, so the visual layer
-      is unreviewed; the remaining eight routes and the Playwright gate are owed*
+- [ ] **5 — Web app** — *every route landed 2026-08-24: Next.js 15 behind a
+      same-origin proxy (the session cookie is `SameSite=Lax` and the API mounts no CORS,
+      so cross-origin was never going to work), a typed client over all 25 endpoints, and
+      the SSE reducer that treats `agent.message.done` as authoritative and reports a
+      `seq` jump the server is structurally unable to see. The dashboard's heatmap covers
+      the whole 159-concept taxonomy; `/session/new` shows the plan before you commit to
+      it; the live view carries the transcript, the interviewer's tool calls and each
+      hint's cost, with a workspace per mode. Gated by `make check-web` and a CI job —
+      eslint, tsc, 26 component tests, production build. **Nothing has been opened in a
+      browser yet**, so the visual layer is unreviewed; the Playwright gate is owed, and
+      so is a live session against a real interviewer*
 - [ ] **6 — AWS deploy**
 - [ ] **7 — Voice via Vapi**
 - [ ] **8 — Hardening**

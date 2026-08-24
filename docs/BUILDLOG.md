@@ -24,7 +24,7 @@ detail behind it.
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | a full session against a live provider — gated on Bedrock access, not on code |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within ten sessions — five until `W_UNLOCKS` woke up | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus |
-| **5** Web app | **partial** — the shell and the dashboard | Next.js 15 app behind a same-origin proxy, the typed API client, the SSE reducer, and the **dashboard** — mastery heatmap over the whole taxonomy, weakness ranking with its priority breakdown, due queue, recent sessions. `make check` and CI both gate it | `/session/new`, the live session view and its four workspaces, the report, and the four read-only routes |
+| **5** Web app | **partial** — all nine routes | every route docs/WEB.md specifies: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`. 26 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
 | **6–8** AWS, voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
 
@@ -4353,3 +4353,87 @@ The dashboard was read against 54 fixture evidence rows written into the local d
 through `apply_evidence`, stamped `grader_version="dev.fixture"`. They are not in the repo,
 and they are undone by deleting those rows and re-running `POST /mastery/recompute` — which
 is exactly the property docs/ADAPTIVE.md claims for a projection.
+
+---
+
+## Phase 5 (the routes) — every screen docs/WEB.md specifies · 2026-08-24
+
+The other eight routes, the four workspaces, and three places where building the client
+found something about the server.
+
+### The workspaces are shaped by their graders, not by their modes
+
+The quant workspace splits derivation from answer because `closing_statement` does. The
+grader reads the answer from a declaration ("Answer: 39") wherever it appears, and failing
+that from the last line carrying arithmetic — a rule that exists because a derivation
+mentions numbers that are not the answer, and a wrong first attempt on line two used to
+outrank the right answer on line four. So the answer field is appended as a declared final
+line rather than left for the heuristic, and an empty field appends *nothing*: a candidate
+who never committed to a number has not got it wrong, and the two score differently.
+
+The design workspace is a structured component editor for the reason docs/WEB.md gives —
+"a grader that cannot read the artifact produces vibes". Removing a component also removes
+its connections, because an edge to a deleted node serialises as `?` and a rubric grader
+citing `?` is citing nothing. The *visual* canvas is not built and is not faked: the
+grading value is in the structure, and a layout carries none of it.
+
+The behavioral workspace omits empty STAR sections rather than sending the heading. A
+heading with nothing under it reads as an attempt at that section, which is worse than its
+absence.
+
+### `/corpus` says what is missing instead of showing an empty browser
+
+docs/WEB.md wants a corpus browser with unseen statements redacted. That needs
+`GET /corpus/items/{id}` — specified in docs/API.md, not built — **and** something that
+lists item ids to reach it with, which is not specified anywhere. The page shows the
+counts `GET /corpus/status` really returns and then states the gap. An empty browser looks
+broken; a stated gap is a gap.
+
+### `session_view` still says no model call has ever been made
+
+Found while typing the client, not fixed here because it is not the web app's to fix:
+
+```python
+# apps/api/src/api/sessions.py
+"tokens_consumed": 0,
+"budget_enforced": False,
+```
+
+with the comment "docs/COST.md's budgets are read into settings and enforced nowhere, and
+no model call has ever been made". Both halves stopped being true on 2026-08-20, when the
+model-call path landed with the budget enforced and the ledger written — `/costs` reports
+29 real calls against this database. So `GET /sessions/{id}` tells every client that
+budgets are off. The web app reads its budget banner off the SSE `budget.warning` event
+instead, which is real; the two fields are a Phase 3 correction and are written down here
+rather than carried in someone's head.
+
+### `Idempotency-Key` is sent and ignored
+
+docs/API.md says it is "owed before the web app, which will retry on flaky networks". The
+web app now exists and it is still owed, so the client sends the header and the comment in
+`api.ts` says outright that the server drops it. What *is* protected is the harmful half —
+one item cannot write two sets of evidence into one session, because a second submission
+is refused `409` — and TanStack Query is configured not to retry mutations. A user pressing
+a button twice still creates two sessions.
+
+### A trap worth writing down
+
+`pnpm build` while `next dev` is running writes into the same `.next` directory and
+corrupts it. Every route then answers **500** with `ENOENT: _buildManifest.js.tmp.*` — an
+error that names a temp file and nothing about the cause. `rm -rf .next` and restart.
+
+### What was verified
+
+- **26 component tests**, up from 20: the quant declaration and its absence, the design
+  serialisation and its dangling-edge removal, the behavioral omission, plus the reducer
+  and heatmap suites. The coding workspace is deliberately untested — it renders Monaco,
+  which does not run under jsdom, and asserting against a stub of the editor would test
+  the stub.
+- **All nine routes answer 200** against a live stack with a real session created through
+  the proxy (`01M0TFKWN9…`, quant, three planned items).
+- `pnpm lint`, `pnpm typecheck`, `make check` — clean, 272 Python tests still passing.
+
+Still not verified, and still the most important sentence here: **nothing has been opened
+in a browser.** Layout, contrast in situ, focus order and keyboard reachability are
+unproven. The component tests assert structure and class names, which would not catch a
+collision, an overflow, or a control nothing can tab to.

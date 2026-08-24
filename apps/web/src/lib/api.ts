@@ -124,11 +124,19 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 /**
- * A key that makes a retried POST safe to send twice.
+ * A key that would make a retried POST safe to send twice.
  *
  * docs/API.md lists `Idempotency-Key` on `POST /sessions` and `/submissions` as
  * owed *before* this app, precisely because a browser on a flaky network
- * retries. The client sends one on every such request; the server honours it.
+ * retries — and **the server does not honour it yet**. The header is sent
+ * anyway so the client half is in place and the server half is a server change
+ * alone, but until it lands a retried `POST /sessions` creates two sessions.
+ *
+ * What is already protected is the harmful half: one item cannot write two sets
+ * of evidence into one session, because a second submission for it is refused
+ * `409`. Retries are also disabled for mutations in `providers.tsx`, so nothing
+ * here retries a POST on its own — but a user pressing a button twice, or a
+ * browser replaying a request, is not covered.
  */
 export function idempotencyKey(): string {
   return crypto.randomUUID();

@@ -1,13 +1,13 @@
 # Web app
 
-> **Status:** Partly built (2026-08-24). **Live:** the app shell and navigation, the typed
-> API client, the SSE event contract and its reducer, and the **dashboard** — mastery
-> heatmap, weakness ranking with its priority breakdown, due queue and recent sessions.
-> `make check-web` and a CI job run eslint, tsc and the component tests.
-> **Not built:** every other route below — `/session/new`, the live session view and its
-> four workspaces, the report, `/concepts`, `/history`, `/corpus`, `/costs` — and the
-> Playwright gate. Nothing here has been opened in a browser yet; see the caveat under
-> **Testing**.
+> **Status:** Built (2026-08-24) — **every route below exists**: the dashboard,
+> `/session/new`, the live session view with a workspace per mode, the report,
+> `/concepts`, `/concepts/{id}`, `/history`, `/corpus` and `/costs`. `make check-web` and
+> a CI job run eslint, tsc and 26 component tests.
+> **Not built:** the Playwright gate; `/corpus` lists nothing, because the endpoint it
+> needs does not exist (see that section); Monaco loads from a CDN. Nothing here has been
+> opened in a browser yet — see the caveat under **Testing**, which is the most important
+> line on this page.
 > Related: [API](API.md) (everything here consumes it) · [ADAPTIVE](ADAPTIVE.md) (what the dashboard visualizes)
 
 Next.js 15 App Router, React 19, TypeScript strict, Tailwind v4, shadcn/ui, TanStack
@@ -55,6 +55,15 @@ maintain, for a service with exactly one browser client.
 | `/history` | Session history, filterable by mode and date |
 | `/corpus` | Browse the corpus. Statements of unseen items stay redacted |
 | `/costs` | Token and dollar spend from the ledger |
+
+`/corpus` shows what `GET /corpus/status` reports and then says plainly that browsing is
+not built, rather than rendering an empty browser: reading an item you have not been
+served defeats the measurement, so it needs `GET /corpus/items/{id}` (specified, not
+built) *and* something listing item ids to reach it with (not specified). An empty
+browser looks broken; a stated gap is a gap.
+
+`/concepts` assembles the taxonomy from four weakness rankings, one per mode, for the
+reason given under **Dashboard** — there is no `GET /concepts`.
 
 ## The live session view
 
