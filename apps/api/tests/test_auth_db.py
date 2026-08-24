@@ -68,13 +68,31 @@ def restore_github_id():
         db.commit()
 
 
-def complete_login(client: TestClient, account: int) -> Any:
-    """Drive /auth/login then /auth/callback, the way a browser would."""
+def complete_login(client: TestClient, account: int, **kwargs: Any) -> Any:
+    """Drive /auth/login then /auth/callback, the way a browser would.
+
+    Puts the single user row back into the state a database predating auth was in first,
+    unless some row already carries `account` — so the login *adopts* rather than creating.
+
+    That setup used to live in the one test about adoption, and every other test here
+    depended on running after it. `restore_github_id` puts the real id back when each test
+    finishes, so the next login found no pre-auth row and correctly created a **second
+    user** — correct behaviour, and fatal to a suite whose fixtures assume one. It stayed
+    invisible while this machine's row happened to still be pre-auth, and surfaced the hour
+    a real GitHub login set a real id on it.
+    """
+    with Session(get_engine()) as db:
+        if db.exec(select(User).where(User.github_id == account)).first() is None:
+            user = single_user(db)
+            user.github_id = LOCAL_GITHUB_ID
+            db.add(user)
+            db.commit()
+
     app.dependency_overrides[get_settings] = oauth_settings
     app.dependency_overrides[get_github] = lambda: FakeGitHub(account)
     location = client.get("/auth/login", follow_redirects=False).headers["location"]
     state = location.split("state=")[1].split("&")[0]
-    return client.get(f"/auth/callback?code=the-code&state={state}")
+    return client.get(f"/auth/callback?code=the-code&state={state}", **kwargs)
 
 
 def test_the_first_login_adopts_the_pre_auth_user(restore_github_id):
@@ -110,13 +128,9 @@ def test_a_browser_completing_a_login_is_sent_to_the_app(restore_github_id):
     `GITHUB_REDIRECT_URI` about where home is.
     """
     client = TestClient(app)
-    app.dependency_overrides[get_settings] = oauth_settings
-    app.dependency_overrides[get_github] = lambda: FakeGitHub(REAL_GITHUB_ID)
-    location = client.get("/auth/login", follow_redirects=False).headers["location"]
-    state = location.split("state=")[1].split("&")[0]
-
-    browser = client.get(
-        f"/auth/callback?code=the-code&state={state}",
+    browser = complete_login(
+        client,
+        REAL_GITHUB_ID,
         headers={"Accept": "text/html,application/xhtml+xml"},
         follow_redirects=False,
     )

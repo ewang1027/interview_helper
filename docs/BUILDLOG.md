@@ -4964,3 +4964,39 @@ confidence.
 credential on a machine whose repo is public — and pasting links reaches the same place
 without one. The endpoint is also unofficial and can change without notice; it is one
 module, and the failure mode is a skipped import rather than a lost entry.
+
+### A test that only passed because nobody had ever logged in
+
+`make test-db` failed two ways immediately after the first real GitHub login on this
+machine, and the cause is worth more than the fix.
+
+`complete_login` drives `/auth/login` then `/auth/callback` as a browser would. Adoption —
+the first real login inheriting the pre-auth row rather than starting a second user — only
+happens when that row still *looks* pre-auth. Exactly one test set that up, and every other
+test calling the helper depended on running after it. Worse, `restore_github_id` puts the
+original id back when each test finishes, so the next login found no pre-auth row and
+correctly created a **second user**:
+
+```
+users
+  01M0GJJKKNVA183TV4ER819CS4  172091321   ← the real row, with all the evidence
+  01M0TY5ZVN10NDCXW01EZNGTGV      90210   ← left behind by a test
+```
+
+From there every fixture assuming one user fails, which is what the two failures were.
+
+The behaviour is correct — a login for an account no row carries *should* create one. The
+test was wrong, and mine (`test_a_browser_completing_a_login_is_sent_to_the_app`, added
+hours earlier) was the one that leaked, because it logged in without arranging the state
+the helper's other callers had been silently inheriting.
+
+`complete_login` now puts the row into the pre-auth state itself unless some row already
+carries that account, so no caller depends on ordering. Verified by running the suite three
+times end to end: **158 passed each time**, with the users table left exactly as found —
+one row, the real id.
+
+**CI could not have caught this, and still cannot.** It builds a database from scratch, so
+its user row is always pre-auth and adoption always succeeds. The failure needs a database
+somebody has actually logged into, which by construction only ever exists on a real machine.
+The same is true of the practice-log fixtures earlier today. Worth stating plainly: the
+local database is a *different* test environment from CI's, and the difference is history.
