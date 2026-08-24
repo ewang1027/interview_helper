@@ -97,6 +97,37 @@ def test_the_first_login_adopts_the_pre_auth_user(restore_github_id):
         assert len(db.exec(select(User)).all()) == 1
 
 
+def test_a_browser_completing_a_login_is_sent_to_the_app(restore_github_id):
+    """A browser gets a 303 home; anything else still gets the JSON body.
+
+    The callback answered JSON unconditionally, "because there is no web app to redirect
+    to until Phase 5". Phase 5 landed and the premise expired, leaving a browser that had
+    just signed in looking at a JSON document with no way back to the app.
+
+    The redirect is relative on purpose: it resolves against whichever origin served the
+    request, which is necessarily the origin the cookie was just set on. Sending the user
+    to an absolute host would need a second setting that could disagree with
+    `GITHUB_REDIRECT_URI` about where home is.
+    """
+    client = TestClient(app)
+    app.dependency_overrides[get_settings] = oauth_settings
+    app.dependency_overrides[get_github] = lambda: FakeGitHub(REAL_GITHUB_ID)
+    location = client.get("/auth/login", follow_redirects=False).headers["location"]
+    state = location.split("state=")[1].split("&")[0]
+
+    browser = client.get(
+        f"/auth/callback?code=the-code&state={state}",
+        headers={"Accept": "text/html,application/xhtml+xml"},
+        follow_redirects=False,
+    )
+
+    assert browser.status_code == 303
+    assert browser.headers["location"] == "/"
+    # The cookie still has to be set — a redirect that forgot it would loop.
+    assert "ih_session" in browser.headers.get("set-cookie", "")
+    assert client.get("/auth/me").status_code == 200
+
+
 def test_logging_in_twice_does_not_create_a_second_user(restore_github_id):
     client = TestClient(app)
     first = complete_login(client, REAL_GITHUB_ID).json()["user_id"]

@@ -457,9 +457,25 @@ than a case inside the dependency.
 | Route | Does |
 |---|---|
 | `GET /auth/login` | Redirects to GitHub with a signed, cookie-echoed `state` |
-| `GET /auth/callback` | Exchanges the code, checks the account, sets the cookie, answers JSON |
+| `GET /auth/callback` | Exchanges the code, checks the account, sets the cookie. **303 to `/` for a browser** (`Accept: text/html`), JSON for anything else |
 | `GET /auth/me` | The principal, or `401` |
 | `POST /auth/logout` | Clears the cookie, `204` |
+
+**The callback answers a browser differently from a script**, and this document used to
+say it always answered JSON — "because there is no web app to redirect to until Phase 5".
+Phase 5 landed on 2026-08-24 and left a browser that had just signed in looking at a JSON
+document with no way back. A request whose `Accept` carries `text/html` now gets a `303`
+to `/`; everything else still gets `{authenticated, user_id, github_id}`, which the tests
+and any tooling driving the flow want.
+
+The redirect is **relative**, so it resolves against whichever origin served the request —
+necessarily the origin the cookie was just set on. That is why running the flow through
+the web app's proxy returns the user to the web app, and why no second "where is home"
+setting exists to disagree with `GITHUB_REDIRECT_URI`. It also means **`GITHUB_REDIRECT_URI`
+should be the web app's origin, not the API's**, whenever a browser is involved: a cookie
+set on the API's port is cross-site to a page on the web app's, and `SameSite=Lax`
+withholds it — sign-in appears to succeed and every request afterwards is a `401`
+([WEB](WEB.md#one-origin-and-why)).
 
 **The cookie is signed, not encrypted, and carries no secret** — a user id, its GitHub id,
 and an expiry, under HMAC-SHA256 with `SESSION_SECRET`. Verification never touches the

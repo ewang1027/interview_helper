@@ -331,9 +331,20 @@ def callback(
 ) -> Response:
     """Exchange the code, check the account, adopt the user row, set the cookie.
 
-    Answers JSON rather than redirecting: there is no web app to redirect to until Phase 5
-    (docs/WEB.md), and a redirect to a route that does not exist is a worse first
-    impression than a body that says what happened.
+    This used to answer JSON unconditionally, "because there is no web app to redirect to
+    until Phase 5". Phase 5 landed on 2026-08-24 and the premise expired with it — a
+    browser completing a login was left looking at a JSON document, having to find its own
+    way back to an app that now exists.
+
+    So a browser is sent home and everything else still gets the body. The two are told
+    apart by `Accept`, because that is the one thing a browser navigation reliably says
+    about itself: GitHub sends a *browser* here, while the tests and any tooling that
+    drives the flow want `user_id` and `github_id` rather than a 303.
+
+    The redirect is **relative**, deliberately. It resolves against whichever origin
+    served the request, which is necessarily the origin the cookie was just set on — so
+    running the flow through the web app's proxy sends the user back to the web app, and
+    no second setting can disagree with `GITHUB_REDIRECT_URI` about where "home" is.
     """
     client_id, client_secret, allowed_id = _oauth_config(settings)
     secret = _secret(settings)
@@ -359,8 +370,11 @@ def callback(
         raise forbidden("That GitHub account is not the one this deployment serves.")
 
     user = user_for_github_id(db, account)
-    response = JSONResponse(
-        {"authenticated": True, "user_id": user.id, "github_id": account},
+    wants_html = "text/html" in request.headers.get("accept", "")
+    response: Response = (
+        RedirectResponse("/", status_code=303)
+        if wants_html
+        else JSONResponse({"authenticated": True, "user_id": user.id, "github_id": account})
     )
     _set_cookie(
         response,

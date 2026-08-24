@@ -4737,3 +4737,32 @@ run on one origin.
 not reported as a misconfiguration. `/login` renders 200, and the three server responses it
 branches on were checked live — `/auth/login` 503, `/auth/me` 401 without a cookie and 200
 with one.
+
+### The callback's reason for answering JSON had expired
+
+Same shape as the `tokens_consumed` finding, found the same way — by using the thing.
+`/auth/callback` carried this:
+
+> Answers JSON rather than redirecting: there is no web app to redirect to until Phase 5
+> (docs/WEB.md), and a redirect to a route that does not exist is a worse first impression
+> than a body that says what happened.
+
+Entirely correct, and it named its own expiry date. Phase 5 landed hours earlier, so a
+browser finishing a GitHub login was dropped on a JSON document with no way back to an app
+that now existed.
+
+A request whose `Accept` carries `text/html` now gets a `303` to `/`; everything else still
+gets `{authenticated, user_id, github_id}`. Negotiated rather than switched outright
+because three tests assert that body and it is the useful answer for anything driving the
+flow programmatically — GitHub sends a *browser* here, and `Accept` is the one thing a
+browser navigation reliably says about itself.
+
+The redirect is **relative**, which is the part worth keeping. It resolves against whichever
+origin served the request — necessarily the origin the cookie was just set on — so the flow
+run through the web app's proxy returns to the web app, and there is no second "where is
+home" setting able to disagree with `GITHUB_REDIRECT_URI`.
+
+Verified live after configuring a real OAuth app: `/auth/login` answers `302` to
+github.com with `redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fcallback` and sets
+the state cookie on `:3000`. The new test asserts the `303`, the `Location`, and that the
+session cookie is still set — a redirect that forgot the cookie would loop forever.
