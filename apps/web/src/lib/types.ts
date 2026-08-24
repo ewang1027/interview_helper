@@ -343,6 +343,23 @@ export interface ProblemList {
   next_cursor: string | null;
 }
 
+export interface ImportResult {
+  imported: {
+    id: string;
+    slug: string;
+    title: string;
+    difficulty: string | null;
+    /** Pre-selected, but still awaiting confirmation — see `awaiting_confirmation`. */
+    suggested_concept_id: string | null;
+    why: string;
+    topic_tags: string[];
+  }[];
+  skipped: { input: string; slug?: string; reason: string }[];
+  /** Every import is held: nothing counts until a human confirms it. */
+  awaiting_confirmation: number;
+  with_a_suggestion: number;
+}
+
 export interface LogProblemBody {
   title: string;
   url: string;

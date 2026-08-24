@@ -18,10 +18,17 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
+from api import leetcode
 from api import practice as service
 from api.auth import CurrentPrincipal
 from api.db import get_session
-from api.schemas import ClassificationRequest, LogProblemRequest, ReviewRequest
+from api.errors import unavailable
+from api.schemas import (
+    ClassificationRequest,
+    ImportLeetCodeRequest,
+    LogProblemRequest,
+    ReviewRequest,
+)
 
 router = APIRouter(tags=["practice"])
 
@@ -61,6 +68,32 @@ def log_problem(
         client=client,
     )
     return service.problem_detail(db, problem.id)
+
+
+@router.post("/practice/import/leetcode", status_code=201)
+def import_leetcode(
+    body: ImportLeetCodeRequest,
+    db: DbSession,
+    principal: CurrentPrincipal,
+) -> dict[str, Any]:
+    """Import LeetCode problems by slug or URL, or from a public profile's recent solves.
+
+    Metadata only — a title, a difficulty and the topic tags. No problem statement is
+    requested or stored, which is what keeps this inside docs/PRACTICE_LOG.md's rule
+    rather than an exception to it.
+
+    Everything imported lands `pending_classification` with the concept its tags name
+    already selected. That is deliberate and not a limitation: a resolved classification
+    cannot be re-tagged, because its evidence is written and evidence is immutable — so a
+    wrong auto-accept would be permanent, while a suggestion costs one confirmation.
+    """
+    slugs = list(body.slugs)
+    if body.username:
+        try:
+            slugs += [solve.slug for solve in leetcode.recent_solves(body.username)]
+        except leetcode.LeetCodeError as exc:
+            raise unavailable(f"LeetCode: {exc}") from exc
+    return service.import_from_leetcode(db, user_id=principal.user_id, slugs=slugs)
 
 
 @router.get("/practice/problems")

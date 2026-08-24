@@ -43,6 +43,31 @@ The practice log avoids the question entirely: it only ever stores a `title`, a 
 notes. It is structurally outside the originality rule's scope, by construction, not
 by exemption. Classification runs on that metadata alone.
 
+### Reading metadata is not fetching content (2026-08-24)
+
+`POST /practice/import/leetcode` asks LeetCode's GraphQL endpoint for a **title, a
+difficulty and the topic tags** — and the rule above is unchanged by it, because the rule
+is about *statement text*. Those three fields are precisely what this table already stores
+for every hand-typed entry; the import types them for you. The GraphQL projections name
+their fields explicitly, so no query in `api.leetcode` can return a statement even by
+accident, and nothing in the response is persisted beyond the columns below.
+
+The line worth being exact about: **"no URL fetch of problem content" still holds.** The
+page is never fetched. What changed is that "manual entry" now includes pasting fifty links
+instead of typing fifty titles, and the difference is transcription, not scope.
+
+Two things this deliberately does *not* buy with the new access:
+
+- **No auto-accept.** Everything imported lands `pending_classification` with the concept
+  its tags name pre-selected, and waits. `resolve_classification` refuses anything already
+  resolved — the evidence is written and evidence is immutable — so a wrong auto-accept
+  could never be corrected, while a wrong suggestion costs a click. The import removes
+  searching 159 concepts, not the confirmation.
+- **No credential.** Recent solves come from a *public* profile and problem metadata needs
+  no session at all. A full solve history would need a `LEETCODE_SESSION` cookie; that is
+  a live credential on a machine whose repo is public, and pasting links reaches the same
+  place without one.
+
 ## Data model
 
 Two tables — **already created by migration `6e1d353bc543`** — plus an extension to the
@@ -205,7 +230,14 @@ pending_classification ──(confirm/correct, or auto-accept ≥0.75)──▶ 
 
 ## What this deliberately does not do
 
-- **No scraping, no URL fetch of problem content** — see above.
+- **No scraping, no URL fetch of problem content** — see above. Metadata import
+  (`title`, `difficulty`, topic tags) landed 2026-08-24 and is inside this rule, not an
+  exception to it: the problem page is still never fetched.
+- **No auto-accepted classification from an import.** A tag naming a family this taxonomy
+  splits several ways suggests nothing at all — `dynamic-programming` covers five concepts
+  here and `design` covers three. LeetCode co-tags DP problems with the alternative
+  solutions people post, and trusting that once imported `coin-change` as a graph problem.
+- **No LeetCode credential.** Public metadata only.
 - **No full FSRS memory model** (difficulty parameter, retrievability curve) — a
   3-repetition cap doesn't need one.
 - **No multi-tenancy** — consistent with the rest of the app.

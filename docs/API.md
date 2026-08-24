@@ -268,6 +268,7 @@ correct the evidence and replay — never hand-patch the projection.
 | Method | Path | Purpose | State |
 |---|---|---|---|
 | `POST` | `/practice/problems` | Log a solved problem; classifies it synchronously | ✅ built |
+| `POST` | `/practice/import/leetcode` | Import by slug/URL, or a public profile's recent solves | ✅ built |
 | `GET` | `/practice/problems` | List, cursor-paginated, filterable by `concept_id` and `status` | ✅ built |
 | `GET` | `/practice/problems/{id}` | Detail, solve history, and the evidence those solves produced | ✅ built |
 | `PATCH` | `/practice/problems/{id}/classification` | Confirm or correct the tag; writes the held evidence | ✅ built |
@@ -278,6 +279,32 @@ correct the evidence and replay — never hand-patch the projection.
 `202`. A submission may involve a sandbox and a complexity probe; this is one small
 structured-output call with nothing to wait on, and returning the classification already
 resolved is the difference between logging a problem and logging one and then polling.
+
+**`POST /practice/import/leetcode` reads metadata, never a problem statement.** It asks
+LeetCode's GraphQL endpoint for a title, a difficulty and the topic tags — the same four
+fields the log already stores for a hand-typed entry — and requires no credential. The
+projections name their fields explicitly, so no query here can return a statement even by
+accident, which is what keeps this inside [PRACTICE_LOG](PRACTICE_LOG.md)'s
+manual-entry-only rule rather than an exception to it.
+
+**Everything imported is held for confirmation, however confident the tag.** LeetCode's own
+topic tags name a concept in this taxonomy in most cases (`sliding-window`, `union-find`,
+`monotonic-stack`), and the import arrives with that concept selected — but at
+`pending_classification`, not `active`. The reason is `PATCH .../classification` refusing
+anything already resolved: the evidence is written and evidence is immutable, so an
+auto-accepted tag that turns out wrong could never be corrected. A suggestion costs one
+confirmation; a wrong auto-accept is permanent. What the import removes is searching 159
+concepts per problem, not the confirmation itself.
+
+**A tag naming a family this taxonomy splits several ways suggests nothing.**
+`dynamic-programming` covers five concepts here and `design` covers three, and LeetCode
+routinely co-tags a DP problem with the alternative solutions people post — measured:
+`coin-change` carries `breadth-first-search`, and an earlier version of the table imported
+it as a graph problem. Those problems arrive unsuggested and wait for a human, which is the
+same state a low-confidence model classification produces.
+
+**A bad slug never fails the batch.** Someone pasting fifty lines has a typo in one of
+them; the response reports `imported` and `skipped` separately, each skip with its reason.
 
 **A classification below `0.75` confidence writes no evidence.** The problem lands
 `pending_classification` — recorded, listed, out of the review queue, feeding nothing —

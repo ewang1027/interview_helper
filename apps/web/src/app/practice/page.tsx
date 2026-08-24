@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
 import { ApiErrorNotice } from "@/components/api-error";
+import { LeetCodeImport } from "@/components/leetcode-import";
 import { Badge, Button, Card, CardBody, CardHeader, Empty, Skeleton, Stat } from "@/components/ui/primitives";
 import { api, idempotencyKey } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -65,7 +66,10 @@ export default function Practice() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-        <LogForm onLogged={refresh} />
+        <div className="space-y-6">
+          <LeetCodeImport onImported={refresh} />
+          <LogForm onLogged={refresh} />
+        </div>
 
         <Card>
           <CardHeader
@@ -124,6 +128,8 @@ export default function Practice() {
         </CardBody>
       </Card>
 
+      <ConfirmSuggested rows={rows} onDone={refresh} />
+
       <Card>
         <CardHeader
           title="Everything logged"
@@ -173,6 +179,60 @@ export default function Practice() {
   );
 }
 
+/**
+ * Confirm every suggestion at once.
+ *
+ * An import of fifty problems arrives with fifty suggestions and fifty confirmations
+ * owed, which is the tedium the import was meant to remove — but each confirmation is a
+ * real decision, since it writes immutable evidence. So the bulk action exists and says
+ * exactly what it is about to do; it does not confirm anything the tags did not name.
+ */
+function ConfirmSuggested({
+  rows,
+  onDone,
+}: {
+  rows: PracticeProblem[];
+  onDone: () => void;
+}) {
+  const ready = rows.filter(
+    (row) => row.status === "pending_classification" && row.primary_concept_id,
+  );
+
+  const confirm = useMutation({
+    mutationFn: async () => {
+      // Sequential on purpose: each write moves the same mastery rows, and the server
+      // serialises the projection anyway. Firing fifty at once would queue behind that
+      // lock and time out rather than finish sooner.
+      for (const row of ready) {
+        await api.setClassification(row.id, row.primary_concept_id!);
+      }
+    },
+    onSuccess: onDone,
+  });
+
+  if (ready.length === 0) return null;
+
+  return (
+    <Card>
+      <CardBody className="flex flex-wrap items-center gap-3 pt-4">
+        <div className="min-w-0 flex-1">
+          <p className="text-ink text-sm font-medium">
+            {ready.length} problem{ready.length === 1 ? "" : "s"} have a suggested concept
+          </p>
+          <p className="text-ink-muted mt-0.5 text-xs">
+            Confirming writes evidence, and evidence is immutable — check anything you are
+            unsure of first. Problems with no suggestion are left alone.
+          </p>
+        </div>
+        {confirm.error ? <ApiErrorNotice error={confirm.error} /> : null}
+        <Button disabled={confirm.isPending} onClick={() => confirm.mutate()}>
+          {confirm.isPending ? `Confirming ${ready.length}…` : `Confirm all ${ready.length}`}
+        </Button>
+      </CardBody>
+    </Card>
+  );
+}
+
 function ProblemRow({ problem }: { problem: PracticeProblem }) {
   const needsTag = problem.status === "pending_classification";
 
@@ -191,7 +251,9 @@ function ProblemRow({ problem }: { problem: PracticeProblem }) {
         </span>
       ) : null}
       {needsTag ? (
-        <Badge tone="warning">needs a tag</Badge>
+        <Badge tone={problem.primary_concept_id ? "serious" : "warning"}>
+          {problem.primary_concept_id ? "suggested — confirm it" : "needs a tag"}
+        </Badge>
       ) : problem.status === "retired" ? (
         <Badge tone="good">retired</Badge>
       ) : (

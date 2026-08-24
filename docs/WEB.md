@@ -103,6 +103,12 @@ provider is reachable yet, that is *every* entry today — so confirming a tag i
 path, not the exception, and it gets a searchable picker over the whole 159-concept
 taxonomy rather than a 159-option `<select>`.
 
+**Importing from LeetCode** ([API](API.md#practice-log)) is on the same page: paste links
+or slugs, or give a public username. Imports arrive with a concept suggested from LeetCode's
+own topic tags and a **Confirm all** action beside them, because fifty imports otherwise
+means fifty searches through a 159-concept list. It confirms only what the tags actually
+named; anything held back stays held back.
+
 Three refusals are surfaced rather than hidden, because each one means something:
 
 - A problem awaiting its tag shows **needs a tag** and says plainly that it counts for

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
@@ -36,7 +37,7 @@ from typing import Any
 
 from sqlmodel import Session, col, select
 
-from api import llm
+from api import leetcode, llm
 from api.errors import ProblemError, not_found, unprocessable, wrong_state
 from api.grading.coding import SECONDARY_CONFIDENCE
 from api.mastery import apply_evidence, as_utc, lock_projection
@@ -331,10 +332,24 @@ def log_problem(
     solved_at: datetime | None = None,
     client: Any = None,
     settings: Settings | None = None,
+    proposal: Classification | None = None,
+    hold: bool = False,
 ) -> PracticeProblem:
-    """Log a problem you solved, classify it, and — if the tag is sure enough — count it."""
+    """Log a problem you solved, classify it, and — if the tag is sure enough — count it.
+
+    `proposal` supplies a classification from somewhere other than the model, which is how
+    the LeetCode import passes the concept its topic tags name (`api.leetcode`). Given one,
+    no model call is made — the import would otherwise fire one provider request per
+    problem to answer a question its metadata already answered.
+
+    `hold` keeps the problem in `pending_classification` however confident the proposal is.
+    The import sets it, and the reason is worth stating: `resolve_classification` refuses
+    anything already resolved, because the evidence is written and evidence is immutable —
+    so an auto-accepted tag that turns out wrong can never be corrected. A suggestion a
+    human confirms costs one click and stays fixable; a wrong auto-accept is permanent.
+    """
     solved = as_utc(solved_at or datetime.now(UTC))
-    proposed = classify(
+    proposed = proposal or classify(
         title=title,
         url=url,
         notes=notes,
@@ -342,6 +357,7 @@ def log_problem(
         client=client,
         settings=settings,
     )
+    accepted = proposed.auto_accepted and not hold
     stability, due = first_interval(solved)
     problem = PracticeProblem(
         title=title,
@@ -353,13 +369,13 @@ def log_problem(
         secondary_concept_ids=list(proposed.secondary_concept_ids),
         classification_confidence=proposed.confidence,
         classification_model=proposed.model,
-        status="active" if proposed.auto_accepted else "pending_classification",
+        status="active" if accepted else "pending_classification",
         solve_count=1,
         # A pending problem is out of the review queue, so it carries no schedule until its
         # classification resolves — a due date on something that feeds nothing is a prompt
         # to re-solve a problem the system cannot record you having re-solved.
-        stability_days=stability if proposed.auto_accepted else None,
-        due_at=due if proposed.auto_accepted else None,
+        stability_days=stability if accepted else None,
+        due_at=due if accepted else None,
     )
     db.add(problem)
     db.flush()
@@ -374,11 +390,94 @@ def log_problem(
     db.add(solve)
     db.flush()
 
-    if proposed.auto_accepted:
+    if accepted:
         _write_evidence(db, problem, solve, user_id=user_id, success=True)
     db.commit()
     db.refresh(problem)
     return problem
+
+
+def import_from_leetcode(
+    db: Session,
+    *,
+    user_id: str,
+    slugs: Sequence[str],
+    http: Any = None,
+) -> dict[str, Any]:
+    """Import LeetCode problems by slug, suggesting a concept from their topic tags.
+
+    Every import is **held** for confirmation rather than auto-accepted — see `log_problem`'s
+    `hold`. What this removes is not the confirmation, it is having to search a
+    159-concept taxonomy for each problem: the suggestion arrives pre-selected and
+    `resolve_classification` is one call away.
+
+    One bad slug never fails the batch. Somebody pasting fifty lines will have a typo in
+    one of them, and losing the other forty-nine to it would be the wrong trade.
+    """
+    imported: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    seen = {row.url for row in db.exec(select(PracticeProblem)).all()}
+
+    with leetcode.session(http) as client:
+        for raw in slugs:
+            slug = leetcode.slug_from(raw)
+            if slug is None:
+                skipped.append({"input": raw, "reason": "not a LeetCode problem slug or URL"})
+                continue
+            url = leetcode.PROBLEM_URL.format(slug=slug)
+            if url in seen:
+                skipped.append({"input": raw, "slug": slug, "reason": "already logged"})
+                continue
+            try:
+                found = leetcode.problem(slug, client=client)
+            except leetcode.LeetCodeError as exc:
+                skipped.append({"input": raw, "slug": slug, "reason": str(exc)})
+                continue
+            if found is None:
+                skipped.append(
+                    {"input": raw, "slug": slug, "reason": "LeetCode has no such problem"}
+                )
+                continue
+
+            concept_id, why = found.concept()
+            proposal = Classification(
+                primary_concept_id=concept_id,
+                secondary_concept_ids=(),
+                confidence=leetcode.TAG_CONFIDENCE if concept_id else 0.0,
+                reasoning=why,
+                model=leetcode.GRADER,
+            )
+            problem = log_problem(
+                db,
+                user_id=user_id,
+                title=found.title,
+                url=url,
+                source_site="leetcode",
+                difficulty_label=found.difficulty,
+                proposal=proposal,
+                hold=True,
+            )
+            seen.add(url)
+            imported.append(
+                {
+                    "id": problem.id,
+                    "slug": slug,
+                    "title": found.title,
+                    "difficulty": found.difficulty,
+                    "suggested_concept_id": concept_id,
+                    "why": why,
+                    "topic_tags": list(found.topic_tags),
+                }
+            )
+
+    return {
+        "imported": imported,
+        "skipped": skipped,
+        # Stated rather than left to be counted: every one of these is waiting on a
+        # confirmation, and a caller that does not know that will report them as done.
+        "awaiting_confirmation": len(imported),
+        "with_a_suggestion": sum(1 for row in imported if row["suggested_concept_id"]),
+    }
 
 
 def resolve_classification(

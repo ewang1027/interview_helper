@@ -4889,3 +4889,78 @@ one: the fix `Spec · ✅ local backup built` *also* failed, because the rule is
 `cell.startswith("spec")` and the cell still led with the word. The wording changed to lead
 with the built claim rather than the gate loosening to accept a cell that reads as a spec —
 a gate bent to fit one row's phrasing stops catching the drift it exists for.
+
+---
+
+## Phase 9 (LeetCode import) — the tags were already there · 2026-08-24
+
+Asked for directly: *instead of logging every problem, can I not integrate LeetCode?*
+
+The answer turned on reading docs/PRACTICE_LOG.md's rule precisely. "No scraping, no URL
+fetch of problem **content**" exists because docs/CORPUS.md mechanically rejects
+proprietary statement text — and a title, a difficulty and a topic tag are the same three
+fields the log already stores for every hand-typed entry. Reading those is inside the rule;
+fetching the page is not. The page is still never fetched, and the GraphQL projections name
+their fields explicitly so no query here can return a statement by accident.
+
+NeetCode was offered as an alternative and is not one: it has no API for your progress. Its
+value would have been category labels, and LeetCode publishes better ones about its own
+problems.
+
+### The tags do the classification the model cannot
+
+The classifier is a model call and no provider is reachable, so **every** logged problem
+was landing `pending_classification` for a human to tag by hand. LeetCode labels its own
+problems `sliding-window`, `union-find`, `monotonic-stack` — editorial metadata that maps
+almost one-to-one onto this taxonomy's 52 coding concepts. A 25-problem spread came out at
+19 suggested, 5 correctly held.
+
+### Three wrong tags, and what each one taught
+
+The first table auto-accepted 22 of 25 and **three of them were wrong**, which is the more
+useful number:
+
+```
+coin-change                  -> graph-bfs        tags: dynamic-programming, breadth-first-search
+validate-binary-search-tree  -> graph-dfs        tags: binary-search-tree, …, depth-first-search
+lru-cache                    -> linked-list-…    tags: design, linked-list, doubly-linked-list
+```
+
+The second was ordering — a traversal tag ranked above a structure tag, so a BST problem
+became a graph problem. The other two are the same lesson: **LeetCode co-tags a problem
+with the alternative solutions people post**, so a DP problem carries `breadth-first-search`
+and a design problem carries its data structure. Broad tags are now *blockers*: with
+`dynamic-programming` present (five concepts here) or `design` (three), only a tag that is
+unambiguous on its own may win, and otherwise the problem waits for a human. Re-measured:
+24 of 24 as expected, 19 suggested, 5 held.
+
+### Nothing is auto-accepted, and that is the important decision
+
+`resolve_classification` refuses anything already resolved — the evidence is written and
+evidence is immutable. So **a wrong auto-accept can never be corrected**, while a wrong
+suggestion costs a click. Everything imported lands `pending_classification` with the
+concept pre-selected, and the web page grew a **Confirm all** action so fifty imports are
+one decision rather than fifty searches through a 159-item list. What the import removes is
+the searching, not the confirmation.
+
+That is why `log_problem` gained `proposal` and `hold`: `proposal` skips the model call for
+a question the metadata already answered, and `hold` keeps the gate closed regardless of
+confidence.
+
+### Verified
+
+- **31 offline tests** on the mapping, with canned tag sets copied from live responses — a
+  test that reaches leetcode.com is a test that fails when somebody else deploys. Three of
+  them are named for the three problems above.
+- Live through the web proxy: a mixed batch of six imported 4 and skipped 2 (an unknown
+  slug, a non-LeetCode URL) with reasons; re-importing the same slugs skipped both as
+  "already logged"; confirming the two suggestions wrote one evidence row each and moved
+  `hash-map-counting` and `monotonic-stack` to 1566.8.
+- The route-surface gate caught the new endpoint before the docs did, which is what it is
+  for.
+- Test data deleted and the projection replayed to zero afterwards.
+
+**Not built: full solve history.** That needs a `LEETCODE_SESSION` cookie — a live
+credential on a machine whose repo is public — and pasting links reaches the same place
+without one. The endpoint is also unofficial and can change without notice; it is one
+module, and the failure mode is a skipped import rather than a lost entry.

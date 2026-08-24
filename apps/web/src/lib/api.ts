@@ -17,6 +17,7 @@
 import type {
   BudgetStatus,
   ConceptDetail,
+  ImportResult,
   LogProblemBody,
   CorpusStatus,
   CostRollup,
@@ -212,6 +213,8 @@ export const api = {
     return request<ProblemList>(`/practice/problems?${query}`);
   },
   problem: (id: string) => request<ProblemDetail>(`/practice/problems/${id}`),
+  importLeetCode: (body: { slugs?: string[]; username?: string }, key: string) =>
+    post<ImportResult>("/practice/import/leetcode", body, key),
   /** Confirming or correcting the tag is what writes the held evidence. */
   setClassification: (id: string, primary: string, secondary: string[] = []) =>
     request<ProblemDetail>(`/practice/problems/${id}/classification`, {

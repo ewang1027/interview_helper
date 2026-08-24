@@ -2,7 +2,7 @@
 SHELL := /bin/bash
 COMPOSE := docker compose -f infra/compose/docker-compose.yml
 
-.PHONY: help setup dev dev-api dev-web down check check-web lint typecheck test fmt \
+.PHONY: help setup dev up dev-api dev-web down check check-web lint typecheck test fmt \
         corpus-validate seed test-sandbox test-e2e test-db cost-report secret-scan \
         doc-links doc-check hygiene verify-solutions login test-llm build-web \
         backup restore clean
@@ -31,6 +31,9 @@ dev: ## Bring up Postgres (api/web/executor containers land in Phase 6 — see i
 
 dev-api: ## Run the API against the compose Postgres (uvicorn --reload)
 	uv run uvicorn api.main:app --reload --app-dir apps/api/src
+
+up: dev ## Everything: Postgres, migrations, then the API and web app together (Ctrl-C stops both)
+	@bash scripts/dev_up.sh
 
 dev-web: ## Run the web app against the API (next dev, proxies /api and /auth to API_ORIGIN)
 	cd apps/web && pnpm dev

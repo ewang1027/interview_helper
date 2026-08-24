@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Mode = Literal["coding", "quant", "design", "behavioral"]
 ArtifactKind = Literal["code", "answer", "design", "narrative"]
@@ -91,6 +91,26 @@ class ClassificationRequest(BaseModel):
     # sixty-one immutable evidence rows and moved a concept's ability nearly 200 Elo on a
     # single logged solve.
     secondary_concept_ids: tuple[str, ...] = Field(default=(), max_length=4)
+
+
+class ImportLeetCodeRequest(BaseModel):
+    """Slugs or URLs to import, and/or a public profile to read recent solves from.
+
+    `slugs` is capped at `leetcode.MAX_SLUGS`: each one is a separate request to
+    leetcode.com, so an unbounded list is both a slow HTTP handler and an impolite thing
+    to point at somebody else's service.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    slugs: tuple[str, ...] = Field(default=(), max_length=100)
+    username: str | None = Field(default=None, max_length=64)
+
+    @model_validator(mode="after")
+    def _needs_something(self) -> ImportLeetCodeRequest:
+        if not self.slugs and not self.username:
+            raise ValueError("give slugs, a username, or both")
+        return self
 
 
 class ReviewRequest(BaseModel):
