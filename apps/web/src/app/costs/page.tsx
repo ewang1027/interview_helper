@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { ApiErrorNotice } from "@/components/api-error";
-import { Card, CardBody, CardHeader, Empty, Stat } from "@/components/ui/primitives";
+import { Badge, Card, CardBody, CardHeader, Empty, Stat } from "@/components/ui/primitives";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { compactNumber, usd, when } from "@/lib/format";
@@ -72,18 +72,51 @@ export default function Costs() {
 
       {budget.data ? (
         <Card>
-          <CardHeader title="Budget remaining" hint="Hard ceilings from docs/COST.md." />
-          <CardBody className="space-y-3">
-            <BudgetBar
-              label="Today"
-              spent={budget.data.day.spent}
-              limit={budget.data.day.limit}
-            />
-            <BudgetBar
-              label="Per session"
-              spent={budget.data.session.spent}
-              limit={budget.data.session.limit}
-            />
+          <CardHeader
+            title="Budget remaining"
+            hint="Hard ceilings. A breach is refused with a 429, never downgraded to a cheaper model."
+          />
+          <CardBody className="space-y-4">
+            <div className="space-y-3">
+              <div className="text-ink-muted text-xs font-medium tracking-wide uppercase">
+                Dollars — checked first
+              </div>
+              <BudgetBar
+                label="This month"
+                spent={budget.data.month.spent_usd}
+                limit={budget.data.month.limit_usd}
+                money
+              />
+              <BudgetBar
+                label="Today"
+                spent={budget.data.day.spent_usd}
+                limit={budget.data.day.limit_usd}
+                money
+              />
+              <BudgetBar
+                label="Per session"
+                spent={budget.data.session.spent_usd}
+                limit={budget.data.session.limit_usd}
+                money
+              />
+            </div>
+            <div className="border-hairline space-y-3 border-t pt-3">
+              <div className="text-ink-muted text-xs font-medium tracking-wide uppercase">
+                Tokens
+              </div>
+              <BudgetBar label="Today" spent={budget.data.day.spent} limit={budget.data.day.limit} />
+              <BudgetBar
+                label="Per session"
+                spent={budget.data.session.spent}
+                limit={budget.data.session.limit}
+              />
+            </div>
+            <p className="text-ink-muted text-xs">
+              Both are enforced; the dollar ones are checked first, because a token limit
+              stopped being a proxy for money once the routing table held more than one
+              model. An in-flight call counts against these at its reservation, so two
+              concurrent calls cannot each read the other&apos;s spend as zero.
+            </p>
           </CardBody>
         </Card>
       ) : null}
@@ -106,16 +139,33 @@ export default function Costs() {
   );
 }
 
-function BudgetBar({ label, spent, limit }: { label: string; spent: number; limit: number }) {
+function BudgetBar({
+  label,
+  spent,
+  limit,
+  money = false,
+}: {
+  label: string;
+  spent: number;
+  limit: number;
+  money?: boolean;
+}) {
   const fraction = limit === 0 ? 0 : Math.min(1, spent / limit);
-  // One hue for magnitude; the warning state is carried by the label, not by
-  // switching the bar to a status colour.
+  const near = fraction >= 0.8;
+  // One hue for magnitude. The near-ceiling state is carried by a label, not by
+  // switching the bar to a status colour — the bar is still showing magnitude, and
+  // recolouring it would make two different things share one channel.
   return (
     <div>
-      <div className="mb-1 flex items-baseline justify-between text-xs">
+      <div className="mb-1 flex items-baseline justify-between gap-2 text-xs">
         <span className="text-ink-secondary">{label}</span>
-        <span className="tabular text-ink-muted">
-          {compactNumber(spent)} / {compactNumber(limit)} tokens
+        <span className="flex items-baseline gap-2">
+          {near ? <Badge tone="warning">near the ceiling</Badge> : null}
+          <span className="tabular text-ink-muted">
+            {money
+              ? `${usd(spent)} / ${usd(limit)}`
+              : `${compactNumber(spent)} / ${compactNumber(limit)} tokens`}
+          </span>
         </span>
       </div>
       <div className="bg-sunken h-2 overflow-hidden rounded">

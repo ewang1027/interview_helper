@@ -162,6 +162,64 @@ def _spend_expression() -> Any:
     )
 
 
+def _money(amount: float) -> str:
+    """Dollars, with enough precision to still be a number.
+
+    `:.2f` reads "$0.00" for a ceiling of $0.001, which is what a refusal looked like the
+    first time one was triggered against a deliberately tiny limit — a message saying a
+    budget of nothing was spent, about a limit somebody had just set on purpose.
+    """
+    return f"${amount:.2f}" if amount >= 0.01 else f"${amount:.4f}"
+
+
+def _usd_expression() -> Any:
+    """What a row contributes to *spend in dollars*.
+
+    The same shape as `_spend_expression` and for the same reason: an in-flight row
+    contributes its reservation, a settled or failed row contributes what it really cost.
+    Separate from the token version rather than derived from it, because tokens cannot be
+    converted to dollars after the fact — output costs five times input and the row keeps
+    only their sum.
+    """
+    return func.sum(
+        case(
+            (
+                (col(LlmCall.status) == "reserved")
+                & (col(LlmCall.created_at) >= datetime.now(UTC) - RESERVATION_TTL),
+                LlmCall.reserved_usd,
+            ),
+            else_=LlmCall.cost_usd,
+        )
+    )
+
+
+def usd_spent(
+    db: Session, *, session_id: str | None = None, since: datetime | None = None
+) -> float:
+    """Dollars on the ledger, optionally for one session or since a moment.
+
+    Counts calls in flight at their reservation, exactly as `tokens_spent` does — without
+    that, concurrent calls each read the other's spend as zero, which is the finding that
+    made the token ceiling not a ceiling.
+    """
+    query = select(func.coalesce(_usd_expression(), 0.0))
+    if session_id is not None:
+        query = query.where(LlmCall.session_id == session_id)
+    if since is not None:
+        query = query.where(col(LlmCall.created_at) >= since)
+    return float(db.exec(query).one())
+
+
+def start_of_month(now: datetime | None = None) -> datetime:
+    """The monthly budget resets at UTC midnight on the first.
+
+    A calendar month rather than a rolling thirty days, for the reason the day uses UTC
+    midnight: a rolling window is kinder and impossible to reconcile against a bill.
+    """
+    moment = now or datetime.now(UTC)
+    return moment.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
 def tokens_spent(
     db: Session, *, session_id: str | None = None, since: datetime | None = None
 ) -> int:
@@ -189,18 +247,33 @@ def budget_status(db: Session, *, session_id: str | None, settings: Settings) ->
     """What `GET /costs/budget` reports, and what the check below refuses on."""
     day_spent = tokens_spent(db, since=start_of_day())
     session_spent = tokens_spent(db, session_id=session_id) if session_id else 0
+    usd_day = usd_spent(db, since=start_of_day())
+    usd_month = usd_spent(db, since=start_of_month())
+    usd_session = usd_spent(db, session_id=session_id) if session_id else 0.0
     return {
         "session": {
             "id": session_id,
             "spent": session_spent,
             "limit": settings.max_tokens_per_session,
             "remaining": max(0, settings.max_tokens_per_session - session_spent),
+            "spent_usd": round(usd_session, 6),
+            "limit_usd": settings.max_usd_per_session,
+            "remaining_usd": round(max(0.0, settings.max_usd_per_session - usd_session), 6),
         },
         "day": {
             "start": start_of_day().isoformat(),
             "spent": day_spent,
             "limit": settings.max_tokens_per_day,
             "remaining": max(0, settings.max_tokens_per_day - day_spent),
+            "spent_usd": round(usd_day, 6),
+            "limit_usd": settings.max_usd_per_day,
+            "remaining_usd": round(max(0.0, settings.max_usd_per_day - usd_day), 6),
+        },
+        "month": {
+            "start": start_of_month().isoformat(),
+            "spent_usd": round(usd_month, 6),
+            "limit_usd": settings.max_usd_per_month,
+            "remaining_usd": round(max(0.0, settings.max_usd_per_month - usd_month), 6),
         },
     }
 
@@ -214,11 +287,30 @@ def enforce_budget(db: Session, *, session_id: str | None, settings: Settings) -
     most its own `max_tokens`, and the next one is refused.
     """
     status = budget_status(db, session_id=session_id, settings=settings)
+
+    # Dollars first. They are the ceiling that means something once the routing table
+    # holds more than one model — 3,000,000 tokens is about $15 of Haiku input or $75 of
+    # Opus 5 output, and which one depends on a line of `.env`. Checked before the token
+    # limits so the refusal names the thing the operator actually set.
+    for scope, human in (("month", "monthly"), ("day", "daily"), ("session", "session")):
+        leg = status[scope]
+        if scope == "session" and not session_id:
+            continue
+        if leg["remaining_usd"] <= 0:
+            raise budget_exceeded(
+                f"The {human} budget of {_money(leg['limit_usd'])} is spent "
+                f"({_money(leg['spent_usd'])} used).",
+                scope=scope,
+                unit="usd",
+                **{"consumed": leg["spent_usd"], "limit": leg["limit_usd"]},
+            )
+
     if status["day"]["remaining"] <= 0:
         raise budget_exceeded(
             f"The daily budget of {settings.max_tokens_per_day} tokens is spent "
             f"({status['day']['spent']} used since {status['day']['start']}).",
             scope="day",
+            unit="tokens",
             **{"consumed": status["day"]["spent"], "limit": settings.max_tokens_per_day},
         )
     if session_id and status["session"]["remaining"] <= 0:
@@ -226,6 +318,7 @@ def enforce_budget(db: Session, *, session_id: str | None, settings: Settings) -
             f"This session has spent its budget of {settings.max_tokens_per_session} tokens "
             f"({status['session']['spent']} used).",
             scope="session",
+            unit="tokens",
             **{"consumed": status["session"]["spent"], "limit": settings.max_tokens_per_session},
         )
 
@@ -278,6 +371,15 @@ def reserve(
             # is a bound with a soft edge, not an exact figure. It is the difference
             # between an overshoot of one call and an overshoot of every concurrent call.
             reserved_tokens=max_tokens + estimated_input_tokens,
+            # The same reservation in dollars, priced at this call's own model and at its
+            # worst case: every one of `max_tokens` billed at the output rate. A call
+            # cannot cost more than this, which is what makes it safe to hold against a
+            # ceiling before the provider has answered.
+            reserved_usd=cost_of(
+                model,
+                input_tokens=estimated_input_tokens,
+                output_tokens=max_tokens,
+            ),
         )
         db.add(row)
         db.commit()
@@ -313,6 +415,8 @@ def settle(call_id: str, *, usage: Usage, cost_usd: float, latency_ms: int, fail
         row.output_tokens = usage.output_tokens
         row.cache_read_tokens = usage.cache_read_tokens
         row.cache_write_tokens = usage.cache_write_tokens
+        # The reservation is over; `cost_usd` below is what it really cost.
+        row.reserved_usd = 0.0
         row.cost_usd = cost_usd
         row.latency_ms = latency_ms
         row.settled_at = datetime.now(UTC)

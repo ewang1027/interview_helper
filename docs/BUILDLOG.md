@@ -5466,3 +5466,74 @@ this morning's needed a machine with no `SESSION_SECRET`; this one needed an `.e
 provider in it. **None of the three could be caught by the environment the other two need**,
 which is the argument for varying the configuration deliberately rather than trusting that
 green means portable.
+
+---
+
+## Price guardrails — the ceilings are money now · 2026-08-25
+
+Spending became real this morning, and the budgets were in the wrong unit for it.
+
+### A token ceiling stopped being a price ceiling
+
+`MAX_TOKENS_PER_DAY=3000000` was a fine proxy while every job used one model. It stopped
+being one the moment the routing table held Opus 5 and Sonnet 5 together: three million
+tokens is roughly **$15 of Haiku input or $75 of Opus 5 output**, and which of those a "3M
+token" ceiling permits depends on a line of `.env`. Nobody set that number.
+
+Five limits now, dollars checked first:
+
+```
+MAX_USD_PER_SESSION=1.00     MAX_TOKENS_PER_SESSION=400000
+MAX_USD_PER_DAY=10.00        MAX_TOKENS_PER_DAY=3000000
+MAX_USD_PER_MONTH=100.00
+```
+
+The token limits stay, because they bound a different thing — context volume, a proxy for
+a runaway loop whatever it costs. A refusal names which it hit (`unit: "usd"` or
+`"tokens"`), because the fix is a different number in a different variable.
+
+The monthly ceiling has no token twin on purpose. Thirty quiet days and one bad one is
+exactly the shape a daily limit cannot see, and a month is how a bill arrives.
+
+Defaults calibrated against this morning's measurement rather than guessed: a real session
+cost **$0.0119**, so $1 a session is about eighty of them.
+
+### The reservation had to be priced, and the test that proves it had to be slow
+
+`llm_calls.reserved_usd` is the dollar twin of `reserved_tokens` — what a call may cost if
+it runs to its limit, priced at its own model, held against the ceiling while in flight,
+zeroed when the row settles. Stored rather than derived, because `reserved_tokens` is one
+number and pricing needs the halves separately: output costs five times input.
+
+Whether that mattered was worth checking rather than asserting. Zeroing `reserved_usd` and
+running eight concurrent calls against a **$0.001** ceiling let **all eight through** — the
+same failure the token ceiling was measured having in 2026-08-22, reproduced in the other
+unit.
+
+But the first version of that test passed with `reserved_usd` zeroed, and finding out why
+is the more useful half. The advisory lock serialises reserve-and-check, and a fake
+provider returns *instantly* — so the first call settles its real cost before the second
+thread looks, and the ceiling holds whether or not the reservation was ever priced. The
+test now uses a deliberately **slow** provider so the calls genuinely overlap in flight.
+
+**A concurrency test against a fake that returns immediately proves less than it appears
+to.** That is the finding, and it applies to more than this test.
+
+### Verified
+
+- 20 tests in `test_llm_db`, up from 14: each scope refuses, the two units are
+  distinguishable, a month is not thirty days, a reservation is priced and released, and
+  the concurrency case — checked in both directions by breaking the code and watching it
+  fail.
+- End to end against the live provider: `MAX_USD_PER_SESSION=0.001`, first turn allowed
+  (the check is "already spent", so the documented one-call overshoot stands), second turn
+  **429** with `scope: session`, `unit: usd`, `consumed 0.006235`, `limit 0.001`.
+- That refusal read *"The session budget of $0.00 is spent"* — `:.2f` rounding a limit
+  somebody had deliberately set to $0.001 down to nothing. Fixed to keep four decimals
+  below a cent.
+- `GET /costs/budget` reports all three legs; the web costs page shows dollars above
+  tokens with a *near the ceiling* badge at 80%. 192 db tests, 73 web tests pass.
+
+The AWS Budgets alarm docs/INFRA.md specifies is a different thing and still unbuilt: it
+bounds *infrastructure* spend. This bounds the model spend, which is the half that can run
+away in an afternoon.

@@ -108,12 +108,32 @@ scripted model.
 
 ## Hard budgets
 
-**Enforced.** Two limits, checked by `api.llm.enforce_budget` before every call:
+**Enforced.** Five limits, checked by `api.llm.enforce_budget` before every call:
 
 ```
-MAX_TOKENS_PER_SESSION=400000
-MAX_TOKENS_PER_DAY=3000000
+MAX_USD_PER_SESSION=1.00        MAX_TOKENS_PER_SESSION=400000
+MAX_USD_PER_DAY=10.00           MAX_TOKENS_PER_DAY=3000000
+MAX_USD_PER_MONTH=100.00
 ```
+
+**The dollar ceilings are checked first**, and they are the ones that mean something. A
+token limit was a fine proxy for money while every job used one model; it stopped being one
+the moment the routing table held Opus 5 and Sonnet 5 together. 3,000,000 tokens is roughly
+$15 of Haiku input or $75 of Opus 5 output — which of those a "3M token" ceiling permits
+depends on a line of `.env`, and that is not a ceiling anybody set deliberately.
+
+The token limits stay because they bound a different thing: context volume, which is a
+proxy for a runaway loop regardless of price. Both are enforced; a refusal names which
+(`unit: "usd"` or `"tokens"`) because the fix is a different number in a different
+variable.
+
+**A month is not thirty days.** `MAX_USD_PER_MONTH` exists because thirty quiet days
+followed by one bad one is exactly the shape a daily ceiling cannot see, and because a
+month is how a bill arrives. It resets at UTC midnight on the first, for the same reason
+the day resets at UTC midnight rather than rolling.
+
+The defaults are calibrated against a measurement, not a guess: the first real session cost
+**$0.0119**, so $1 a session is about eighty of those.
 
 On breach the request is **refused** — `429 budget-exceeded`, carrying the scope, what was
 consumed and the limit — not silently truncated and not downgraded to a cheaper model. A
@@ -124,7 +144,21 @@ spent budget costs nothing to hit.
 Three properties worth stating, because each is a choice:
 
 - **A token is a token.** Input, output, cache reads and cache writes all count toward a
-  limit. Cache reads are cheap, not free, and they are still context the model processed.
+  token limit. Cache reads are cheap, not free, and they are still context the model
+  processed. The *dollar* limits price each of those at its real rate, so a cache read
+  costs a tenth of an input token there rather than the same.
+- **A reservation is priced, not just counted.** `llm_calls.reserved_usd` is the dollar
+  twin of `reserved_tokens`: what the call may cost if it runs to its limit, priced at its
+  own model, held against the ceiling while it is in flight and zeroed when the row
+  settles. It is stored rather than derived because `reserved_tokens` is one number and
+  pricing needs the input and output halves separately — output costs five times input.
+
+  Not a theoretical concern. Zeroing `reserved_usd` and running eight concurrent calls
+  against a **$0.001** ceiling let **all eight through** — the same failure the token
+  ceiling was measured having, in the other unit. The test that catches it uses a
+  *deliberately slow* provider, because with an instant one the advisory lock plus fast
+  settling makes the ceiling hold whether or not the reservation was ever priced. A
+  concurrency test against a fake that returns immediately proves less than it appears to.
 - **The check is "already spent" plus "what is in flight".** The input size is not known
   before the call, and asking the provider would itself be a call. So the last call before
   a refusal can overshoot its ceiling by at most its own `max_tokens` plus its estimated

@@ -355,7 +355,11 @@ of them, and whether each concept is **servable** — that some item measures it
 actually serve ([ADAPTIVE](ADAPTIVE.md)).
 
 `GET /costs/budget` is the more useful of the two cost routes while the agent is being
-built: it answers "will the next call be refused, and why" without making one. Both are
+built: it answers "will the next call be refused, and why" without making one. It reports
+**three legs** — session, day and month — each carrying both the token figures and the
+dollar ones, because both are enforced and a caller needs to know which ceiling it is near.
+The month is dollars only; there is no monthly token limit, because months are how bills
+arrive rather than how context is consumed ([COST](COST.md#hard-budgets)). Both are
 scoped by the session cookie like everything else under `/api/v1`.
 
 ## SSE event stream
@@ -574,7 +578,7 @@ slug a client can branch on; matching on prose is how error handling rots:
 | `404` | Unknown session or item — including one belonging to somebody else |
 | `409` | Wrong state — e.g. report requested before `complete`, or a retry arriving while the request it repeats is still running (`idempotency-key-in-flight`) |
 | `422` | Well-formed but invalid, e.g. submission for an item not in the plan, or an `Idempotency-Key` reused with a different body (`idempotency-key-reused`) |
-| `429` | **Token budget exceeded** (`budget-exceeded`) — refused, never silently downgraded ([COST.md](COST.md#hard-budgets)), and refused *before* the provider is called. Also `provider-rate-limited`, when the throttling is the provider's rather than ours: same status, different slug, because one means wait and the other means stop |
+| `429` | **Budget exceeded** (`budget-exceeded`) — carries `scope` (`session`/`day`/`month`) and `unit` (`usd`/`tokens`), because the fix is a different number in a different variable — refused, never silently downgraded ([COST.md](COST.md#hard-budgets)), and refused *before* the provider is called. Also `provider-rate-limited`, when the throttling is the provider's rather than ours: same status, different slug, because one means wait and the other means stop |
 | `503` | Executor or model provider unavailable, or the server is missing configuration the request needs (`not-configured`) |
 
 `429` on budget is a refusal by design. A session that stops and says why is recoverable;

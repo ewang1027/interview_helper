@@ -332,11 +332,24 @@ export interface BudgetLeg {
   spent: number;
   limit: number;
   remaining: number;
+  /** Dollars, enforced beside the token figures and checked first. */
+  spent_usd: number;
+  limit_usd: number;
+  remaining_usd: number;
+}
+
+/** Dollars only — a month has no token ceiling, because months are how bills arrive. */
+export interface MonthlyBudget {
+  start: string;
+  spent_usd: number;
+  limit_usd: number;
+  remaining_usd: number;
 }
 
 export interface BudgetStatus {
   session: BudgetLeg & { id: string | null };
   day: BudgetLeg & { start: string };
+  month: MonthlyBudget;
 }
 
 // ─── Practice log ────────────────────────────────────────────────────────────

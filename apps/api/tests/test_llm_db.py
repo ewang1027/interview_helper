@@ -10,6 +10,7 @@ default.
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any
@@ -336,6 +337,196 @@ def test_the_session_view_reports_the_spend_the_ledger_holds(ledger, created_ses
     # Scoped to this session, like every other figure under /api/v1.
     other = _a_session(created_sessions)
     assert client.get(f"/api/v1/sessions/{other}").json()["tokens_consumed"] == 0
+
+
+# --- Dollar ceilings ---------------------------------------------------------------------
+
+
+def test_a_spent_dollar_budget_refuses_the_next_call(ledger):
+    """The ceiling that means something once the routing table holds more than one model.
+
+    A token limit is a proxy for money that gets worse the wider the model mix: 3,000,000
+    tokens is about $15 of Haiku input or $75 of Opus 5 output, and which one it is depends
+    on a line of `.env`.
+    """
+    settings = llm_settings()
+    llm.complete(
+        job="interviewing",
+        messages=[{"role": "user", "content": "hi"}],
+        client=FakeAnthropic(),
+        settings=settings,
+    )
+    with Session(get_engine()) as db:
+        spent = llm.usd_spent(db, since=llm.start_of_day())
+    assert spent > 0
+
+    tight = llm_settings(max_usd_per_day=spent / 2)
+    with pytest.raises(ProblemError) as raised:
+        llm.complete(
+            job="interviewing",
+            messages=[{"role": "user", "content": "hi"}],
+            client=FakeAnthropic(),
+            settings=tight,
+        )
+    assert raised.value.status == 429
+    assert raised.value.extra["scope"] == "day"
+    assert raised.value.extra["unit"] == "usd"
+
+
+def test_a_dollar_refusal_names_dollars_and_a_token_refusal_names_tokens(ledger):
+    """Both ceilings exist and an operator has to know which one they hit — the fix for
+    one is a different number in a different variable."""
+    settings = llm_settings()
+    llm.complete(
+        job="interviewing",
+        messages=[{"role": "user", "content": "hi"}],
+        client=FakeAnthropic(),
+        settings=settings,
+    )
+    with Session(get_engine()) as db:
+        usd = llm.usd_spent(db, since=llm.start_of_day())
+        tokens = llm.tokens_spent(db, since=llm.start_of_day())
+
+    for overrides, unit in (
+        ({"max_usd_per_day": usd / 2}, "usd"),
+        ({"max_tokens_per_day": max(1, tokens - 1)}, "tokens"),
+    ):
+        with pytest.raises(ProblemError) as raised:
+            llm.complete(
+                job="interviewing",
+                messages=[{"role": "user", "content": "hi"}],
+                client=FakeAnthropic(),
+                settings=llm_settings(**overrides),
+            )
+        assert raised.value.extra["unit"] == unit, overrides
+
+
+def test_a_month_is_not_thirty_days(ledger):
+    """A daily limit times thirty is not a monthly limit. Thirty quiet days and one bad one
+    is exactly what a month-shaped ceiling catches and a day-shaped one does not — the
+    daily budget here is untouched and the monthly one still refuses."""
+    settings = llm_settings()
+    llm.complete(
+        job="interviewing",
+        messages=[{"role": "user", "content": "hi"}],
+        client=FakeAnthropic(),
+        settings=settings,
+    )
+    with Session(get_engine()) as db:
+        spent = llm.usd_spent(db, since=llm.start_of_month())
+
+    tight = llm_settings(max_usd_per_month=spent / 2, max_usd_per_day=1000.0)
+    with pytest.raises(ProblemError) as raised:
+        llm.complete(
+            job="interviewing",
+            messages=[{"role": "user", "content": "hi"}],
+            client=FakeAnthropic(),
+            settings=tight,
+        )
+    assert raised.value.extra["scope"] == "month"
+
+
+def test_an_in_flight_call_holds_its_dollars_against_the_ceiling(ledger):
+    """The property the token ceiling was measured *not* having: a reservation counts while
+    the call is in the air. Without it two concurrent calls each read the other's spend as
+    zero, which is how a 1000-token ceiling absorbed 8,000,000 tokens."""
+    settings = llm_settings()
+    with Session(get_engine()) as db:
+        before = llm.usd_spent(db, since=llm.start_of_day())
+
+    call_id = llm.reserve(
+        job="interviewing",
+        model=MODEL,
+        provider="bedrock",
+        session_id=None,
+        max_tokens=4096,
+        estimated_input_tokens=1000,
+        settings=settings,
+    )
+    ledger.append(call_id)
+
+    with Session(get_engine()) as db:
+        row = db.get(LlmCall, call_id)
+        assert row.status == "reserved"
+        # Priced at the model, not left at zero — that is the whole point.
+        assert row.reserved_usd > 0
+        assert llm.usd_spent(db, since=llm.start_of_day()) > before
+
+    llm.settle(
+        call_id,
+        usage=llm.Usage(
+            input_tokens=10, output_tokens=5, cache_read_tokens=0, cache_write_tokens=0
+        ),
+        cost_usd=0.001,
+        latency_ms=5,
+        failed=False,
+    )
+    with Session(get_engine()) as db:
+        # Settled: the reservation is released and the real cost stands in its place.
+        assert db.get(LlmCall, call_id).reserved_usd == 0.0
+
+
+class SlowAnthropic(FakeAnthropic):
+    """A provider that takes its time, so calls genuinely overlap *in flight*.
+
+    Without the delay this test proves nothing about reservations: the advisory lock
+    serialises reserve-and-check, and an instant fake settles its real cost before the
+    next thread looks — so the ceiling holds whether or not the reservation was ever
+    priced. Verified by zeroing `reserved_usd` and watching the fast version still pass.
+
+    `_create` is overridden rather than `messages`, because `FakeAnthropic.__init__`
+    binds `self.messages` to a `SimpleNamespace` and a property cannot shadow it.
+    """
+
+    def __init__(self, *args: Any, delay: float = 0.4, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._delay = delay
+        self.messages = SimpleNamespace(create=self._create)
+
+    def _create(self, **kwargs: Any) -> Any:
+        time.sleep(self._delay)
+        return super()._create(**kwargs)
+
+
+def test_an_in_flight_dollar_reservation_stops_a_concurrent_call(ledger):
+    """The property the token ceiling was measured *not* having, in dollars.
+
+    Eight threads against a ceiling one reservation exceeds, with a provider slow enough
+    that every call is still in the air when the others check. Exactly one may reach the
+    provider — and it does so only because the in-flight row holds its dollars. Zero out
+    `reserved_usd` and this fails; zero it out with a *fast* provider and it does not,
+    which is why the delay is here.
+    """
+    use_settings(**MODEL_OVERRIDES)
+    # Small enough that a single reservation blows it. `complete` reserves
+    # `max_tokens` of output priced at the model's output rate, which for any current
+    # model is far more than a tenth of a cent.
+    settings = llm_settings(max_usd_per_day=0.001)
+    clients = [SlowAnthropic() for _ in range(8)]
+    allowed: list[int] = []
+    lock = threading.Lock()
+
+    def attempt(index: int) -> None:
+        try:
+            llm.complete(
+                job="interviewing",
+                messages=[{"role": "user", "content": "hi"}],
+                client=clients[index],
+                settings=settings,
+            )
+        except ProblemError:
+            return
+        with lock:
+            allowed.append(index)
+
+    threads = [threading.Thread(target=attempt, args=(i,)) for i in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(allowed) == 1, f"{len(allowed)} of 8 concurrent calls passed a $0.001 ceiling"
+    assert sum(len(client.requests) for client in clients) == 1
 
 
 # --- The routes ------------------------------------------------------------------------------

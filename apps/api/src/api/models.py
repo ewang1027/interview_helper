@@ -339,6 +339,11 @@ class LlmCall(SQLModel, table=True):
     # What the call was allowed to spend, counted against the budget while it is in
     # flight. Zero once settled, because `input_tokens` and the rest are then real.
     reserved_tokens: int = 0
+    # The same reservation, in dollars, priced at this row's own model. Stored rather
+    # than derived because `reserved_tokens` is one number and pricing needs the input
+    # and output halves separately — output costs five times input, so a single figure
+    # cannot be converted after the fact. Zero once settled, when `cost_usd` is real.
+    reserved_usd: float = 0.0
     settled_at: datetime | None = Field(default=None, sa_column=_ts(nullable=True))
     session_id: str | None = Field(default=None, foreign_key="sessions.id")
     job: str  # e.g. "session_planning", "grading", "practice_log_classify"
