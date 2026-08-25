@@ -28,6 +28,7 @@ from api.main import app
 from api.mastery import recompute
 from api.models import ConceptEvidence, LlmCall, Mastery, PracticeProblem, PracticeSolve
 from api.routes.practice import get_classifier
+from api.settings import get_settings
 from api.users import single_user
 
 pytestmark = pytest.mark.db
@@ -367,7 +368,16 @@ def test_the_classification_call_is_routed_and_billed_as_its_own_job(logged):
     client = client_with(model)
     log(client, logged)
 
-    assert model.requests[0]["model"] == MODEL
+    # Against the configured utility model rather than a literal. `client_with` calls
+    # `use_settings(model_utility=MODEL)`, but that installs a FastAPI dependency override
+    # and this path never reads it: the route calls `service.log_problem(...)` with no
+    # `settings`, so `llm.complete` resolves `get_settings()` itself and sees `.env`. The
+    # pin was decorative and the test passed only while the ambient default matched it.
+    #
+    # What this test is named for is the *routing* — that classification goes to the
+    # utility model and is billed as its own job — and that is what is asserted now,
+    # whichever model the utility slot holds.
+    assert model.requests[0]["model"] == get_settings().model_utility
     with Session(get_engine()) as db:
         call = db.exec(select(LlmCall).order_by(col(LlmCall.id).desc())).first()
         assert call is not None and call.job == "practice_log_classify"

@@ -5425,3 +5425,44 @@ restoring, and the suite was run twice to confirm the ledger is byte-identical a
 
 Second instance today of the same class: a fixture that cleans up *the state it found* but
 not *the state it made*.
+
+### Two more tests that were asserting `.env`
+
+Switching the provider broke two db tests, and neither was about the provider:
+
+```
+test_a_call_writes_one_ledger_row_with_its_cost
+    assert (job, model, provider) == ("interviewing", MODEL, "bedrock")
+    got 'anthropic'
+
+test_the_classification_call_is_routed_and_billed_as_its_own_job
+    assert model.requests[0]["model"] == "us.anthropic.claude-sonnet-4-6"
+    got 'claude-sonnet-5'
+```
+
+Both had passed since Phase 3 **by coincidence**: `.env` set neither `MODEL_PROVIDER` nor
+any `MODEL_*`, so `Settings`' defaults happened to equal the literals the tests hardcoded.
+Putting real values in `.env` broke them with nothing about the code changing. An assertion
+on ambient configuration is an assertion on whoever last edited `.env`.
+
+The second one exposed something worse than a stale literal. `client_with` calls
+`use_settings(model_utility=MODEL)` — which installs a FastAPI dependency override — but
+**this path never reads it**: the route calls `service.log_problem(...)` with no `settings`,
+so `llm.complete` resolves `get_settings()` itself and sees the environment. The pin has
+been decorative since it was written, and looked load-bearing.
+
+Fixed by pinning what each test actually means. `test_llm_db` threads settings explicitly,
+so `model_provider` joins the overrides. The practice test is named for the *routing* —
+classification goes to the utility model and is billed as its own job — so it now asserts
+against `get_settings().model_utility`, whichever model that slot holds.
+
+Verified across three configurations rather than the one on this machine: **187 passed**
+under the live Anthropic settings, under the old Bedrock settings, and with no `MODEL_*` at
+all — which is a fresh clone, and what CI sees.
+
+That is three findings of one shape in a day: a test that reads its expectation from the
+environment instead of pinning it. Yesterday's needed a database somebody had logged into;
+this morning's needed a machine with no `SESSION_SECRET`; this one needed an `.env` with a
+provider in it. **None of the three could be caught by the environment the other two need**,
+which is the argument for varying the configuration deliberately rather than trusting that
+green means portable.

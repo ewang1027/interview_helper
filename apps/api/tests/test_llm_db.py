@@ -70,6 +70,12 @@ class FakeAnthropic:
 
 
 MODEL_OVERRIDES: dict[str, Any] = {
+    # Pinned, not inherited. These tests assert the ledger records `bedrock` and this
+    # exact model id, and until 2026-08-25 they passed because `.env` set neither and the
+    # *defaults* happened to match. Setting a real provider in `.env` broke them without
+    # anything about the code changing — an assertion on ambient configuration is an
+    # assertion on whoever last edited `.env`.
+    "model_provider": "bedrock",
     "model_interviewer": MODEL,
     "model_grader": MODEL,
     "model_planner": MODEL,
