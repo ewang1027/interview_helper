@@ -47,3 +47,8 @@ apps/executor/scratch/
 
 # Local database dumps — `make backup`. Personal data, and large.
 /backups/
+
+# pytest-cov output
+.coverage
+coverage.xml
+htmlcov/
