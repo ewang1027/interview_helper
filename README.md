@@ -75,7 +75,7 @@ breakdown, because adaptation you cannot inspect is adaptation you cannot trust.
 | `research/` | *Empty placeholder.* Corpus ingestion pipeline, Phase 1 — the 48 items were hand-authored, not pipeline-produced |
 | `scripts/` | The gates: secret scan, doc links, doc consistency, reference-solution verification — all four run in CI — plus the local push and hygiene checks |
 | `hooks/` | `pre-push`: secret scan and the docs-with-code check, installed by `make setup` |
-| `infra/compose/` | Local Postgres today; the rest of the stack lands in Phase 6 with the Dockerfiles |
+| `infra/compose/` | The whole stack — Postgres, api, executor, web and a Caddy front door. `make up-stack` |
 | `infra/terraform/` | *Empty placeholder.* AWS: VPC, ALB, ECS Fargate, RDS, observability — Phase 6 |
 | `docs/` | Design and specification — see the map below |
 | `CLAUDE.md` | How to work here: docs travel with the code, commit and push at every checkpoint |
@@ -102,7 +102,7 @@ buildlog disagree about what exists, the buildlog is right.**
 | [COST](docs/COST.md) | Model routing, hard budgets, the ledger | 3 → 6 | Policy set |
 | [ADAPTIVE](docs/ADAPTIVE.md) | Elo + FSRS, evidence, weakness priority, planning | 4 | ✅ Built |
 | [WEB](docs/WEB.md) | Routes, the four mode workspaces, dashboard | 5 | ✅ All nine routes built |
-| [INFRA](docs/INFRA.md) | AWS from first principles — written to teach | 6 | Spec |
+| [INFRA](docs/INFRA.md) | AWS from first principles — written to teach | 6 | ✅ Compose stack built · AWS is spec |
 | [VOICE](docs/VOICE.md) | Vapi adapter, latency budget, what changes for speech | 7 | Spec |
 | [OPERATIONS](docs/OPERATIONS.md) | Backups, deploys, alarms, runbook | 8 | ✅ Local backup built · rest is spec |
 | [PRACTICE_LOG](docs/PRACTICE_LOG.md) | External problem tracker: LLM classification, spaced re-solve queue | 9 (needs 3+4) | ✅ Built |
@@ -116,6 +116,8 @@ make seed       # load the corpus into the database
 make dev-api    # run the API against it (uvicorn --reload)
 make login      # mint a session cookie — every /api/v1 route needs one
 make dev-web    # run the web app (proxies /api and /auth to the API — one origin)
+make up-stack   # the whole thing in containers on :3000 — the supported deployment
+make down-stack # stop it (the database volume survives)
 make check      # ruff + mypy + pytest + corpus validate + doc gates + web checks, then hygiene
 make check-web  # just the web app: eslint, tsc, component tests
 make coverage   # Python coverage — needs Postgres, or the figure drops ~26 points
@@ -130,9 +132,10 @@ make restore FILE=... CONFIRM=1   # replace the database with a dump
 make down             # tear down the local stack — data survives; `down -v` does not
 ```
 
-`make dev` currently brings up Postgres only — the `api`, `web` and `executor`
-containers land in Phase 6, when they have Dockerfiles. Until then the three run from
-`make dev-api`, `make dev-web` and the executor directly. The web app talks to the API
+`make dev` brings up Postgres only, which is what the local `uvicorn`/`next` workflow
+wants. `make up-stack` runs everything in containers instead — that is the *supported
+deployment*, not a dev convenience, and the portability gate in [INFRA](docs/INFRA.md)
+runs exactly it on a second machine. The web app talks to the API
 through a same-origin proxy rather than to `localhost:8000`, because the session cookie is
 `SameSite=Lax` and the API mounts no CORS — see [WEB](docs/WEB.md#one-origin-and-why).
 
@@ -201,7 +204,15 @@ owes.
       eslint, tsc, 26 component tests, production build. **Nothing has been opened in a
       browser yet**, so the visual layer is unreviewed; the Playwright gate is owed, and
       so is a live session against a real interviewer*
-- [ ] **6 — AWS deploy**
+- [ ] **6 — AWS deploy** — *step 1 of the ramp landed 2026-08-25: Dockerfiles for
+      `api`, `executor` and `web`, and `make up-stack` runs the whole application in
+      containers behind a **Caddy front door** that routes by path — the job the ALB does
+      in the target diagram, so compose mirrors the deployed topology instead of
+      approximating it. Only the front door publishes a port; the API and executor are
+      reachable only on the compose network. The sandbox was re-verified from inside the
+      containerised launcher — no egress, no socket, no writes outside `/scratch`. **Steps
+      2–5 need an authenticated AWS session**, not more code: `aws sts get-caller-identity`
+      reports the session expired*
 - [ ] **7 — Voice via Vapi**
 - [ ] **8 — Hardening**
 - [x] **9 — Practice log** — *external problem tracking, classification behind a

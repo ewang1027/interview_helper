@@ -1,7 +1,9 @@
 # Infrastructure
 
-> **Status:** Specification and learning ramp — no AWS resource exists yet. Lands in
-> **Phase 6**. Nothing before Phase 6 depends on AWS; the app runs under Docker Compose.
+> **Status:** **Step 1 built (2026-08-25)** — `make up-stack` runs the whole application
+> in containers behind one front door, and the sandbox still isolates from inside one.
+> Steps 2–5 are specification: **no AWS resource exists yet**, and the next one needs an
+> authenticated AWS session rather than more code. Nothing before Phase 6 depends on AWS.
 > Related: [SECURITY](SECURITY.md) (what these controls enforce) · [OPERATIONS](OPERATIONS.md) (running it once deployed) · [COST](COST.md) · [GLOSSARY](GLOSSARY.md#infrastructure)
 
 This file is written to **teach**, not just to specify. Phase 6 is as much a cloud-infra
@@ -19,8 +21,9 @@ Budgets alarm.
 
 **Container.** A packaged filesystem plus the command to run. It bundles your code *and*
 its dependencies, so the same artifact behaves identically on your laptop and in AWS.
-This project **will produce** three: `api`, `executor`, `web`. **None has a Dockerfile
-yet** — they are built in Phase 6.
+This project produces three: `api`, `executor`, `web` — **all three have Dockerfiles as of
+2026-08-25**. Each is multi-stage, so the runtime image carries the application and not the
+toolchain that built it, and the two web-facing ones run as a non-root uid.
 
 **Image / registry.** An image is the built container; a registry is where images are
 stored. AWS's registry is **ECR** (Elastic Container Registry). You build locally or in
@@ -28,10 +31,9 @@ CI, push to ECR, and AWS pulls from there.
 
 **Docker Compose.** Runs several containers together on one machine, with a network
 between them. It is also a *supported deployment* — the intended way the stack runs on
-another device, not merely a dev-only convenience. **Today it composes one service:**
-`make dev` brings up Postgres alone, because `api`, `web` and `executor` have no
-Dockerfiles yet. The other three join in Phase 6, which is when the portability claim
-above becomes testable.
+another device, not merely a dev-only convenience. **It now composes five:** `make up-stack` brings up Postgres, `api`, `executor`, `web` and
+a `caddy` front door. `make dev` still brings up Postgres alone, because the local
+uvicorn/next workflow wants only that.
 
 **ECS (Elastic Container Service).** AWS's container orchestrator. You tell it "run 2
 copies of this image, with this much CPU and memory"; it does that and restarts them
@@ -83,11 +85,17 @@ delete everything and get it back.
 
 Each step is understood before the next begins.
 
-**Step 1 — Compose locally.** `docker compose up` brings up Postgres, API, executor, and
-web. Goal: see what a container is and how services find each other on a network.
-*Nothing AWS yet.*
+**Step 1 — Compose locally. ✅ Built 2026-08-25.** `make up-stack` brings up Postgres, API,
+executor, web and a front door. What it cost is under **What step 1 actually taught**
+below — three of the four problems were not the ones this step was expected to teach.
 
-**Step 2 — One service on Fargate, by hand.** Push the API image to ECR and run a single
+**Step 2 — One service on Fargate, by hand. ← next, and blocked on credentials.**
+`aws sts get-caller-identity` reports an expired session, so this is waiting on
+`aws login` rather than on anything in this repo. It is also deliberately a *human* step:
+its value is the clicking, and Terraform written before it would be code nobody had the
+context to read.
+
+**Step 2 (detail) — One service on Fargate, by hand.** Push the API image to ECR and run a single
 Fargate service through the console. Goal: watch a container you built serve real traffic
 from AWS, and see where the logs land. Clicking through the console once makes the
 Terraform that replaces it legible.
@@ -105,6 +113,62 @@ Budgets alarm on the credits. Added incrementally, each with a `plan` read befor
 images. This is a gate, not a nice-to-have.
 
 ---
+
+## What step 1 actually taught
+
+Four problems, and the one this step was *supposed* to be about — how services find each
+other on a network — was the least of them.
+
+**The compose project name owns the data.** Adding a tidy `name: interview-helper` renames
+the volume with it, so the stack comes up against `interview-helper_postgres_data` while
+every session, evidence row and practice problem sits in the orphaned
+`compose_postgres_data`. Nothing is deleted and everything looks deleted. There is now no
+`name:` key and a comment saying why.
+
+**Debian's Docker packaging moved.** `apt-get install docker.io` on trixie succeeds and
+installs **only `docker-init`** — no `/usr/bin/docker`. The build was green and every
+execution came back `could not launch docker: [Errno 2] No such file or directory`. The
+CLI is now copied from `docker:27-cli`, pinned, which is immune to that drift.
+
+**Next bakes its rewrites at build time.** `next.config.ts` reads `API_ORIGIN` and
+`rewrites()` is resolved into `.next/routes-manifest.json` during `next build` — so an
+image built on a laptop carries `http://localhost:8000` however the runtime environment is
+set. Measured: `API_ORIGIN=http://api:8000` in the container, `localhost:8000` in the
+manifest, every proxied request `ECONNREFUSED`. A build arg would have "fixed" it by making
+the image environment-specific, which is the opposite of what an image is for.
+
+The fix is the interesting part: **the stack grew a `caddy` front door that routes by
+path**, which is the job the ALB does in the diagram below. So compose now mirrors the
+target topology rather than approximating it, the image is portable, and the web app's
+rewrites are demoted to a `pnpm dev` convenience. Step 5's portability gate got more
+meaningful as a side effect.
+
+**Only the front door publishes a port.** `api` and `executor` are reachable only on the
+compose network, which is the same boundary private subnets draw in AWS. It also keeps the
+session cookie first-party without the web app proxying anything.
+
+### The executor holds the Docker socket, and that is the local model
+
+`apps/executor/Dockerfile` mounts `/var/run/docker.sock`, which is **root-equivalent
+control of the host**. It is written down in three places now because it deserves to be:
+the executor is a *launcher* that never evaluates candidate code in its own process, it
+holds the socket and no other credential, and it does not survive to production —
+[ARCHITECTURE](ARCHITECTURE.md#where-the-sandbox-actually-lives) has the Fargate reasoning.
+
+What makes it work at all is that the sandbox passes source on **stdin** and mounts only
+`--tmpfs`. A sibling container started through the host daemon needs no path from the
+executor's own filesystem, which is exactly what a bind-mounted source would have broken.
+
+Isolation was re-verified from inside the containerised launcher rather than assumed —
+same properties the escape suite checks, run against the deployed topology:
+
+```
+network egress             DENIED
+the docker socket itself   DENIED   ← the sandbox does not inherit its launcher's socket
+writing outside /scratch   DENIED
+reading /etc/passwd        DENIED
+running as root            DENIED
+```
 
 ## Target architecture
 

@@ -1,9 +1,27 @@
-# Scope note: docs/BUILDLOG.md originally deferred this whole file to Phase 6
-# ("writing it before there are services to compose would be guessing"). Phase 3
-# needs a real Postgres to develop against, so this starts with just that — `api`,
-# `web` and `executor` containers stay Phase 6 (no Dockerfile exists yet for any of
-# them; `uv run uvicorn api.main:app --reload` against this Postgres is the Phase 3
-# local workflow, per apps/api/README-equivalent instructions in the Makefile).
+# The whole stack on one machine. docs/INFRA.md step 1.
+#
+# Compose is a *supported deployment* here, not only a dev convenience — it is the
+# intended way this runs on another device, and step 5 of the ramp makes that a gate
+# rather than a claim.
+#
+# Two things about the topology are worth reading before editing it:
+#
+#   - **Only `web` publishes a port.** The API is reachable from the browser only through
+#     the web app's same-origin proxy, which is what keeps the session cookie first-party
+#     (docs/WEB.md). It mirrors the deployed shape, where one ALB fronts everything and
+#     the API sits in a private subnet. `make dev` still publishes Postgres, because
+#     migrations and tests run from the host.
+#   - **The executor holds the Docker socket and nothing else.** See its Dockerfile for
+#     why that is the local model and why it does not survive to Fargate.
+#
+# `make dev` brings up Postgres alone (the profile below); `make up-stack` brings up all
+# four.
+#
+# **There is deliberately no `name:` key.** Compose derives the project name from this
+# file's directory, which makes the volume `compose_postgres_data` — the one holding every
+# session, every evidence row and the practice log. Setting a prettier project name renames
+# the volume with it, so the stack comes up against an *empty database* and the data looks
+# deleted while sitting in an orphaned volume. Measured while writing this file.
 
 services:
   postgres:
@@ -21,6 +39,78 @@ services:
       interval: 2s
       timeout: 3s
       retries: 15
+
+  api:
+    profiles: ["stack"]
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    # Secrets come from the repo's .env, never from this file and never from the image.
+    # `required: false` so a clone without one still parses — the API then fails closed
+    # on its own terms, answering 503 and naming the variable it wants
+    # (docs/API.md#auth), which is a better error than compose refusing to interpolate.
+    env_file:
+      - path: ../../.env
+        required: false
+    # These override anything .env says, and must: a developer's .env points DATABASE_URL
+    # and EXECUTOR_URL at localhost, which inside a container is the container itself.
+    environment:
+      DATABASE_URL: postgresql+psycopg://interview:interview@postgres:5432/interview_helper
+      EXECUTOR_URL: http://executor:8081
+      # The browser's origin, not the API's: the callback's Set-Cookie is stored against
+      # whichever origin answered, and a cookie set on the API's port is cross-site to a
+      # page served by `web` (docs/WEB.md#one-origin-and-why).
+      GITHUB_REDIRECT_URI: ${GITHUB_REDIRECT_URI:-http://localhost:3000/auth/callback}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      executor:
+        condition: service_healthy
+    restart: unless-stopped
+
+  executor:
+    profiles: ["stack"]
+    build:
+      context: ../..
+      dockerfile: apps/executor/Dockerfile
+    environment:
+      EXECUTOR_IMAGE: ${EXECUTOR_IMAGE:-python:3.12-slim}
+    volumes:
+      # Root-equivalent control of the host, deliberately, and the one service that gets
+      # it. Read the header of apps/executor/Dockerfile before changing this.
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+  web:
+    profiles: ["stack"]
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    # No API_ORIGIN and no published port. In the container the web app serves pages and
+    # nothing else — `caddy` below is what makes /api and the app one origin. Next bakes
+    # its rewrites at build time, so an image cannot carry a correct one anyway; see
+    # infra/compose/Caddyfile.
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # The front door: one origin, routing by path, the same job the ALB does in
+  # docs/INFRA.md's target architecture. Published on 3000 so the deployed and the
+  # `pnpm dev` origins match — which matters because the GitHub OAuth app registers one
+  # callback URL and a different port here would break sign-in against the container
+  # stack only.
+  caddy:
+    profiles: ["stack"]
+    image: caddy:2.8-alpine
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+      - web
+    restart: unless-stopped
 
 volumes:
   postgres_data:

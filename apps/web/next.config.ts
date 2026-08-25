@@ -19,6 +19,11 @@ import type { NextConfig } from "next";
 const API_ORIGIN = process.env.API_ORIGIN ?? "http://localhost:8000";
 
 const nextConfig: NextConfig = {
+  // Emits `.next/standalone` — a self-contained server with only the dependencies it
+  // actually imports, so the runtime image carries neither `node_modules` nor the
+  // toolchain. docs/INFRA.md step 1.
+  output: "standalone",
+
   async rewrites() {
     return [
       { source: "/api/:path*", destination: `${API_ORIGIN}/api/:path*` },

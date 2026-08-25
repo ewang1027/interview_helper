@@ -1,0 +1,47 @@
+# The front door. One origin, routing by path — the same shape the ALB has in
+# docs/INFRA.md's target architecture, which is the point of it being here rather than
+# a convenience.
+#
+# It exists because **Next resolves `rewrites()` at build time**, into
+# `.next/routes-manifest.json`. `next.config.ts` reads `API_ORIGIN` from the environment,
+# so a container built on a laptop bakes `http://localhost:8000` and keeps it however the
+# runtime environment is set — measured: `API_ORIGIN=http://api:8000` in the container,
+# `localhost:8000` in the manifest, every proxied request `ECONNREFUSED`. Passing it as a
+# build arg would fix that by making the image environment-specific, which is the opposite
+# of what a container is for.
+#
+# So the web app does not proxy in the container at all. Its rewrites remain a `pnpm dev`
+# convenience for the case where there is no front door.
+
+:3000 {
+	# Order matters: these three are the API's, everything else is the app's.
+	# `/health` stays outside `/api/v1` deliberately (docs/API.md) — it is what a load
+	# balancer polls, and routing it here is what the ALB will do too.
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+	handle /auth/* {
+		reverse_proxy api:8000
+	}
+	handle /health {
+		reverse_proxy api:8000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+
+	# **Deliberately no `encode`.** Compression buys almost nothing on one machine and
+	# risks the thing that matters most here: a proxy that buffers `text/event-stream`
+	# turns a live interview transcript into one delivery at the end, which looks like a
+	# hung model rather than a proxy setting. Caddy streams SSE untouched when nothing
+	# asks it to compress.
+	#
+	# (The first attempt did try to compress everything *except* SSE. Caddy 2.8 has no
+	# `not` response matcher for `encode`, so it refused the config and restart-looped —
+	# which is the better failure of the two available.)
+
+	log {
+		output stdout
+		format console
+	}
+}

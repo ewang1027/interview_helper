@@ -5,7 +5,7 @@ COMPOSE := docker compose -f infra/compose/docker-compose.yml
 .PHONY: help setup dev up dev-api dev-web down check check-web lint typecheck test fmt \
         corpus-validate seed test-sandbox test-e2e test-db cost-report secret-scan \
         doc-links doc-check hygiene verify-solutions login test-llm build-web \
-        backup restore coverage clean
+        backup restore coverage build-stack up-stack down-stack logs-stack clean
 
 help: ## Show this help
 	@# [a-zA-Z0-9_-] not [a-z-]: the narrower class silently dropped `test-e2e`
@@ -40,6 +40,24 @@ dev-web: ## Run the web app against the API (next dev, proxies /api and /auth to
 
 build-web: ## Production build of the web app
 	cd apps/web && pnpm build
+
+build-stack: ## Build the api, executor and web images
+	$(COMPOSE) --profile stack build
+
+up-stack: ## Run the whole thing in containers on :3000 (docs/INFRA.md step 1)
+	@# Not `dev`: this is the supported deployment, and the portability gate in
+	@# docs/INFRA.md step 5 runs exactly this on a second machine. `make dev` stays the
+	@# Postgres-only target the local uvicorn/next workflow uses.
+	$(COMPOSE) --profile stack up -d --build
+	@echo
+	@echo "  the stack is on http://localhost:3000 — one origin, api behind the front door"
+	@echo "  make logs-stack to follow it, make down-stack to stop"
+
+down-stack: ## Stop the container stack (the database volume survives)
+	$(COMPOSE) --profile stack down
+
+logs-stack: ## Follow every service's logs
+	$(COMPOSE) --profile stack logs -f
 
 down: ## Tear down the local stack
 	$(COMPOSE) down

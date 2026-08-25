@@ -25,7 +25,8 @@ detail behind it.
 | **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | a full session against a live provider — gated on Bedrock access, not on code |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within ten sessions — five until `W_UNLOCKS` woke up | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus |
 | **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode import, `/login`. Monaco served locally rather than from a CDN. 30 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
-| **6–8** AWS, voice, hardening | **not started** | — | — |
+| **6** AWS deploy | **partial** — step 1 of 5 | Dockerfiles for `api`, `executor` and `web`; `make up-stack` runs all of it behind a **Caddy front door** routing by path, the job the ALB does — so compose mirrors the target topology. Only the front door publishes a port. Sandbox isolation re-verified from inside the containerised launcher | steps 2–5: one service on Fargate by hand, Terraform, the rest of the stack, the portability gate — **all blocked on an authenticated AWS session**, not on code |
+| **7–8** Voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
 
 One thing worth knowing before reading anything else as further along than it is:
@@ -5163,3 +5164,98 @@ that only one of them can see.
 Verified by reproducing CI's condition rather than assuming: `.env` stripped of
 `SESSION_SECRET` and the OAuth block, full suite re-run — **509 passed**, including the two
 that failed — then `.env` restored.
+
+---
+
+## Phase 6, step 1 — the app runs in containers · 2026-08-25
+
+docs/INFRA.md's ramp starts with Compose and says why: *"see what a container is and how
+services find each other on a network."* That was the least of it. Four problems, three of
+them nothing to do with networking, and one of them nearly lost the database.
+
+### The compose project name owns the volume
+
+Adding a tidy `name: interview-helper` to the compose file renames the volume with it. The
+stack then comes up against an empty `interview-helper_postgres_data` while every session,
+evidence row and practice problem sits untouched in the orphaned `compose_postgres_data`.
+Nothing is deleted; everything looks deleted.
+
+Caught because the rename also freed port 5432 and the old container was still holding it,
+which is luck rather than diligence. There is now no `name:` key and a comment saying why,
+and the data was confirmed intact afterwards:
+
+```
+sessions=15 users=1 items=48 concepts=159
+```
+
+### `apt-get install docker.io` no longer installs docker
+
+On Debian 13 that package provides **only `docker-init`** — no `/usr/bin/docker` at all.
+The build was green and every execution returned
+`could not launch docker: [Errno 2] No such file or directory`. A build that succeeds while
+omitting the single binary the service exists to call is the argument for pinning:
+`COPY --from=docker:27-cli`.
+
+### Next bakes its rewrites at build time, so the image cannot be portable
+
+This one changed the design. `next.config.ts` reads `API_ORIGIN` and Next resolves
+`rewrites()` into `.next/routes-manifest.json` during `next build` — so an image built on a
+laptop carries `http://localhost:8000` regardless of its runtime environment:
+
+```
+container env:     API_ORIGIN=http://api:8000
+routes-manifest:   /api/:path* -> http://localhost:8000/api/:path*
+every request:     ECONNREFUSED 127.0.0.1:8000
+```
+
+A build arg would have fixed it by making the image environment-specific, which is the
+opposite of what an image is for.
+
+**So the stack grew a `caddy` front door that routes by path** — `/api`, `/auth` and
+`/health` to the API, everything else to the web app. That is precisely the job the ALB
+does in INFRA.md's target diagram, so compose now *mirrors* the deployed topology instead
+of approximating it, the image is portable, and the web app's rewrites are demoted to a
+`pnpm dev` convenience. Step 5's portability gate became more meaningful as a side effect
+of fixing something else.
+
+Only the front door publishes a port. `api` and `executor` are reachable on the compose
+network alone — the same boundary private subnets draw in AWS.
+
+### The executor holds the Docker socket, and the sandbox still isolates
+
+`/var/run/docker.sock` is root-equivalent control of the host, and the executor container
+gets it. That is the local model ARCHITECTURE.md settled in Phase 2: a *launcher* that
+never evaluates candidate code in-process, holding the socket and no other credential, on a
+path that does not survive to Fargate — where there is no socket and the task itself is the
+boundary.
+
+It works in a container only because the sandbox passes source on **stdin** and mounts only
+`--tmpfs`. A sibling container needs no path from the launcher's filesystem; a bind-mounted
+source would have broken here and been a confusing way to find out.
+
+Re-verified against the containerised topology rather than assumed:
+
+```
+network egress             DENIED
+the docker socket itself   DENIED   ← the sandbox does not inherit its launcher's socket
+writing outside /scratch   DENIED
+reading /etc/passwd        DENIED
+running as root            DENIED
+```
+
+The repo's own 31 sandbox tests still pass unchanged.
+
+### Verified
+
+All eight pages 200 through the front door; `/api/v1/mastery` 401 without a cookie and 200
+with one, on the same origin; `/health` routed to the API; two-of-two tests passing from
+the containerised executor. Images: api 516MB, executor 751MB, web 462MB — the web one
+carries 24MB of vendored Monaco, which is the trade for an editor that works without
+egress. Both web-facing services run as uid 10001.
+
+### What steps 2–5 need, and it is not code
+
+`aws sts get-caller-identity` reports the session expired, so **step 2 is blocked on
+`aws login`**. It is also deliberately a human step — INFRA.md wants the console clicked
+once so the Terraform that replaces it is legible, and Terraform written before that would
+be code nobody had the context to review. Terraform 1.x is installed and ready.

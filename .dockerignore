@@ -1,0 +1,27 @@
+# Build context hygiene. Without this the context is ~1GB — node_modules, .venv, the
+# vendored Monaco bundle and the whole of .git — and every build pays to upload it.
+.git
+.github
+
+# Python
+**/__pycache__
+**/*.py[cod]
+.venv
+.pytest_cache
+.mypy_cache
+.ruff_cache
+**/*.egg-info
+.coverage
+
+# Node — reinstalled inside the image from the lockfile
+apps/web/node_modules
+apps/web/.next
+apps/web/public/monaco
+
+# Local state
+.env
+.env.*
+!.env.example
+backups
+docs
+research
