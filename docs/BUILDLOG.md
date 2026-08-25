@@ -5132,3 +5132,34 @@ way round and worth recording: the unavailable slug is `dependency-unavailable`,
 schema failure is **400** here rather than 422, because FastAPI cannot distinguish a
 malformed body from a well-formed invalid one and this API resolves that toward 400
 everywhere.
+
+### CI caught the same class of bug a second time, from the other direction
+
+Two of those new tests passed locally and failed in CI:
+
+```
+FAILED test_every_corpus_route_needs_a_session_cookie - assert 503 == 401
+FAILED test_the_import_needs_a_session_cookie        - assert 503 == 401
+```
+
+Both assert that an unauthenticated request is refused. Both got `503 not-configured`
+instead, because **CI has no `SESSION_SECRET`** and this API fails closed on missing
+configuration rather than answering `401` — no credential would help, and a login problem
+is not what is wrong. Locally there is a `.env` with a secret, so locally the assertion was
+about auth; in CI it was about configuration.
+
+The fix is one line each: `use_settings()` first, so the thing under test is *a configured
+server with no cookie*, which is the assertion that was meant. `sign_in` installs that
+override as a side effect, which is why every other test in these files was unaffected and
+why the gap was invisible.
+
+Worth putting next to yesterday's auth-adoption finding, because it is the same shape
+inverted. That one needed a database somebody had logged into — a state **only a real
+machine** reaches, which CI structurally cannot. This one needed an environment with
+nothing configured — a state **only CI** reaches, which a developer's machine structurally
+cannot. Neither environment is a superset of the other, and a test can be wrong in a way
+that only one of them can see.
+
+Verified by reproducing CI's condition rather than assuming: `.env` stripped of
+`SESSION_SECRET` and the OAuth block, full suite re-run — **509 passed**, including the two
+that failed — then `.env` restored.

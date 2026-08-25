@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from conftest import sign_in
+from conftest import sign_in, use_settings
 from fastapi.testclient import TestClient
 from sqlmodel import Session, col, delete, select
 
@@ -224,6 +224,9 @@ def test_an_import_with_neither_slugs_nor_a_username_is_refused(imported):
 
 
 def test_the_import_needs_a_session_cookie(imported):
+    """A configured server with no cookie answers 401 — see the note in
+    `test_corpus_routes_db.py`; without `use_settings()` this asserts 503 in CI."""
+    use_settings()
     app.dependency_overrides[get_leetcode_client] = lambda: ScriptedLeetCode({})
     assert (
         TestClient(app)

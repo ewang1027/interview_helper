@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from conftest import sign_in
+from conftest import sign_in, use_settings
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
@@ -139,6 +139,14 @@ def test_an_unknown_item_is_a_404():
 
 
 def test_every_corpus_route_needs_a_session_cookie():
+    """A *configured* server with no cookie answers 401.
+
+    `use_settings()` is what makes that the thing being tested. Without it the app has no
+    `SESSION_SECRET` and every `/api/v1` route answers `503 not-configured` instead —
+    correct, and a different assertion. This passed locally on a `.env` that has a secret
+    and failed in CI, which builds its environment from nothing.
+    """
+    use_settings()
     anonymous = TestClient(app)
     for path in ("/concepts", "/corpus/items", "/corpus/items/i.code.0004"):
         assert anonymous.get(f"/api/v1{path}").status_code == 401, path
