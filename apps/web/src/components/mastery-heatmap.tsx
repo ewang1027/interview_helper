@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
 import { elo, relativeDue } from "@/lib/format";
-import type { MasteryRow, RankedConcept } from "@/lib/types";
+import type { MasteryRow, TaxonomyConcept } from "@/lib/types";
 
 /**
  * The mastery heatmap — concepts as cells, grouped by domain.
@@ -70,23 +70,29 @@ export interface HeatmapConcept {
   calibrating: boolean;
 }
 
-/** Join the ranked taxonomy to whatever mastery rows exist for it. */
+/**
+ * Join the taxonomy to whatever mastery rows exist for it.
+ *
+ * Every number comes from the mastery row and nowhere else: a concept with no row has
+ * never been measured, and inventing a default ability for it would draw a cell that
+ * looks measured. `normalized: null` is what makes it render outside the ramp.
+ */
 export function toHeatmapConcepts(
-  taxonomy: RankedConcept[],
+  taxonomy: TaxonomyConcept[],
   mastery: MasteryRow[],
 ): HeatmapConcept[] {
   const measured = new Map(mastery.map((row) => [row.concept_id, row]));
   return taxonomy.map((concept) => {
-    const row = measured.get(concept.concept_id);
+    const row = measured.get(concept.id);
     return {
-      concept_id: concept.concept_id,
+      concept_id: concept.id,
       name: concept.name,
       domain: concept.domain,
-      observations: row?.observations ?? concept.observations,
+      observations: row?.observations ?? 0,
       normalized: row ? row.normalized_ability : null,
-      ability: row?.ability ?? concept.ability,
+      ability: row?.ability ?? 0,
       due_at: row?.due_at ?? null,
-      calibrating: row ? row.calibrating : concept.calibrating,
+      calibrating: row?.calibrating ?? false,
     };
   });
 }

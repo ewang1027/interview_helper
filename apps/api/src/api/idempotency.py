@@ -29,18 +29,35 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlmodel import Session, col, delete
 
 from api.errors import ProblemError
 from api.models import IdempotencyKey
 
+logger = logging.getLogger(__name__)
+
 # Long enough for a UUID and then some; short enough that the column is not a place to
 # put a payload. A client that needs more than this is doing something else.
 MAX_KEY_LENGTH = 255
+
+# How long a key stays replayable.
+#
+# The point of a key is to survive a retry, and a retry happens within seconds — a browser
+# reconnecting, a user double-clicking. A day is orders of magnitude more than that and
+# still bounds the table, which without this grew by one row per keyed request forever.
+# Long enough that no real retry expires; short enough that the table is a working set
+# rather than a log.
+#
+# Beyond the TTL a key is not *refused* — it is simply unknown again, so the request runs
+# as a new one. That is the honest behaviour: a client retrying a day later is not
+# retrying, and telling it "already used" would be a worse answer than doing the work.
+TTL_HOURS = 24
 
 
 def fingerprint(body: Any) -> str:
@@ -77,6 +94,27 @@ def _in_flight(endpoint: str) -> ProblemError:
     )
 
 
+def _expire(db: Session) -> None:
+    """Drop keys past their TTL.
+
+    Swept on write rather than by a scheduled job, because this deployment has nothing to
+    schedule with — one process, no worker (docs/OPERATIONS.md). The cost is one indexed
+    DELETE on a table whose working set is the last day of keyed requests, paid by the
+    request that is about to add to it.
+
+    A failure here must not fail the request it is attached to: the reservation is what
+    matters and an uncollected row is harmless. Rolled back rather than swallowed, so the
+    caller's own insert still gets a clean session.
+    """
+    cutoff = datetime.now(UTC) - timedelta(hours=TTL_HOURS)
+    try:
+        db.exec(delete(IdempotencyKey).where(col(IdempotencyKey.created_at) < cutoff))
+        db.commit()
+    except SQLAlchemyError:
+        logger.warning("could not expire idempotency keys", exc_info=True)
+        db.rollback()
+
+
 def run_once(
     db: Session,
     *,
@@ -102,6 +140,8 @@ def run_once(
             title="Malformed Idempotency-Key",
             detail=f"An Idempotency-Key must be 1 to {MAX_KEY_LENGTH} characters.",
         )
+
+    _expire(db)
 
     digest = fingerprint(body)
     row = IdempotencyKey(user_id=user_id, endpoint=endpoint, key=key, request_fingerprint=digest)

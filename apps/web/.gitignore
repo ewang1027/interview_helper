@@ -43,3 +43,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Monaco, copied out of node_modules by scripts/vendor-monaco.mjs at build time.
+# A build artifact of a dependency the lockfile already pins — ~24MB.
+/public/monaco/

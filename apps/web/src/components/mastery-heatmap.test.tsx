@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { MasteryHeatmap, toHeatmapConcepts, type HeatmapConcept } from "./mastery-heatmap";
-import type { MasteryRow, RankedConcept } from "@/lib/types";
+import type { MasteryRow, TaxonomyConcept } from "@/lib/types";
 
 const YESTERDAY = new Date(Date.now() - 86_400_000).toISOString();
 const NEXT_WEEK = new Date(Date.now() + 7 * 86_400_000).toISOString();
@@ -109,21 +109,23 @@ describe("mastery heatmap", () => {
 });
 
 describe("toHeatmapConcepts", () => {
-  const ranked: RankedConcept = {
-    concept_id: "sliding-window",
+  const taxonomy: TaxonomyConcept = {
+    id: "sliding-window",
     name: "Sliding window",
     domain: "coding",
-    priority: 0.2,
-    ability: 1550,
-    observations: 0,
-    calibrating: true,
-    unseen: true,
-    terms: { weakness: 0, recent_errors: 0, overdue: 0, unlocks: 0, recent_exposure: 0 },
+    description: "Maintain a contiguous window…",
+    band: "core",
+    tags: [],
+    prereqs: ["two-pointers"],
+    unlocks: [],
+    servable: true,
+    measured_by_some_item: true,
   };
 
   it("keeps a concept with no mastery row unmeasured", () => {
-    const [merged] = toHeatmapConcepts([ranked], []);
+    const [merged] = toHeatmapConcepts([taxonomy], []);
     expect(merged.normalized).toBeNull();
+    expect(merged.observations).toBe(0);
     expect(merged.name).toBe("Sliding window");
   });
 
@@ -139,11 +141,11 @@ describe("toHeatmapConcepts", () => {
       last_seen: YESTERDAY,
     };
 
-    const [merged] = toHeatmapConcepts([ranked], [row]);
+    const [merged] = toHeatmapConcepts([taxonomy], [row]);
     expect(merged.ability).toBeCloseTo(1501.14);
     expect(merged.observations).toBe(5);
     expect(merged.due_at).toBe(YESTERDAY);
-    // The name still comes from the ranking — the mastery row has none.
+    // The name still comes from the taxonomy — the mastery row has none.
     expect(merged.name).toBe("Sliding window");
   });
 });

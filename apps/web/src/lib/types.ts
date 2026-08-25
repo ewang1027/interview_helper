@@ -259,6 +259,55 @@ export interface WeaknessView {
 
 // ─── Corpus and cost ─────────────────────────────────────────────────────────
 
+/** A node of the taxonomy, from `GET /concepts`. */
+export interface TaxonomyConcept {
+  id: string;
+  name: string;
+  domain: string;
+  description: string;
+  band: string;
+  tags: string[];
+  prereqs: string[];
+  /** The reverse of `prereqs`, derived server-side so the DAG is drawable in one request. */
+  unlocks: string[];
+  /** Some item measures this as its *primary* concept, so the planner can serve it. */
+  servable: boolean;
+  measured_by_some_item: boolean;
+}
+
+export interface TaxonomyView {
+  concepts: TaxonomyConcept[];
+  total: number;
+  servable: number;
+}
+
+export interface CorpusItemSummary {
+  id: string;
+  kind: string;
+  domain: string;
+  modality: string;
+  title: string;
+  primary_concept: string;
+  concepts: string[];
+  difficulty_band: string;
+  elo: number;
+  expected_minutes: number | null;
+  archetype_id: string | null;
+  seen: boolean;
+}
+
+export interface CorpusItemList {
+  items: CorpusItemSummary[];
+  total: number;
+  seen: number;
+}
+
+export interface CorpusItemDetail extends CorpusItemSummary {
+  /** Null until you have been served it — reading ahead defeats the measurement. */
+  statement_md: string | null;
+  redacted: boolean;
+}
+
 export interface CorpusStatus {
   concepts: number;
   concepts_by_domain: Record<string, number>;

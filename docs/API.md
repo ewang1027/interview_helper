@@ -328,12 +328,31 @@ ordinary; a truncated list that looks complete is not.
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/corpus/status` | Counts by domain and kind — **built**, now under `/api/v1` |
-| `GET` | `/corpus/items/{id}` | One item, statement redacted if unseen |
+| `GET` | `/concepts` | The whole taxonomy: names, domains, the prerequisite DAG, what is servable — **built 2026-08-25** |
+| `GET` | `/corpus/items` | Browse the corpus. **Metadata only** — no statement, seen or not — **built 2026-08-25** |
+| `GET` | `/corpus/items/{id}` | One item, statement redacted if unseen — **built 2026-08-25** |
 | `GET` | `/costs` | Ledger rollups: totals, by job, by model over the last `days` — **built** |
 | `GET` | `/costs/budget` | Remaining session and daily token budget — **built** |
 
 `GET /corpus/items/{id}` redacts the statement of an item you have not been served yet.
-Reading ahead defeats the measurement.
+Reading ahead defeats the measurement. "Served" means the item appeared in the plan of one
+of *your* sessions — read from the plan rather than from artifacts, because an item you
+were shown and did not answer has still been read, and redacting it afterwards would be
+theatre. Hints and the grader's expected answers are never returned by this route at all,
+seen or not: being served an item once is not a reason to be handed its solution.
+
+`GET /corpus/items` is the listing that makes the route reachable, and it returns **no
+statement for any item, seen or unseen** — so listing can never itself become a way to read
+ahead.
+
+`GET /concepts` exists because the web app needed the taxonomy and nothing served it.
+`GET /mastery` returns only *measured* concepts and carries no name or domain — it projects
+the mastery table alone — so the dashboard was assembling all 159 from one weakness ranking
+per mode, four requests to answer a question about static build-time content. This answers
+it in one, and adds what a ranking could not: the prerequisite edges, the `unlocks` reverse
+of them, and whether each concept is **servable** — that some item measures it as a
+*primary* concept, which is the difference between what the planner ranks and what it can
+actually serve ([ADAPTIVE](ADAPTIVE.md)).
 
 `GET /costs/budget` is the more useful of the two cost routes while the agent is being
 built: it answers "will the next call be refused, and why" without making one. Both are

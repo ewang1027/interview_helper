@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-08-24
+## Where things stand — 2026-08-25
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -24,7 +24,7 @@ detail behind it.
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | a full session against a live provider — gated on Bedrock access, not on code |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within ten sessions — five until `W_UNLOCKS` woke up | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus |
-| **5** Web app | **partial** — all nine routes | every route docs/WEB.md specifies: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`. 26 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
+| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode import, `/login`. Monaco served locally rather than from a CDN. 30 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
 | **6–8** AWS, voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
 
@@ -5000,3 +5000,88 @@ its user row is always pre-auth and adoption always succeeds. The failure needs 
 somebody has actually logged into, which by construction only ever exists on a real machine.
 The same is true of the practice-log fixtures earlier today. Worth stating plainly: the
 local database is a *different* test environment from CI's, and the difference is history.
+
+---
+
+## Closing the gaps the web app opened · 2026-08-25
+
+Four things this session had flagged as owed, plus the coverage that should have come with
+them. Measured first: the fast suite reported **63%**, which was misleading — the db-marked
+tests carry most of what it missed, and the honest figure including them was **89% across
+461 tests**. Coverage without saying which suite is a number that flatters or scares
+depending on the flag you passed.
+
+### `GET /concepts` — four requests for content that cannot change
+
+The dashboard was assembling all 159 concepts from **one weakness ranking per mode**,
+because no endpoint served the taxonomy and `GET /mastery` returns only *measured* concepts
+with no name or domain on the row. It worked, and it was four round trips to read a
+build-time artifact.
+
+One request now, and it carries two things a ranking never could: the prerequisite edges
+with an `unlocks` reverse derived server-side, and `servable` — whether some item measures
+the concept as a *primary*, which is the difference between what the planner ranks (159)
+and what it can actually serve (16). A test asserts `unlocks` is the exact inverse of
+`prereqs` in both directions, because a second hand-maintained copy of one relationship is
+a second thing to get wrong.
+
+### `GET /corpus/items` — a listing that cannot be used to read ahead
+
+`/corpus` had nothing to browse. The detail route redacts an unseen statement, so the
+listing is the part that needed care: it returns **no statement for any item, seen or
+unseen**, because a listing that carried them would be a way to read every unseen item at
+once. Asserted directly rather than assumed.
+
+"Seen" is read from the *plan* of your own sessions, not from artifacts — an item you were
+shown and did not answer has still been read, and redacting it afterwards would be theatre.
+Hints and grading are never returned by either route: being served an item once is not a
+reason to be handed its solution.
+
+### Idempotency keys now expire
+
+The table grew by one row per keyed request, forever. A 24-hour TTL, swept on write —
+there is nothing to schedule with here, one process and no worker. Past the TTL a key is
+not *refused* but simply unknown, so the request runs as new: a client retrying a day later
+is not retrying, and "already used" would be a worse answer than doing the work.
+
+Both directions are tested by ageing a row in place rather than sleeping for a day: a stale
+key runs again and produces a *different* session, a key one hour old still replays.
+
+### Monaco is no longer a CDN dependency
+
+`@monaco-editor/react` loads the editor from `cdn.jsdelivr.net` at runtime — confirmed by
+reading the default out of the loader package. A self-hosted deployment with no egress had
+a code workspace that never finished loading, every candidate's editor depended on a third
+party staying up, and the version was whatever that package pinned rather than what this
+lockfile does.
+
+`scripts/vendor-monaco.mjs` copies the bundle into `public/monaco/vs` at build time,
+hooked to `predev` and `prebuild`, idempotent behind a version stamp so an unchanged tree
+costs one `readFile` rather than 24MB of I/O. Verified by serving `loader.js`,
+`editor.main.js` and `editor.main.css` from `:3000`. It is gitignored — a build artifact of
+a dependency the lockfile already pins — and eslint ignores it too, which it announced by
+producing 22 errors about vendored code nobody here wrote.
+
+### Coverage
+
+**89% → 90%, 461 → 495 tests**, and the movement that matters is where:
+
+| Module | Before | After |
+|---|---|---|
+| `api/leetcode.py` | 67% | **97%** |
+| the import path (`practice`, `routes/practice`) | untested end to end | 10 db tests |
+| `routes/corpus.py` | trivially covered | 12 tests, redaction asserted both ways |
+
+`leetcode.py` was the worst number in the codebase and it was code added hours earlier.
+Its tests use a scripted client and never open a socket — a test that reaches leetcode.com
+is a test that fails when somebody else deploys — and one of them asserts the **GraphQL
+projection asks for no field that could carry a statement**, which is the mechanism the
+whole feature's policy standing rests on.
+
+The route now takes its HTTP client as a dependency, like the executor and model clients,
+which is what makes that possible.
+
+Two test expectations of mine were wrong and the code was right: the unavailable slug is
+`dependency-unavailable`, and a schema failure is **400** here rather than 422, because
+FastAPI cannot tell a malformed body from a well-formed invalid one and this API resolves
+that toward 400 consistently.

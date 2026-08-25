@@ -1,6 +1,6 @@
 "use client";
 
-import Editor from "@monaco-editor/react";
+import Editor, { loader } from "@monaco-editor/react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/cn";
 import type { Language } from "@/lib/types";
@@ -9,13 +9,19 @@ import type { WorkspaceProps } from "./types";
 /**
  * The coding workspace: an editor and a language toggle.
  *
- * **`@monaco-editor/react` fetches Monaco from a CDN by default**, which is a
- * network dependency a self-hosted deployment should not have. It is left as
- * the default here rather than half-solved: vendoring Monaco locally means
- * bundling its web workers, which is a Phase 6 packaging job alongside the
- * Dockerfiles. Recorded in docs/WEB.md so it is a known debt rather than a
- * surprise the first time this runs somewhere without egress.
+ * **Monaco is served from this app, not from a CDN.** `@monaco-editor/react`
+ * otherwise fetches it from `cdn.jsdelivr.net` at runtime, which means a
+ * self-hosted deployment with no egress has an editor that never finishes
+ * loading, every candidate's session depends on a third party staying up, and
+ * the version is whatever the loader package pins rather than what this
+ * lockfile does. `scripts/vendor-monaco.mjs` copies the bundle into
+ * `public/monaco/vs` at build time and this points at it.
+ *
+ * Configured at module scope rather than in an effect: `loader.config` must run
+ * before the first `<Editor>` mounts, and an effect runs after.
  */
+loader.config({ paths: { vs: "/monaco/vs" } });
+
 
 const STARTERS: Record<Language, string> = {
   python: "def solve():\n    ...\n",

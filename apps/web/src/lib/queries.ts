@@ -1,8 +1,8 @@
 "use client";
 
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "./api";
-import { MODES, type Mode, type RankedConcept } from "./types";
+import type { Mode } from "./types";
 
 export const keys = {
   mastery: ["mastery"] as const,
@@ -30,40 +30,27 @@ export const useWeaknesses = (mode?: Mode, limit = 20) =>
   useQuery({ queryKey: [...keys.weaknesses(mode), limit], queryFn: () => api.weaknesses({ mode, limit }) });
 
 /**
- * Every concept in the taxonomy, with its name and domain.
+ * Every concept in the taxonomy.
  *
- * There is no `GET /concepts`, and `GET /mastery` returns only concepts that
- * have been *measured* — and without a name or a domain on the row, because
- * `mastery_row_view` projects the mastery table alone. What does carry both is
- * the weakness ranking, which ranks the whole taxonomy rather than the measured
- * part of it (`unseen: true` on the rest).
- *
- * So the taxonomy is assembled from one ranking per mode. `limit` is capped at
- * 100 by the API and the taxonomy holds 159 concepts, which one unfiltered call
- * could not return — but the largest single domain is 52, so the per-mode split
- * is what makes this complete rather than merely convenient.
+ * One request to `GET /concepts`. Until 2026-08-25 there was no such endpoint, and this
+ * assembled the taxonomy from **one weakness ranking per mode** — four requests to answer
+ * a question about static build-time content — because `GET /mastery` returns only
+ * *measured* concepts and carries no name or domain. The endpoint now exists and also
+ * reports the prerequisite edges and which concepts are servable, neither of which the
+ * ranking could supply.
  */
 export function useTaxonomy() {
-  const results = useQueries({
-    queries: MODES.map((mode) => ({
-      queryKey: [...keys.weaknesses(mode), 100],
-      queryFn: () => api.weaknesses({ mode, limit: 100 }),
-      staleTime: 60_000,
-    })),
+  const query = useQuery({
+    queryKey: ["concepts"],
+    queryFn: () => api.concepts(),
+    // Build-time content: it cannot change while the server is up.
+    staleTime: Infinity,
   });
 
-  const isLoading = results.some((result) => result.isLoading);
-  const error = results.find((result) => result.error)?.error ?? null;
-
-  // Deduplicated by id: a concept can be ranked under more than one mode when
-  // its domain is served by several, and the same concept twice in a heatmap
-  // reads as two concepts.
-  const byId = new Map<string, RankedConcept>();
-  for (const result of results) {
-    for (const concept of result.data?.concepts ?? []) {
-      if (!byId.has(concept.concept_id)) byId.set(concept.concept_id, concept);
-    }
-  }
-
-  return { concepts: [...byId.values()], isLoading, error };
+  return {
+    concepts: query.data?.concepts ?? [],
+    servable: query.data?.servable ?? 0,
+    isLoading: query.isLoading,
+    error: query.error,
+  };
 }

@@ -8,7 +8,19 @@ import { fileURLToPath } from "node:url";
 const compat = new FlatCompat({ baseDirectory: dirname(fileURLToPath(import.meta.url)) });
 
 const eslintConfig = [
-  { ignores: [".next/**", "out/**", "build/**", "next-env.d.ts", "node_modules/**"] },
+  {
+    ignores: [
+      ".next/**",
+      "out/**",
+      "build/**",
+      "next-env.d.ts",
+      "node_modules/**",
+      // Monaco, copied out of node_modules by scripts/vendor-monaco.mjs. Vendored
+      // third-party code, and 24MB of it — linting it produced 22 errors about a
+      // bundle nobody here wrote or can fix.
+      "public/monaco/**",
+    ],
+  },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
 ];
 

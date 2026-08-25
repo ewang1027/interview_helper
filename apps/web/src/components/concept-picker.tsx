@@ -35,19 +35,19 @@ export function ConceptPicker({
       .filter(
         (concept) =>
           concept.name.toLowerCase().includes(needle) ||
-          concept.concept_id.toLowerCase().includes(needle),
+          concept.id.toLowerCase().includes(needle),
       )
       .slice(0, 12);
   }, [concepts, query]);
 
-  const selected = concepts.find((concept) => concept.concept_id === value);
+  const selected = concepts.find((concept) => concept.id === value);
 
   if (value && selected) {
     return (
       <div className="flex items-center gap-2">
         <span className="border-hairline bg-sunken inline-flex items-center gap-2 rounded-md border px-2 py-1 text-sm">
           {selected.name}
-          <span className="text-ink-muted font-mono text-xs">{selected.concept_id}</span>
+          <span className="text-ink-muted font-mono text-xs">{selected.id}</span>
         </span>
         <button
           type="button"
@@ -82,11 +82,11 @@ export function ConceptPicker({
       {open && matches.length > 0 ? (
         <ul className="border-hairline bg-surface absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-md border shadow-lg">
           {matches.map((concept) => (
-            <li key={concept.concept_id}>
+            <li key={concept.id}>
               <button
                 type="button"
                 onClick={() => {
-                  onChange(concept.concept_id);
+                  onChange(concept.id);
                   setOpen(false);
                 }}
                 className={cn(

@@ -38,8 +38,19 @@ def get_classifier() -> Any:
     return None
 
 
+def get_leetcode_client() -> Any:
+    """The HTTP client for LeetCode, or None to let `api.leetcode` open its own.
+
+    A dependency for the same reason the executor and model clients are: a test drives the
+    whole import route with a scripted response and never opens a socket. A test that
+    reaches leetcode.com is a test that fails when somebody else deploys.
+    """
+    return None
+
+
 DbSession = Annotated[Session, Depends(get_session)]
 Classifier = Annotated[Any, Depends(get_classifier)]
+LeetCode = Annotated[Any, Depends(get_leetcode_client)]
 
 
 @router.post("/practice/problems", status_code=201)
@@ -75,6 +86,7 @@ def import_leetcode(
     body: ImportLeetCodeRequest,
     db: DbSession,
     principal: CurrentPrincipal,
+    http: LeetCode,
 ) -> dict[str, Any]:
     """Import LeetCode problems by slug or URL, or from a public profile's recent solves.
 
@@ -90,10 +102,13 @@ def import_leetcode(
     slugs = list(body.slugs)
     if body.username:
         try:
-            slugs += [solve.slug for solve in leetcode.recent_solves(body.username)]
+            with leetcode.session(http) as client:
+                slugs += [
+                    solve.slug for solve in leetcode.recent_solves(body.username, client=client)
+                ]
         except leetcode.LeetCodeError as exc:
             raise unavailable(f"LeetCode: {exc}") from exc
-    return service.import_from_leetcode(db, user_id=principal.user_id, slugs=slugs)
+    return service.import_from_leetcode(db, user_id=principal.user_id, slugs=slugs, http=http)
 
 
 @router.get("/practice/problems")

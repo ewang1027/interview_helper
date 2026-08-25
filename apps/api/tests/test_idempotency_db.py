@@ -9,6 +9,7 @@ every case counts rows.
 from __future__ import annotations
 
 import threading
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -17,6 +18,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, col, func, select
 
 from api.db import get_engine
+from api.idempotency import TTL_HOURS
 from api.main import app
 from api.models import Artifact, IdempotencyKey, InterviewSession
 
@@ -159,6 +161,53 @@ def test_a_failed_request_does_not_poison_its_key(created_sessions, user_id):
     assert retried.status_code == 201, retried.text
     created_sessions.append(retried.json()["id"])
     assert session_count(user_id) == before + 1
+
+
+def test_a_key_past_its_ttl_is_collected_and_the_request_runs_again(created_sessions, user_id):
+    """Keys expire, so the table is a working set rather than a log.
+
+    Two halves, and the second is the one worth asserting: the row is *collected*, and a
+    request carrying that key afterwards runs rather than being refused. A client retrying
+    a day later is not retrying — telling it "already used" would be a worse answer than
+    doing the work.
+    """
+    client = sign_in(TestClient(app))
+    first = create(client, "stale")
+    assert first.status_code == 201
+    created_sessions.append(first.json()["id"])
+
+    # Aged past the TTL in place: the alternative is sleeping for a day.
+    with Session(get_engine()) as db:
+        row = db.get(IdempotencyKey, (user_id, "POST /sessions", "stale"))
+        assert row is not None
+        row.created_at = datetime.now(UTC) - timedelta(hours=TTL_HOURS + 1)
+        db.add(row)
+        db.commit()
+
+    before = session_count(user_id)
+    again = create(client, "stale")
+    assert again.status_code == 201
+    created_sessions.append(again.json()["id"])
+
+    # A new session, not a replay of the first — and the stale row is gone.
+    assert again.json()["id"] != first.json()["id"]
+    assert session_count(user_id) == before + 1
+
+
+def test_expiry_leaves_a_key_that_is_still_within_its_ttl(created_sessions, user_id):
+    """The sweep must not collect the keys it exists to protect. A retry one hour later
+    still replays — only a key past the whole TTL is forgotten."""
+    client = sign_in(TestClient(app))
+    first = create(client, "fresh")
+    created_sessions.append(first.json()["id"])
+
+    with Session(get_engine()) as db:
+        row = db.get(IdempotencyKey, (user_id, "POST /sessions", "fresh"))
+        row.created_at = datetime.now(UTC) - timedelta(hours=1)
+        db.add(row)
+        db.commit()
+
+    assert create(client, "fresh").json()["id"] == first.json()["id"]
 
 
 def test_concurrent_retries_of_one_request_create_one_session(created_sessions, user_id):

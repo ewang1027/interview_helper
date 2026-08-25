@@ -19,6 +19,8 @@ import type {
   ConceptDetail,
   ImportResult,
   LogProblemBody,
+  CorpusItemDetail,
+  CorpusItemList,
   CorpusStatus,
   CostRollup,
   CreateSessionBody,
@@ -31,6 +33,7 @@ import type {
   ProblemList,
   Report,
   ReviewQueue,
+  TaxonomyView,
   SessionDetail,
   SessionList,
   SubmissionAccepted,
@@ -196,6 +199,15 @@ export const api = {
 
   // Corpus and cost
   corpusStatus: () => request<CorpusStatus>("/corpus/status"),
+  concepts: (domain?: string) =>
+    request<TaxonomyView>(`/concepts${domain ? `?domain=${domain}` : ""}`),
+  corpusItems: (params: { domain?: string; conceptId?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (params.domain) query.set("domain", params.domain);
+    if (params.conceptId) query.set("concept_id", params.conceptId);
+    return request<CorpusItemList>(`/corpus/items?${query}`);
+  },
+  corpusItem: (id: string) => request<CorpusItemDetail>(`/corpus/items/${id}`),
   costs: (days = 7) => request<CostRollup>(`/costs?days=${days}`),
   budget: (sessionId?: string) =>
     request<BudgetStatus>(`/costs/budget${sessionId ? `?session_id=${sessionId}` : ""}`),
