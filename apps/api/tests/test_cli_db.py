@@ -23,13 +23,21 @@ pytestmark = pytest.mark.db
 
 @pytest.fixture
 def no_ledger():
-    """`cost_report` promises zeros on an empty table, which needs an empty table."""
+    """`cost_report` promises zeros on an empty table, which needs an empty table.
+
+    Teardown **clears the table again** before restoring what was there. Restoring alone
+    leaves behind whatever the test inserted, and this fixture's tests insert priced rows:
+    eight suite runs put 24 fake `test-model` calls and a fabricated **$1.20** on the
+    ledger, which is the one table in this project whose whole purpose is to be believed.
+    Found by reading `make cost-report` and not recognising the number.
+    """
     with Session(get_engine()) as db:
         kept = list(db.exec(select(LlmCall)).all())
         db.exec(delete(LlmCall))
         db.commit()
     yield
     with Session(get_engine()) as db:
+        db.exec(delete(LlmCall))
         for row in kept:
             db.merge(row)
         db.commit()

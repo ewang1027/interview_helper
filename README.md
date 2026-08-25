@@ -153,9 +153,9 @@ cookie set on the API's port is cross-site to the browser and will not come back
 
 ## Build status
 
-**Phases 0 and 2 complete for what they were scoped to; 4 and 9 built; 1 and 3 partially
-landed**, deliberately out of order — each was taken far enough to unblock the next. Phase
-3 now owes one thing and it is not code: a full session against a live provider. See
+**Phases 0, 2 and 3 complete for what they were scoped to; 4 and 9 built; 1 partially
+landed, 6 begun**, deliberately out of order — each was taken far enough to unblock the
+next. See
 [`docs/BUILDLOG.md`](docs/BUILDLOG.md) for what actually exists and what each phase still
 owes.
 
@@ -172,7 +172,7 @@ owes.
       `POST /probe` and the scoring grader landed and verified (2026-08-20). A quadratic
       submission that passes every one of an item's tests is caught by the probe and
       scores 0.75; `cpp` and `peak_rss_kb` remain, both deferred rather than owed*
-- [ ] **3 — Interview runtime (text) + API** — *DB schema, migrations, settings and
+- [x] **3 — Interview runtime (text) + API** — *DB schema, migrations, settings and
       model routing landed early (2026-08-16); the **session layer** landed 2026-08-20 —
       `/api/v1`, plan → submit → grade → report, writing real `concept_evidence`, verified
       end to end against a live stack. **Auth landed 2026-08-20**: GitHub OAuth, a signed

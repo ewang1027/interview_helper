@@ -228,6 +228,56 @@ by a test, because the failure mode is a larger bill and nothing else.
 - Credits are checked in the Billing console during Phase 0 to confirm they are the
   kind that covers Bedrock third-party model spend.
 
+## What a session actually costs (measured 2026-08-25)
+
+The first real session in this project's history, on the Anthropic API rather than Bedrock.
+Coding, three interviewer turns including one that ran the candidate's code in the sandbox,
+then a submission graded against hidden tests:
+
+| Call | Model | in | out | cache write | cache read | $ |
+|---|---|---|---|---|---|---|
+| interviewing | `claude-sonnet-5` | 89 | 110 | 2,301 | 0 | 0.0070 |
+| interviewing | `claude-sonnet-5` | 280 | 216 | 0 | 2,301 | 0.0032 |
+| interviewing | `claude-sonnet-5` | 387 | 46 | 0 | 2,301 | 0.0017 |
+| | | | | | **total** | **$0.0119** |
+
+Three things this settles that were previously estimates:
+
+- **A coding session costs about a cent**, and **grading it is free** — the coding grader is
+  hidden tests in a sandbox, not a model. The modes that cost more are the three whose
+  graders *are* a model call.
+- **Prompt caching works and pays immediately.** The system prompt was written once at 2,301
+  tokens and read on both subsequent turns. The assertion this document names is now
+  exercised by a passing test rather than an argument.
+- **The per-session ceiling is far away.** 400,000 tokens against ~3,700 used — a session
+  would have to run about a hundred times longer to be refused.
+
+### The provider switch
+
+`MODEL_PROVIDER=anthropic` was built in Phase 3, described in the code as "the escape
+hatch", and had never been used. Switching to it took four lines of `.env` and no code:
+
+```sh
+MODEL_PROVIDER=anthropic
+ANTHROPIC_API_KEY=…
+MODEL_PLANNER=claude-opus-5        # the two jobs the router runs at `high` effort
+MODEL_INTERVIEWER=claude-sonnet-5
+MODEL_GRADER=claude-opus-5
+MODEL_UTILITY=claude-sonnet-5
+```
+
+It worked first time because `pricing.normalise` already strips both the `us.` geo prefix
+and the `anthropic.` provider prefix, so `us.anthropic.claude-sonnet-4-6` and
+`claude-sonnet-4-6` price identically. A ledger that only understood one provider's ids
+would have written `$0` and a warning for every call.
+
+Opus 5 sits on planning and grading because both **compound**: a plan decides what you are
+drilled on for weeks, and a grade writes immutable evidence that moves mastery permanently.
+Interviewing is the hot loop and its output is dialogue.
+
+**Bedrock is still the intended home**, once the use-case form clears and credits absorb the
+spend. Nothing about the switch is one-way — it is one environment variable back.
+
 ## Measuring before optimizing
 
 Phase 3's gate records real measured cost per session, per mode, in this file. Every

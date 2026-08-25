@@ -18,6 +18,7 @@ has to be asserted rather than assumed.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Iterator
 
 import pytest
@@ -74,12 +75,12 @@ def ledger() -> Iterator[None]:
             db.commit()
 
 
-def call(settings: Settings, question: str) -> llm.Completion:
+def call(settings: Settings, question: str, system: str = FROZEN_PREFIX) -> llm.Completion:
     model = ModelRouter(settings).model_for("classification")
     try:
         return llm.complete(
             job="classification",
-            system=FROZEN_PREFIX,
+            system=system,
             messages=[{"role": "user", "content": question}],
             max_tokens=16,
             settings=settings,
@@ -113,9 +114,21 @@ def test_a_real_call_answers_and_lands_on_the_ledger(settings, ledger):
 def test_an_identical_prefix_is_served_from_cache(settings, ledger):
     """The assertion docs/COST.md names. A silent invalidator — a timestamp in the system
     prompt, an unsorted dict, a tool list that reorders — shows up here and nowhere else
-    until the bill arrives."""
-    first = call(settings, "Reply with the single word: one")
-    second = call(settings, "Reply with the single word: two")
+    until the bill arrives.
+
+    **The prefix is unique per run, and that is the whole of what this test got wrong the
+    first time it was able to run at all.** `FROZEN_PREFIX` is module-level, so the ledger
+    test above had already warmed it: both calls here then *read* a live cache, neither
+    wrote, and `written > 0` failed against a cache that was working perfectly. Measured
+    directly against the SDK — 9,212 tokens written on a cold prefix, 9,212 read on the
+    next call.
+
+    A marker appended to the prefix guarantees a cold entry regardless of what ran before,
+    or of whether this file was run twice inside the five-minute cache TTL.
+    """
+    prefix = f"{FROZEN_PREFIX}Cold-start marker: {uuid.uuid4()}\n"
+    first = call(settings, "Reply with the single word: one", system=prefix)
+    second = call(settings, "Reply with the single word: two", system=prefix)
 
     written = first.usage.cache_write_tokens + second.usage.cache_write_tokens
     assert written > 0, "nothing was written to the cache; the breakpoint is not taking effect"

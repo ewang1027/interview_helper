@@ -22,19 +22,24 @@ detail behind it.
 | **0** Foundations | **complete** | workspace, 159-concept taxonomy, corpus schema + validator, CI | — |
 | **1** Corpus v1 | **partial** — thin slice | 48 items — 4 archetypes **and 8 instances** in every one of the four domains. The fourth archetype in each measures a **prerequisite** of a concept already served, which is what the planner's gate needs | bulk authoring toward ~400/~150, and archetypes for the other 143 concepts nothing measures as a primary |
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
-| **3** Runtime + API | **partial** — most of it | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | a full session against a live provider — gated on Bedrock access, not on code |
+| **3** Runtime + API | **complete** | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | — *(closed 2026-08-25: a real session ran end to end on the Anthropic API — conversation, `run_code` against the sandbox, submission, grading, evidence. Bedrock is still gated on a use-case form; the provider switch is one env var)* |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within ten sessions — five until `W_UNLOCKS` woke up | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus |
 | **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode import, `/login`. Monaco served locally rather than from a CDN. 30 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
 | **6** AWS deploy | **partial** — step 1 of 5 | Dockerfiles for `api`, `executor` and `web`; `make up-stack` runs all of it behind a **Caddy front door** routing by path, the job the ALB does — so compose mirrors the target topology. Only the front door publishes a port. Sandbox isolation re-verified from inside the containerised launcher | steps 2–5: one service on Fargate by hand, Terraform, the rest of the stack, the portability gate — **all blocked on an authenticated AWS session**, not on code |
 | **7–8** Voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
 
-One thing worth knowing before reading anything else as further along than it is:
-**no full session has run against a live model.** The interviewer exists and is exercised
-end to end against a scripted one; real Bedrock calls have been made from this machine; and
-in between those two facts sits an AWS account whose Bedrock access is gated behind an
-Anthropic use-case form (docs/COST.md). Every gate below is green against a fake provider,
-and `make test-llm` skips with the provider's own words until that form is submitted.
+~~One thing worth knowing before reading anything else as further along than it is: **no
+full session has run against a live model.**~~ **Closed 2026-08-25.** A full session ran on
+the Anthropic API — the interviewer held a conversation, called `run_code` against the real
+sandbox, reported 11 passing hidden tests, and the submission graded 1.0 and wrote evidence
+for four concepts. `make test-llm` passes rather than skips. It cost **$0.0119**.
+
+Struck rather than deleted, because the shape of the fix is the useful part: nothing was
+wrong with the code. `MODEL_PROVIDER=anthropic` was built in Phase 3 and called "the escape
+hatch", the pricing table already normalised both providers' model ids, and the switch was
+four lines of `.env`. Bedrock remains gated behind an Anthropic use-case form
+(docs/COST.md) and is still the intended home once credits apply.
 
 The auth gate this file carried since the session layer landed is **closed** as of
 2026-08-20: every `/api/v1` route requires a signed session cookie, and the only way to
@@ -5346,3 +5351,77 @@ with a `DependencyViolation` that reads like a permissions problem.
 The execution role is deliberately *not* torn down: it is account-wide and may be shared,
 and deleting a role something else assumes is a failure that appears later, in another
 project, as a task that will not start.
+
+---
+
+## Phase 3 closes — a real interview, for the first time · 2026-08-25
+
+The item this file has carried since 2026-08-20: *"no full session has run against a live
+model."* Closed, and not on Bedrock.
+
+### The switch was four lines of `.env`
+
+`MODEL_PROVIDER=anthropic` was built in Phase 3, described in `model_router` as "the escape
+hatch", and had never been exercised. Turning it on needed no code:
+
+```sh
+MODEL_PROVIDER=anthropic ·  ANTHROPIC_API_KEY=…
+MODEL_PLANNER=claude-opus-5      MODEL_INTERVIEWER=claude-sonnet-5
+MODEL_GRADER=claude-opus-5       MODEL_UTILITY=claude-sonnet-5
+```
+
+It worked first time because `pricing.normalise` already strips the `us.` geo prefix *and*
+the `anthropic.` provider prefix, so both id forms price identically. A ledger that
+understood one provider's ids would have written `$0` and a warning for every call — the
+provider-agnostic normaliser was written months before anything needed it.
+
+### What actually happened
+
+```
+turn 1  "can you tell me what the problem is?"
+        → "I'd rather hear it from you — can you restate the problem in your own words?"
+turn 2  an approach plus code, and a request to run it
+        → tool_calls: [run_code] → 11 hidden tests, all passing
+        → "All 11 hidden tests pass. Any edge cases you want to double check yourself?"
+submit  → graded 1.0 → evidence for 4 concepts → mastery moved
+```
+
+The first turn is the one worth keeping. The interviewer **refused to restate the problem**
+and turned it back on the candidate — that is the system prompt behaving like an
+interviewer rather than a chatbot, and it is the part no scripted provider could ever have
+demonstrated.
+
+**$0.0119** for the session. Prompt caching wrote 2,301 tokens once and read them on both
+later turns. Coding grading cost nothing — it is hidden tests in a sandbox, not a model.
+docs/COST.md carries the per-call table.
+
+### The one test that failed had never run
+
+`make test-llm` came back 1 failed, 2 passed: `cache_write_tokens == 0`, "the breakpoint is
+not taking effect". The cache was working perfectly — measured directly against the SDK,
+9,212 tokens written on a cold prefix and 9,212 read on the next call.
+
+`FROZEN_PREFIX` is module-level. The ledger test above it runs first, uses the same prefix,
+and **warms the cache** — so both of the caching test's calls read a live entry, neither
+wrote, and the assertion failed against working code. It could only have passed by running
+first, or more than five minutes later.
+
+A test written against a provider nobody could reach, wrong from the day it was written,
+and undiscoverable until the day it could run. The prefix now carries a per-run marker, so
+it is cold regardless of order.
+
+### And a ledger with $1.20 of fiction in it
+
+`make cost-report` read **65 calls, $1.2696**, which did not match anything that had
+happened. 24 of those rows were `model="test-model"` at $0.05 average — inserted by the
+`cost_report` test I added earlier today. Its fixture restored the pre-existing rows on
+teardown and never deleted the ones the test created, so eight suite runs left eight
+copies.
+
+Harmless to the application and not harmless at all to the point of the table: the ledger
+is the one thing here whose whole purpose is to be believed. The fixture now clears before
+restoring, and the suite was run twice to confirm the ledger is byte-identical afterwards —
+**41 calls, $0.0696**, which is the true historical figure.
+
+Second instance today of the same class: a fixture that cleans up *the state it found* but
+not *the state it made*.
