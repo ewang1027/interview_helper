@@ -76,7 +76,8 @@ breakdown, because adaptation you cannot inspect is adaptation you cannot trust.
 | `scripts/` | The gates: secret scan, doc links, doc consistency, reference-solution verification — all four run in CI — plus the local push and hygiene checks |
 | `hooks/` | `pre-push`: secret scan and the docs-with-code check, installed by `make setup` |
 | `infra/compose/` | The whole stack — Postgres, api, executor, web and a Caddy front door. `make up-stack` |
-| `infra/terraform/` | *Empty placeholder.* AWS: VPC, ALB, ECS Fargate, RDS, observability — Phase 6 |
+| `infra/ecs/` | Step 2's scaffolding: the API task definition, and what exists in the account |
+| `infra/terraform/` | *Empty placeholder.* AWS: VPC, ALB, ECS Fargate, RDS, observability — Phase 6 step 3 |
 | `docs/` | Design and specification — see the map below |
 | `CLAUDE.md` | How to work here: docs travel with the code, commit and push at every checkpoint |
 

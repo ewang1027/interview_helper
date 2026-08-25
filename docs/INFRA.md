@@ -106,9 +106,20 @@ Two things to know before creating it:
   default and the task fails to start with an exec-format error. ARM64 is also ~20% cheaper
   per vCPU-hour.
 - **`/health` needs no database**, which is what makes a first service cheap: it answers
-  before RDS exists, so step 2 can be one task and a load balancer with nothing behind it.
-  Every `/api/v1` route will answer `503` until `SESSION_SECRET` is injected and a database
-  is reachable, and that is correct behaviour rather than a broken deploy.
+  before RDS exists, so step 2 can be one task with no load balancer at all. Every
+  `/api/v1` route will answer `503` until `SESSION_SECRET` is injected and a database is
+  reachable, and that is correct behaviour rather than a broken deploy.
+
+Everything a service needs *except the service* now exists in the account, created with
+the CLI because none of it bills: the execution role, a 7-day log group, a security group
+opening 8000, the `interview-helper` cluster, and task definition revision 1 pinned to the
+image digest. **[`infra/ecs/README.md`](../infra/ecs/README.md) is the console checklist**
+— which fields, which values, and the two that are easy to get wrong.
+
+`scripts/aws_teardown.sh` deletes all of it, and exists from the day the first resource
+was created rather than the day it was needed. The claim this document makes for IaC —
+"you can delete everything and get it back" — is only true if deleting everything is one
+command somebody has actually run.
 
 **Step 2 (detail) — One service on Fargate, by hand.** Push the API image to ECR and run a single
 Fargate service through the console. Goal: watch a container you built serve real traffic

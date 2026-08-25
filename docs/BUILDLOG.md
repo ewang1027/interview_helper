@@ -5306,3 +5306,43 @@ Recorded for whoever does it: the images are **arm64** (Apple Silicon), so the t
 definition needs `runtimePlatform.cpuArchitecture = ARM64` or the task dies with an
 exec-format error. And `/health` needs no database — it answers before RDS exists, which is
 what lets step 2 be one task with nothing behind it.
+
+### Step 2's scaffolding, and the one thing left to click
+
+Everything a Fargate service needs *except the service itself* now exists in the account.
+All of it was created with the CLI because none of it bills — the split is deliberate:
+
+| Created | Billable |
+|---|---|
+| `ecsTaskExecutionRole` | no |
+| `/ecs/interview-helper-api`, 7-day retention | per GB ingested |
+| security group `sg-0def3ce0c872e11be`, tcp/8000 | no |
+| cluster `interview-helper` | no, while empty |
+| task definition `interview-helper-api:1` | no |
+| **the service** | **per second — left to be created by hand** |
+
+Three decisions in the task definition worth having reasons for:
+
+**`cpuArchitecture: ARM64`.** The images are built on Apple Silicon. At the `X86_64`
+default the task pulls, starts and dies with an exec-format error, which surfaces as a
+service that never stabilises rather than as anything naming the architecture.
+
+**An execution role and no task role.** The execution role is ECS's, for pulling the image
+and writing logs. A task role is the container's own AWS identity, and the API needs none
+until it calls Bedrock and reads a secret — granting one earlier is a permission nobody
+uses.
+
+**No `SESSION_SECRET`.** `/health` answers 200 and every `/api/v1` route answers 503 naming
+the variable, which is exactly what step 2 checks. The secret belongs in Secrets Manager,
+injected as `secrets` rather than `environment`, and that is step 4. A first deploy that
+half-works and says precisely which half is better than one carrying a pasted credential.
+
+`scripts/aws_teardown.sh` was written the same day, not the day it was needed. This
+document's argument for IaC is that "you can delete everything and get it back", and that
+is only true if deleting everything is one command somebody has run. It orders by
+dependency and waits on the ENI release, because a security group deleted too early fails
+with a `DependencyViolation` that reads like a permissions problem.
+
+The execution role is deliberately *not* torn down: it is account-wide and may be shared,
+and deleting a role something else assumes is a failure that appears later, in another
+project, as a task that will not start.
