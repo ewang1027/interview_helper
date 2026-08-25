@@ -5,7 +5,7 @@ COMPOSE := docker compose -f infra/compose/docker-compose.yml
 .PHONY: help setup dev up dev-api dev-web down check check-web lint typecheck test fmt \
         corpus-validate seed test-sandbox test-e2e test-db cost-report secret-scan \
         doc-links doc-check hygiene verify-solutions login test-llm build-web \
-        backup restore clean
+        backup restore coverage clean
 
 help: ## Show this help
 	@# [a-zA-Z0-9_-] not [a-z-]: the narrower class silently dropped `test-e2e`
@@ -70,6 +70,14 @@ typecheck: ## mypy
 
 test: ## pytest
 	uv run pytest -q
+
+coverage: ## Test coverage for the Python packages (needs Postgres for the db-marked tests)
+	@# Excludes the sandbox, e2e and llm markers, which need Docker or a provider. Run
+	@# without a database and the figure drops by ~26 points against the same code — most
+	@# of the session layer, the planner and the practice log are covered by db tests — so
+	@# the marker set is named here rather than left to whoever reads the number.
+	uv run pytest -q -m "not sandbox and not e2e and not llm" \
+	  --cov=api --cov=executor --cov=corpus --cov-report=term-missing
 
 corpus-validate: ## Validate the corpus against its schema, provenance and originality rules
 	uv run python -m corpus.validate

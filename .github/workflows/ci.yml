@@ -73,6 +73,15 @@ jobs:
       - name: DB tests
         run: uv run pytest apps/api/tests -q -m db
 
+      # Reported, not enforced. A coverage threshold in CI turns into a number people
+      # satisfy rather than a signal they read, and the marker set matters more than the
+      # figure: the same code measures ~26 points lower without a database, because the
+      # session layer, the planner and the practice log are covered by db-marked tests.
+      - name: Coverage (reported)
+        run: |
+          uv run pytest -q -m "not sandbox and not e2e and not llm" \
+            --cov=api --cov=executor --cov=corpus --cov-report=term | tail -20
+
       # The escape tests are the Phase 2 gate and need a real daemon — they cannot be
       # meaningfully faked, since what they verify is kernel-enforced isolation.
       - name: Pull sandbox image

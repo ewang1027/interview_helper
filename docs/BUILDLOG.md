@@ -5085,3 +5085,50 @@ Two test expectations of mine were wrong and the code was right: the unavailable
 `dependency-unavailable`, and a schema failure is **400** here rather than 422, because
 FastAPI cannot tell a malformed body from a well-formed invalid one and this API resolves
 that toward 400 consistently.
+
+### Coverage, and the number that was lying
+
+The first figure measured was **63%**, from `pytest -q` with the default marker set. The
+honest one against the same code is **91%**, because the db-marked tests carry most of what
+the fast suite skips — `sessions.py` reads 21% without a database and 92% with one. A
+coverage number without its marker set flatters or frightens by accident, so `make coverage`
+names the excluded markers in a comment and CI *reports* it rather than enforcing a
+threshold. A threshold becomes a number people satisfy; this is meant to be a signal
+somebody reads.
+
+**509 Python tests (from 461) and 73 web tests (from 30).** Where the movement went:
+
+| | Before | After |
+|---|---|---|
+| `api/leetcode.py` | 67% | 97% |
+| `cost_report.py` · `mint_session.py` | 0% · 34% | both covered |
+| `executor/main.py` guards + startup sweep | 68% | covered without Docker |
+| the LeetCode import path | untested | 10 db tests |
+| `routes/corpus.py` | new | 12 tests |
+| web pages | **none at all** | dashboard, `/session/new`, report, practice, login |
+
+Three of those are worth their own line.
+
+**The web pages are tested with `fetch` stubbed, not `api` stubbed.** That exercises
+`lib/api.ts` on every page test — the problem+json parsing, the `401` redirect,
+`credentials: "include"` — which is where a page's error handling actually lives. A page
+tested against a stubbed `api` object passes while every one of those is broken. `api.ts`
+also got its own 14 tests, including that a non-JSON 502 does not turn a gateway error into
+a parse error.
+
+**The CLI entry points had no tests and are what somebody reaches for when already stuck** —
+`make login` when they cannot get in, `make cost-report` when they want to know what a
+session cost. The assertion that matters is not that they work but that they fail *usefully*:
+no `SESSION_SECRET` exits 1 with the command to generate one, on stderr, with nothing on
+stdout.
+
+**The executor's guards are tested without Docker**, including that neither of them starts a
+container — the point of a guard being that nothing runs. The startup reaper is covered too;
+it had one definition and zero callers until it was hooked, and now has a test that would
+notice if it were unhooked again.
+
+Two of my own test expectations were wrong and the code was right, which is the ordinary
+way round and worth recording: the unavailable slug is `dependency-unavailable`, and a
+schema failure is **400** here rather than 422, because FastAPI cannot distinguish a
+malformed body from a well-formed invalid one and this API resolves that toward 400
+everywhere.

@@ -118,6 +118,7 @@ make login      # mint a session cookie — every /api/v1 route needs one
 make dev-web    # run the web app (proxies /api and /auth to the API — one origin)
 make check      # ruff + mypy + pytest + corpus validate + doc gates + web checks, then hygiene
 make check-web  # just the web app: eslint, tsc, component tests
+make coverage   # Python coverage — needs Postgres, or the figure drops ~26 points
 make test-db    # seeds the corpus, then the schema and session tests against live Postgres
 
 make test-sandbox     # every test needing real Docker: escapes, /execute, /probe, grading

@@ -207,8 +207,18 @@ draw the DAG.
 ## Testing
 
 - Component tests for the four workspaces against recorded SSE fixtures, so no live
-  backend is required. **Built** — `pnpm test`, in `make check-web` and in CI. 20 tests
-  today, covering the stream reducer and the heatmap; the workspaces do not exist yet.
+  backend is required. **Built** — `pnpm test`, in `make check-web` and in CI. **73 tests**
+  covering the stream reducer, the heatmap, three of the four workspaces, the API client,
+  and the dashboard, session-creation, report, practice-log and login pages.
+
+  Pages are tested with **`fetch` stubbed, not `api` stubbed**, which is the choice that
+  makes them worth having: it exercises the client in `lib/api.ts` too — the problem+json
+  parsing, the `401` redirect, `credentials: "include"` — which is where a page's error
+  handling actually lives. A page tested against a stubbed `api` object passes while every
+  one of those is broken.
+
+  The coding workspace is deliberately untested: it renders Monaco, which does not run
+  under jsdom, and asserting against a stub of the editor would test the stub.
 - One Playwright end-to-end run per mode, against a seeded local stack. This is the
   Phase 5 gate: a full session in each mode driven entirely from the browser. **Owed.**
 
