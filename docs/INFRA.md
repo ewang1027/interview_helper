@@ -89,11 +89,26 @@ Each step is understood before the next begins.
 executor, web and a front door. What it cost is under **What step 1 actually taught**
 below — three of the four problems were not the ones this step was expected to teach.
 
-**Step 2 — One service on Fargate, by hand. ← next, and blocked on credentials.**
-`aws sts get-caller-identity` reports an expired session, so this is waiting on
-`aws login` rather than on anything in this repo. It is also deliberately a *human* step:
-its value is the clicking, and Terraform written before it would be code nobody had the
-context to read.
+**Step 2 — One service on Fargate, by hand. ← in progress.**
+Credentials are live (account `859294994564`, `us-east-2`) and **the API image is in ECR**:
+`interview-helper/api`, tagged with the commit sha and `latest`, 113 MB compressed.
+`make push SERVICE=api` reproduces it.
+
+The *service* half is deliberately left to a human. INFRA.md's own reason is that the
+clicking is what makes the Terraform replacing it legible — and there is a second one now:
+a Fargate service bills per second from the moment it starts, so it is a spending decision
+rather than a build step.
+
+Two things to know before creating it:
+
+- **The images are `arm64`**, built on Apple Silicon. Fargate runs them natively if the
+  task definition sets `runtimePlatform.cpuArchitecture = ARM64`; leave it at the `X86_64`
+  default and the task fails to start with an exec-format error. ARM64 is also ~20% cheaper
+  per vCPU-hour.
+- **`/health` needs no database**, which is what makes a first service cheap: it answers
+  before RDS exists, so step 2 can be one task and a load balancer with nothing behind it.
+  Every `/api/v1` route will answer `503` until `SESSION_SECRET` is injected and a database
+  is reachable, and that is correct behaviour rather than a broken deploy.
 
 **Step 2 (detail) — One service on Fargate, by hand.** Push the API image to ECR and run a single
 Fargate service through the console. Goal: watch a container you built serve real traffic

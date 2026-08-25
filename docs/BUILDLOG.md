@@ -5259,3 +5259,50 @@ egress. Both web-facing services run as uid 10001.
 `aws login`**. It is also deliberately a human step — INFRA.md wants the console clicked
 once so the Terraform that replaces it is legible, and Terraform written before that would
 be code nobody had the context to review. Terraform 1.x is installed and ready.
+
+---
+
+## Phase 6, step 2 (part) — the image is in ECR · 2026-08-25
+
+Credentials arrived, so two things were checked that had been waiting on them.
+
+### The Bedrock gate is unchanged, and now confirmed rather than assumed
+
+`make test-llm` has skipped since Phase 3. With live credentials it still skips, and the
+reason it prints is the one docs/COST.md already recorded:
+
+```
+bedrock cannot serve us.anthropic.claude-sonnet-4-6:
+  404 - Model use case details have not been submitted for this account.
+        Fill out the Anthropic use case details form before using the model.
+```
+
+Nothing new, and worth the run anyway: it separates "the credentials expired" from "the
+form is outstanding", which were indistinguishable before today. Phase 3's last owed item
+is a form in the Bedrock console, not code and not access.
+
+### The API image is in ECR
+
+`interview-helper/api`, tagged `854492e` and `latest`, 113 MB compressed against 516 MB on
+disk. `scripts/push_image.sh` makes it reproducible — `make push SERVICE=api`.
+
+Two things the script encodes rather than leaves to be rediscovered:
+
+**It refuses a dirty tree.** Every push is tagged with the commit sha, and a tag naming a
+commit whose contents were never that commit is worse than no tag. `ALLOW_DIRTY=1` is the
+visible exception, in the same style as `ALLOW_UNDOCUMENTED=1`.
+
+**Braces around the variable are load-bearing under zsh.** `$uri:latest` triggers zsh's
+`:l` *lowercase modifier* — it pushed to `interview-helper/apiatest` and failed with
+"repository does not exist", which reads like a permissions problem and is not one.
+
+### What is deliberately not done
+
+The Fargate service itself. INFRA.md wants the console clicked once so the Terraform that
+replaces it is legible, and there is now a second reason: a service bills per second from
+the moment it starts, which makes it a spending decision rather than a build step.
+
+Recorded for whoever does it: the images are **arm64** (Apple Silicon), so the task
+definition needs `runtimePlatform.cpuArchitecture = ARM64` or the task dies with an
+exec-format error. And `/health` needs no database — it answers before RDS exists, which is
+what lets step 2 be one task with nothing behind it.
