@@ -251,6 +251,24 @@ after the money is gone.
 **Web search is not available on Bedrock.** Under `MODEL_PROVIDER=bedrock` the research pass
 is skipped with a reason and only `job_parse` is billed — see [JOBS](JOBS.md).
 
+**Measured 2026-08-26**, on the first real import rather than estimated:
+
+| Call | Model | Work | Cost |
+|---|---|---|---|
+| `job_parse` | Sonnet 5 | five messy rows parsed and tagged | **$0.0092** |
+| `job_research` | Opus 5 | two rows completed, **six web searches** | **$0.2266** |
+
+Six searches for two rows is the number that matters: the research pass is roughly **25x**
+the parse, and its trigger is list length rather than how little each row carries. See
+[JOBS](JOBS.md)'s open questions.
+
+**A cache breakpoint below the minimum prefix does nothing, silently.** `api.llm` marks
+every system prompt cacheable, and the minimum cacheable prefix is about 1024 tokens.
+Measured with `count_tokens`, the job parser's taxonomy block is **882 tokens** — under the
+floor, so the marker is accepted and no caching happens. Not worth padding a prompt to fix;
+worth knowing before assuming a `cache_control` marker means a cache. A test pins the
+measurement so the day it crosses the floor is not a surprise.
+
 `api.llm.record_call` writes the row, **in its own transaction**, before the caller sees the
 completion. The spend happened whatever the caller does next, and a caller that raises
 afterwards would otherwise roll back the only record of it — the same reasoning that puts a

@@ -42,10 +42,11 @@ from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, func, select
 
 from api import llm
-from api.errors import ProblemError, not_found, unprocessable
+from api.errors import ProblemError, not_found, unprocessable, wrong_state
 from api.models import JobApplication, JobApplicationEvent
 from api.settings import Settings, get_settings
 
@@ -270,17 +271,27 @@ def taxonomy_prompt() -> str:
 def row_schema() -> dict[str, Any]:
     """One application's shape, shared by the parse's output schema and the research
     pass's tool. One definition because two would drift, and the drift would show up as a
-    research pass that silently dropped whichever field the parse had gained."""
+    research pass that silently dropped whichever field the parse had gained.
+
+    **Type and `enum` only — no `minLength`, no `minimum`/`maximum`.** Structured outputs
+    support a subset of JSON Schema and reject the range and length keywords outright
+    (`For 'number' type, properties maximum, minimum are not supported`). `enum` is the one
+    constraint that survives, which is fortunate, because it is the one carrying real
+    weight here: a sub-category or a stage outside the vocabulary is unrepresentable.
+
+    Everything the dropped keywords expressed is enforced in `_row_from` instead —
+    confidence is clamped to 0..1, and a row without a company or a role is dropped.
+    """
     return {
         "type": "object",
         "properties": {
-            "company": {"type": "string", "minLength": 1},
-            "role": {"type": "string", "minLength": 1},
+            "company": {"type": "string"},
+            "role": {"type": "string"},
             "location": {"type": ["string", "null"]},
             "url": {"type": ["string", "null"]},
             "subcategory": {"type": "string", "enum": list(SUBCATEGORIES)},
             "stage": {"type": "string", "enum": list(STAGES)},
-            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+            "confidence": {"type": "number"},
             "notes": {"type": ["string", "null"]},
             "applied_on": {"type": ["string", "null"]},
         },
@@ -300,10 +311,21 @@ def row_schema() -> dict[str, Any]:
 
 
 def parse_response_schema() -> dict[str, Any]:
+    """The parse's output schema.
+
+    **No `maxItems`.** Structured outputs reject it — `output_config.format.schema: For
+    'array' type, property 'maxItems' is not supported` — and the scripted tests could not
+    have found that, because a fake client never validates the request it is handed. The
+    first real call did, immediately.
+
+    The cap it was expressing is not lost: `_rows_from` truncates to `MAX_ROWS` on the way
+    in. That was always the enforcement — the schema keyword was belt-and-braces, and it
+    turned out to be a belt the provider does not stock.
+    """
     return {
         "type": "object",
         "properties": {
-            "applications": {"type": "array", "maxItems": MAX_ROWS, "items": row_schema()},
+            "applications": {"type": "array", "items": row_schema()},
         },
         "required": ["applications"],
         "additionalProperties": False,
@@ -449,11 +471,13 @@ def record_tool() -> dict[str, Any]:
         "input_schema": {
             "type": "object",
             "properties": {
-                "applications": {
-                    "type": "array",
-                    "maxItems": MAX_ROWS,
-                    "items": row_schema(),
-                }
+                # No `maxItems`, for the same reason `parse_response_schema` has none:
+                # `strict: true` puts a tool's schema through the same constrained-decoding
+                # validator as structured outputs, and it rejects the keyword
+                # (`tools.1.custom: For 'array' type, property 'maxItems' is not
+                # supported`). A non-strict tool would accept it — `api.agent.tools` uses
+                # `minimum` happily — so the restriction tracks strictness, not tools.
+                "applications": {"type": "array", "items": row_schema()}
             },
             "required": ["applications"],
             "additionalProperties": False,
@@ -642,13 +666,45 @@ def _applied_at(row: ParsedJob, *, now: datetime) -> datetime:
     return datetime.combine(row.applied_on, datetime.min.time(), tzinfo=UTC)
 
 
+def _key(company: str, role: str) -> tuple[str, str]:
+    """What makes two applications the same one.
+
+    Case-folded, and the unique index is `lower(company), lower(role)` to match — see
+    migration `d4f81c07b6a3`. They used to disagree: the index was case-sensitive and this
+    lookup was not, so "Aurora Labs" and "aurora labs" could both be stored and the second
+    one was then permanently invisible to every duplicate check.
+    """
+    return company.strip().lower(), role.strip().lower()
+
+
 def existing(db: Session, *, user_id: str, company: str, role: str) -> JobApplication | None:
+    """One application by company and role. For the single-row paths only.
+
+    An import must not call this in a loop — that is one round trip per pasted row, and it
+    is what `existing_index` exists to replace. Measured before that: importing 40 rows
+    issued 240 statements, 80 of them this query.
+    """
     return db.exec(
         select(JobApplication)
         .where(JobApplication.user_id == user_id)
-        .where(func.lower(col(JobApplication.company)) == company.lower())
-        .where(func.lower(col(JobApplication.role)) == role.lower())
+        .where(func.lower(col(JobApplication.company)) == company.strip().lower())
+        .where(func.lower(col(JobApplication.role)) == role.strip().lower())
     ).first()
+
+
+def existing_index(db: Session, *, user_id: str) -> dict[tuple[str, str], str]:
+    """Every application this user already has, keyed for deduplication, in one query.
+
+    Only the id and the two key columns are selected: an import needs to know *whether* a
+    row exists and which one, never the rest of it, and hydrating a few hundred full
+    objects to answer that is work nobody reads.
+    """
+    rows = db.exec(
+        select(JobApplication.id, JobApplication.company, JobApplication.role).where(
+            JobApplication.user_id == user_id
+        )
+    ).all()
+    return {_key(company, role): application_id for application_id, company, role in rows}
 
 
 def create_application(
@@ -683,7 +739,50 @@ def create_application(
     already = existing(db, user_id=user_id, company=company, role=role)
     if already is not None:
         return already
+    return insert_application(
+        db,
+        user_id=user_id,
+        company=company,
+        role=role,
+        location=location,
+        url=url,
+        subcategory=subcategory,
+        stage=stage,
+        notes=notes,
+        applied_at=applied_at,
+        source=source,
+        confidence=confidence,
+        model=model,
+    )
 
+
+def insert_application(
+    db: Session,
+    *,
+    user_id: str,
+    company: str,
+    role: str,
+    location: str | None = None,
+    url: str | None = None,
+    subcategory: str | None = None,
+    stage: str = "applied",
+    notes: str | None = None,
+    applied_at: datetime | None = None,
+    source: str = "manual",
+    confidence: float | None = None,
+    model: str | None = None,
+) -> JobApplication:
+    """Write one application and its events, checking nothing and reading nothing.
+
+    The caller has already established that this is new — `create_application` by asking
+    the database, `ingest` by consulting `existing_index` once for the whole paste. Split
+    out so an import does not re-ask per row.
+
+    The projection is computed **in memory** from the events being written rather than by
+    calling `recompute`, which would re-read the rows just added and write back what they
+    already say. Same function, `project`, so the two cannot drift: this is the identity
+    `recompute` would land on, arrived at without the round trip.
+    """
     now = _utcnow()
     application = JobApplication(
         user_id=user_id,
@@ -706,13 +805,10 @@ def create_application(
         created_at=now,
         updated_at=now,
     )
-    db.add(application)
-    db.flush()
-
     # Always an `applied` event first, even when the row arrives already at `final`. The
     # funnel counts a pipeline that reached the second round as having passed through the
     # first, and the events are the only place that can be true.
-    db.add(
+    events = [
         JobApplicationEvent(
             application_id=application.id,
             sequence=0,
@@ -720,9 +816,9 @@ def create_application(
             occurred_at=application.applied_at,
             note="imported" if source != "manual" else None,
         )
-    )
+    ]
     if stage != "applied":
-        db.add(
+        events.append(
             JobApplicationEvent(
                 application_id=application.id,
                 sequence=1,
@@ -731,8 +827,10 @@ def create_application(
                 note="from the imported list" if source != "manual" else None,
             )
         )
-    db.flush()
-    recompute(db, application.id)
+    application.current_stage, application.furthest_stage, application.outcome = project(events)
+    db.add(application)
+    for row in events:
+        db.add(row)
     return application
 
 
@@ -782,12 +880,17 @@ def ingest(
     now = _utcnow()
     created: list[str] = []
     duplicates: list[str] = []
+
+    # One query for the whole paste, not one per row. The index is also what makes a paste
+    # self-deduplicating: a list naming the same job twice adds it once, which a
+    # per-row database check could not see because neither row is committed yet.
+    seen = existing_index(db, user_id=user_id)
     for row in rows:
-        before = existing(db, user_id=user_id, company=row.company, role=row.role)
-        if before is not None:
-            duplicates.append(before.id)
+        key = _key(row.company, row.role)
+        if key in seen:
+            duplicates.append(seen[key])
             continue
-        application = create_application(
+        application = insert_application(
             db,
             user_id=user_id,
             company=row.company,
@@ -802,8 +905,21 @@ def ingest(
             confidence=row.confidence,
             model=model,
         )
+        seen[key] = application.id
         created.append(application.id)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        # `seen` is read once at the start of the import, so a second import running
+        # concurrently can insert the same company and role in between — and the unique
+        # index is what stops that becoming two rows. Rolling back loses this import
+        # rather than half of it, which is the right way to lose it: the paste is still in
+        # the box and re-running it now finds the other import's rows as duplicates.
+        db.rollback()
+        raise wrong_state(
+            "another import wrote some of these applications while this one was running; "
+            "run it again and the duplicates will be skipped"
+        ) from exc
 
     return Ingestion(
         rows=rows,
@@ -863,18 +979,54 @@ def recompute(db: Session, application_id: str) -> JobApplication:
     return application
 
 
-def recompute_all(db: Session, *, user_id: str) -> int:
+def recompute_all(db: Session, *, user_id: str) -> tuple[int, int]:
     """Replay every application's projection. The proof that the events are the source.
 
     `POST /mastery/recompute` exists for the same reason and this is its analogue: if the
     board and the history can disagree, one of them is a lie, and the only way to know
     which is to rebuild one from the other.
+
+    Two queries and one grouping pass, rather than `recompute` in a loop — which was three
+    round trips per application, or 121 statements to replay 40 rows. Only rows whose
+    projection actually *changed* are written back, so the ordinary case where everything
+    already agrees issues no writes at all.
+
+    Returns `(replayed, corrected)`. Two numbers because one would have to stand for both,
+    and they answer different questions: the first says the replay covered everything, the
+    second says how much of the board was lying — and a healthy system reports `n, 0`.
     """
-    ids = list(db.exec(select(JobApplication.id).where(JobApplication.user_id == user_id)).all())
-    for application_id in ids:
-        recompute(db, application_id)
+    applications = list(
+        db.exec(select(JobApplication).where(JobApplication.user_id == user_id)).all()
+    )
+    if not applications:
+        return 0, 0
+    by_application: dict[str, list[JobApplicationEvent]] = {row.id: [] for row in applications}
+    events = db.exec(
+        select(JobApplicationEvent)
+        .where(col(JobApplicationEvent.application_id).in_(list(by_application)))
+        .order_by(col(JobApplicationEvent.sequence))
+    ).all()
+    for event in events:
+        by_application[event.application_id].append(event)
+
+    changed = 0
+    now = _utcnow()
+    for application in applications:
+        current, furthest, outcome = project(by_application[application.id])
+        if (application.current_stage, application.furthest_stage, application.outcome) == (
+            current,
+            furthest,
+            outcome,
+        ):
+            continue
+        application.current_stage = current
+        application.furthest_stage = furthest
+        application.outcome = outcome
+        application.updated_at = now
+        db.add(application)
+        changed += 1
     db.commit()
-    return len(ids)
+    return len(applications), changed
 
 
 def advance(
@@ -1037,9 +1189,16 @@ def stats(db: Session, *, user_id: str) -> dict[str, Any]:
 
     # The funnel counts `furthest_stage`, so an application that was rejected after an
     # onsite still counts in every bucket it genuinely reached.
-    reached_per_stage = [
-        sum(1 for row in rows if RANK.get(row.furthest_stage, 0) >= RANK[stage]) for stage in LADDER
-    ]
+    # One pass, then a suffix sum. The obvious form — one `sum(...)` per rung — walks every
+    # application seven times to answer seven questions about the same histogram.
+    at_rung = [0] * len(LADDER)
+    for row in rows:
+        at_rung[RANK.get(row.furthest_stage, 0)] += 1
+    reached_per_stage = [0] * len(LADDER)
+    running = 0
+    for index in range(len(LADDER) - 1, -1, -1):
+        running += at_rung[index]
+        reached_per_stage[index] = running
     funnel: list[dict[str, Any]] = []
     for index, stage in enumerate(LADDER):
         reached = reached_per_stage[index]

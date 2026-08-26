@@ -68,6 +68,10 @@ GRADUATION_SOLVES = 3
 # Below this, the classification is a proposal rather than a tag, and nothing is written.
 AUTO_ACCEPT_CONFIDENCE = 0.75
 
+# How many secondary concepts one solve may write evidence for. Enforced in `classify`
+# rather than in the response schema, which cannot express it — see `response_schema`.
+MAX_SECONDARIES = 4
+
 # What a self-reported solve is worth. Above a rubric judgement's 0.5, because it is a fact
 # about a real solve rather than a model's read of prose — and well below a hidden test's
 # 0.9, because nothing checked it. A failed re-solve is softer still: forgetting a problem
@@ -143,18 +147,25 @@ def response_schema() -> dict[str, Any]:
     Same reason the rubric grader enumerates an item's criteria: a tag that is not a concept
     cannot be expressed rather than having to be caught afterwards — and `concept_evidence`
     keys on a foreign key, so the alternative failure is an insert error.
+
+    **No `maxItems`, no `minimum`/`maximum`.** Structured outputs and `strict` tools accept
+    only a subset of JSON Schema: `type`, `enum`, `required` and `additionalProperties`
+    survive; the range and length keywords are rejected with a 400.
+    This schema carried all three from the day it was written and would have failed every
+    real classification; nothing caught it because no real model had run it — the scripted
+    client in the tests never validates the request it is handed. Found 2026-08-26 by the
+    job tracker's first live call, which had the same defect.
+
+    The cap they expressed is enforced in `classify` instead, which truncates to
+    `MAX_SECONDARIES` and clamps the confidence.
     """
     ids = sorted(concept_ids())
     return {
         "type": "object",
         "properties": {
             "primary_concept_id": {"type": "string", "enum": ids},
-            "secondary_concept_ids": {
-                "type": "array",
-                "maxItems": 4,
-                "items": {"type": "string", "enum": ids},
-            },
-            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+            "secondary_concept_ids": {"type": "array", "items": {"type": "string", "enum": ids}},
+            "confidence": {"type": "number"},
             "reasoning": {"type": "string"},
         },
         "required": ["primary_concept_id", "secondary_concept_ids", "confidence", "reasoning"],
@@ -232,7 +243,9 @@ def classify(
         # The primary is not also a secondary: it would write the same concept twice from
         # one solve, at two confidences, which overstates one problem as two readings.
         if cid in known and cid != primary
-    )
+        # Truncated here because `response_schema` cannot say `maxItems` — and the cap is
+        # not cosmetic: each secondary writes its own immutable `concept_evidence` row.
+    )[:MAX_SECONDARIES]
     return Classification(
         primary_concept_id=primary,
         secondary_concept_ids=secondaries,

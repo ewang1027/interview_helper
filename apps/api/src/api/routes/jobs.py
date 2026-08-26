@@ -163,8 +163,12 @@ def recompute(db: DbSession, principal: CurrentPrincipal) -> dict[str, Any]:
     The analogue of `POST /mastery/recompute`, and it exists for the same reason: the
     board is derived from the history, and a projection you cannot rebuild is a projection
     you cannot check.
+
+    Reports `corrected` separately from `replayed` because they answer different questions,
+    and the interesting answer is `corrected: 0` — the board and the events agree.
     """
-    return {"recomputed": service.recompute_all(db, user_id=principal.user_id)}
+    replayed, corrected = service.recompute_all(db, user_id=principal.user_id)
+    return {"replayed": replayed, "corrected": corrected}
 
 
 @router.get("/jobs/{application_id}")

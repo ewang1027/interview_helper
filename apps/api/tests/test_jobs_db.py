@@ -284,11 +284,20 @@ def test_recompute_rebuilds_the_board_and_changes_nothing(client):
         db.add(row)
         db.commit()
 
-    assert client.post("/api/v1/jobs/recompute").json()["recomputed"] >= 1
+    replay = client.post("/api/v1/jobs/recompute").json()
+    # Both numbers, because they answer different questions: one row was corrupted, so
+    # exactly one should come back corrected — a replay that reports every row as
+    # "recomputed" cannot tell you whether the board was lying.
+    assert replay["replayed"] >= 1
+    assert replay["corrected"] == 1
     detail = client.get(f"/api/v1/jobs/{created['id']}").json()
     assert detail["current_stage"] == "final"
     assert detail["furthest_stage"] == "final"
     assert detail["outcome"] == "open"
+
+    # And a second replay corrects nothing, which is the assertion that the projection is
+    # a fixed point rather than merely reachable once.
+    assert client.post("/api/v1/jobs/recompute").json()["corrected"] == 0
 
 
 # --- Classification and stats -------------------------------------------------------------
@@ -362,3 +371,114 @@ def test_every_jobs_route_needs_a_session_cookie():
         assert anonymous.get("/api/v1/jobs").status_code == 401
         assert anonymous.get("/api/v1/jobs/stats").status_code == 401
         assert anonymous.post("/api/v1/jobs/import", json={"text": "x"}).status_code == 401
+
+
+# --- What the optimisation must keep true -------------------------------------------------
+
+
+def _statements(db_engine) -> tuple[list[str], object]:
+    """Record every SQL statement issued while the returned handle is installed."""
+    from sqlalchemy import event
+
+    seen: list[str] = []
+
+    def before(conn, cursor, statement, params, context, executemany):
+        seen.append(statement)
+
+    event.listen(db_engine, "before_cursor_execute", before)
+    return seen, before
+
+
+def test_an_import_does_not_query_once_per_row(client):
+    """The duplicate check is one query for the whole paste, not one per row.
+
+    Pinned with a number because this is the kind of thing that regresses the moment
+    somebody moves the check back inside the loop, and nothing else would notice: the
+    behaviour stays correct and only the cost changes. Measured before the fix: importing
+    40 rows issued 240 statements, 80 of them this lookup. It now issues a constant few,
+    and the assertion is deliberately loose about the constant and strict about the shape.
+    """
+    from sqlalchemy import event
+
+    use_settings(jobs_research_threshold=100)
+    rows = [_row(company=f"Bench {i:03d}", role="Engineer") for i in range(30)]
+    _install(parser(rows))
+
+    engine = get_engine()
+    seen, handle = _statements(engine)
+    try:
+        response = client.post("/api/v1/jobs/import", json={"text": "thirty companies"})
+    finally:
+        event.remove(engine, "before_cursor_execute", handle)
+
+    assert response.json()["created"] == 30
+    selects = [s for s in seen if s.lstrip().upper().startswith("SELECT")]
+    lookups = [s for s in selects if "job_applications" in s]
+    # Well under one per row: the whole import reads the existing set once, and the route
+    # then reads the board back to return it.
+    assert len(lookups) <= 5, f"{len(lookups)} lookups for 30 rows — the check is back in the loop"
+
+
+def test_a_paste_naming_the_same_job_twice_adds_it_once(client):
+    """Within a single paste, not just against what is already stored.
+
+    A per-row database check could not catch this: neither row is committed while the
+    import is running, so both would look new. The in-memory index is what sees it.
+    """
+    use_settings(jobs_research_threshold=100)
+    _install(
+        parser(
+            [
+                _row(company="Aurora Labs", role="Backend Engineer"),
+                _row(company="Aurora Labs", role="Backend Engineer"),
+                _row(company="Northwind Systems", role="Trader", subcategory="quant_trading"),
+            ]
+        )
+    )
+    body = client.post("/api/v1/jobs/import", json={"text": "a list with a repeat"}).json()
+    assert body["created"] == 2
+    assert body["duplicates"] == 1
+
+
+def test_deduplication_ignores_case_and_surrounding_space(client):
+    """The unique index folds case, and so does the check — they used to disagree.
+
+    While they disagreed, "Aurora Labs" and "aurora labs" were two rows to the constraint
+    and one row to every duplicate check, so the second was storable and then permanently
+    invisible to the code meant to find it.
+    """
+    use_settings(jobs_research_threshold=100)
+    _install(parser([_row(company="Aurora Labs", role="Backend Engineer")]))
+    assert client.post("/api/v1/jobs/import", json={"text": "x"}).json()["created"] == 1
+
+    _install(parser([_row(company="  aurora labs  ", role="BACKEND ENGINEER")]))
+    again = client.post("/api/v1/jobs/import", json={"text": "x"}).json()
+    assert again["created"] == 0
+    assert again["duplicates"] == 1
+
+
+def test_an_imported_row_is_written_with_its_projection_already_correct(client):
+    """`insert_application` computes the projection in memory instead of re-reading the
+    rows it just wrote. This asserts the shortcut lands on the same answer `recompute`
+    would: a replay immediately afterwards corrects nothing."""
+    use_settings(jobs_research_threshold=100)
+    _install(
+        parser(
+            [
+                _row(company="Aurora Labs", role="Engineer", stage="final"),
+                _row(company="Northwind Systems", role="Trader", stage="rejected"),
+                _row(company="Helio Robotics", role="ML Engineer", stage="applied"),
+            ]
+        )
+    )
+    body = client.post("/api/v1/jobs/import", json={"text": "three"}).json()
+    assert body["created"] == 3
+
+    replay = client.post("/api/v1/jobs/recompute").json()
+    assert replay["replayed"] == 3
+    assert replay["corrected"] == 0, "the in-memory projection disagrees with a replay"
+
+    rows = {row["company"]: row for row in body["applications"]}
+    assert rows["Aurora Labs"]["furthest_stage"] == "final"
+    assert rows["Northwind Systems"]["furthest_stage"] == "applied"
+    assert rows["Northwind Systems"]["outcome"] == "rejected"

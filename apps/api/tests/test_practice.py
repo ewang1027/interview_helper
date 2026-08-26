@@ -66,8 +66,11 @@ def test_the_response_schema_enumerates_the_whole_taxonomy():
     ids = schema["properties"]["primary_concept_id"]["enum"]
     assert set(ids) == practice.concept_ids()
     assert len(ids) > 150
-    assert schema["properties"]["secondary_concept_ids"]["maxItems"] == 4
     assert schema["additionalProperties"] is False
+    # The four-secondary cap is *not* here: structured outputs reject `maxItems`, and this
+    # test used to assert the keyword that made every real classification a 400. It is
+    # enforced in `classify` now — see `test_a_classifier_returning_ten_secondaries_writes_four`.
+    assert "maxItems" not in schema["properties"]["secondary_concept_ids"]
 
 
 def test_the_taxonomy_is_the_cacheable_half_and_the_problem_is_not():

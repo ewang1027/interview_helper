@@ -3,6 +3,15 @@
 > **Status:** All four graders are **built** — coding and rubric on 2026-08-20, quant on
 > 2026-08-21 — so every mode can be created and graded, and `POST /sessions` no longer
 > refuses any of them.
+> **Correction, 2026-08-26.** Between 2026-08-20 and 2026-08-26 that sentence was false for
+> two of the four. `response_schema` bounded `level` with `minimum`/`maximum`, which
+> **structured outputs reject with a 400**, so every real design or behavioral grading
+> would have failed on its first call. Nothing caught it: every test of this grader uses a
+> scripted client, and a scripted client never validates the request it is handed. Found
+> when [JOBS](JOBS.md) made this repo's first live structured-output call and hit the same
+> rule three times. The bound moved into `_judge`, which already clamped; the rubric grader
+> is now **verified against a real model** — a design answer graded 0.28 over four
+> criteria, 2026-08-26 — which it had never been before.
 > On the coding grader:
 > `api.grading.coding` joins an item to its own tests, sends them to the executor's
 > `POST /execute`, measures growth through `POST /probe`, folds the two into a score, and

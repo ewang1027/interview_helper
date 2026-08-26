@@ -227,6 +227,9 @@ owes.
       second Opus 5 pass **searches the web** for the postings and fills in what the list
       left out. The funnel counts `furthest_stage`, so a rejection after an onsite still
       counts as an onsite reached. Web search is billed per search and does not appear in
-      any token count, so the ledger grew a column for it. **No real model has parsed a
-      real list yet** — both calls are scripted in the tests — and the page has not been
-      opened in a browser, like every other route here*
+      any token count, so the ledger grew a column for it. **Run live 2026-08-26**: a
+      messy five-row paste parsed correctly for $0.0092, and the research pass made six
+      real web searches for $0.2266 — which found that structured outputs reject the JSON
+      Schema range keywords, a defect two older features shared and neither had ever hit.
+      An import is now 3 SQL statements rather than 240. The page has still not been opened
+      in a browser, like every other route here*

@@ -392,3 +392,39 @@ def test_the_classifier_cannot_tag_the_primary_concept_twice(logged):
     problem = log(client, logged)
     assert problem["secondary_concept_ids"] == [SECONDARY]
     assert [row["concept_id"] for row in problem["evidence"]] == [PRIMARY, SECONDARY]
+
+
+def test_a_classifier_returning_ten_secondaries_writes_four(logged):
+    """The cap the response schema can no longer express.
+
+    Not cosmetic: every secondary writes its own immutable `concept_evidence` row, so an
+    uncapped list is an uncapped number of permanent facts about your mastery from one
+    logged solve. `maxItems` used to say so and was rejected by the provider — this is
+    where it is said now.
+
+    A database test rather than a pure one, even though it is checking a slice: `classify`
+    goes through `llm.complete`, which reserves a row on the ledger before it calls
+    anything. There is no such thing as a model call here that does not touch Postgres —
+    which is also why it takes `logged`, whose teardown removes the ledger rows it caused.
+    Written without that fixture first, and the leaked rows broke a budget test three files
+    away by spending its $0.001 daily ceiling before it started.
+    """
+    ids = sorted(practice.concept_ids())
+    primary, secondaries = ids[0], ids[1:11]
+    model = ScriptedModel(
+        model_response(
+            text_block(
+                json.dumps(
+                    {
+                        "primary_concept_id": primary,
+                        "secondary_concept_ids": secondaries,
+                        "confidence": 0.9,
+                        "reasoning": "test",
+                    }
+                )
+            )
+        )
+    )
+    result = practice.classify(title="t", url="u", client=model, settings=use_settings())
+    assert len(result.secondary_concept_ids) == practice.MAX_SECONDARIES
+    assert result.secondary_concept_ids == tuple(secondaries[: practice.MAX_SECONDARIES])

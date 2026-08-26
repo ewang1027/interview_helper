@@ -161,9 +161,19 @@ def response_schema(criteria: list[dict[str, Any]]) -> dict[str, Any]:
     invites a level no anchor describes, which is the ungrounded judgement the anchors exist
     to prevent. Each criterion is still clamped to *its* scale when judged, since one
     `maximum` cannot describe an item that mixes them.
+
+    **No `minimum`/`maximum` on `level`.** Structured outputs accept only a subset of JSON
+    Schema — `type`, `enum`, `required` and `additionalProperties` survive; the range and
+    length keywords are rejected with a 400. This schema carried a bound on `level` from
+    the day it was written, so **every real design or behavioral grading would have
+    failed**; nothing caught it because no real model had run one. The scripted client in
+    the tests does not validate the request it is handed. Found 2026-08-26, when the job
+    tracker's first live call hit the same rule.
+
+    `grade_one` already clamps the level to `0..level_max`, so the bound was redundant as
+    well as unsendable.
     """
     criterion_ids = [c["id"] for c in criteria]
-    top = max((level_max(c) for c in criteria), default=DEFAULT_LEVEL_MAX)
     return {
         "type": "object",
         "properties": {
@@ -174,7 +184,8 @@ def response_schema(criteria: list[dict[str, Any]]) -> dict[str, Any]:
                     "properties": {
                         "id": {"type": "string", "enum": criterion_ids},
                         "demonstrated": {"type": "boolean"},
-                        "level": {"type": "number", "minimum": 0, "maximum": top},
+                        # No `minimum`/`maximum` — see the docstring above.
+                        "level": {"type": "number"},
                         "citation": {"type": "string"},
                         "reasoning": {"type": "string"},
                     },

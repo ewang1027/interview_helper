@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-08-25
+## Where things stand — 2026-08-26
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -28,7 +28,7 @@ detail behind it.
 | **6** AWS deploy | **partial** — step 1 of 5 | Dockerfiles for `api`, `executor` and `web`; `make up-stack` runs all of it behind a **Caddy front door** routing by path, the job the ALB does — so compose mirrors the target topology. Only the front door publishes a port. Sandbox isolation re-verified from inside the containerised launcher | steps 2–5: one service on Fargate by hand, Terraform, the rest of the stack, the portability gate — **all blocked on an authenticated AWS session**, not on code |
 | **7–8** Voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
-| **10** Job applications | **built** | two tables, the **stage event log** and the projection over it, ten endpoints, a Sonnet 5 paste parser, an Opus 5 **web-search research pass**, and the `/jobs` page — the funnel counts `furthest_stage`, so a rejection does not erase the rounds before it | a real model against a real pasted list; the gold set for calibrating the tagging; time-in-stage, which the events already record and nothing reports |
+| **10** Job applications | **built** | two tables, the **stage event log** and the projection over it, ten endpoints, a Sonnet 5 paste parser, an Opus 5 **web-search research pass**, and the `/jobs` page. **Run live 2026-08-26**: a messy five-row paste parsed correctly, six real web searches, an import down to 3 SQL statements from 240 | the gold set for calibrating the tagging; time-in-stage, which the events already record and nothing reports; a research trigger based on what a row is missing rather than how long the list is |
 
 ~~One thing worth knowing before reading anything else as further along than it is: **no
 full session has run against a live model.**~~ **Closed 2026-08-25.** A full session ran on
@@ -5633,3 +5633,118 @@ like every other route in this app.
 
 Nothing here writes `concept_evidence` or moves mastery, deliberately: applying to a quant
 firm is not evidence that you know stochastic calculus.
+
+---
+
+## Wave — The job tracker meets a real provider · 2026-08-26
+
+Optimising the tracker and then running it. The optimisation is arithmetic; the run is the
+part worth reading, because it found a bug that was never about this feature.
+
+### Three 400s, and a rule nobody had written down
+
+The first live import failed three times, each error naming the next offending keyword:
+
+```
+output_config.format.schema: For 'array' type, property 'maxItems' is not supported
+output_config.format.schema: For 'number' type, properties maximum, minimum are not supported
+tools.1.custom: For 'array' type, property 'maxItems' is not supported
+```
+
+**Structured outputs and `strict` tools accept a subset of JSON Schema.** `type`, `enum`,
+`required` and `additionalProperties` survive; the range and length keywords do not. The
+third error is the informative one — it came from a *tool* schema, so the restriction
+tracks `strict: true`, not tools-versus-outputs. `api.agent.tools` has always sent
+`minimum` on a non-strict tool and always worked.
+
+Then the grep, which is where it stopped being about the job tracker:
+
+- `api.practice.response_schema` — `maxItems` and `minimum`/`maximum`, since Phase 9.
+  **Every real classification would have failed.** Invisible because `classify` swallows
+  every failure by design, so a rejected schema is indistinguishable from a provider that
+  is down — and docs/PRACTICE_LOG.md had already concluded it was the latter.
+- `api.grading.rubric.response_schema` — a bound on `level`, since Phase 3. **Every real
+  design or behavioral grading would have failed.** This file said all four modes graded.
+  Two of them could not have.
+
+The reason none of it was caught is one sentence: **a scripted client answers whatever it
+is handed and never validates the request**, so a schema the provider would refuse looks
+exactly like one it would accept. Every test of all three used one. The full-session run on
+2026-08-25 did not catch the rubric case either, because that session was a *coding*
+submission and coding grading is deterministic — it never calls a model.
+
+Nothing was lost by removing the keywords: every one was a bound already enforced in code,
+or moved there. `enum` is the constraint doing real work here and is fully supported.
+
+Two new gates. `test_output_schemas.py` walks every schema this repo sends under
+constrained decoding and fails on a rejected keyword — static, free, in the default suite,
+and checked in both directions with a planted schema. `test_schemas_live.py` sends two of
+them to the provider, because a hand-written rule about what an API accepts can itself be
+wrong.
+
+### The optimisation, measured before and after
+
+`ingest` checked for duplicates once per row, and then `create_application` checked again;
+each new row was then re-read and re-written by `recompute` to compute a projection the
+insert already knew.
+
+| Path | Before | After |
+|---|---|---|
+| import 40 rows | 240 statements · 103 ms | **3 · 10 ms** |
+| import 200 rows | — | **3 · 30 ms** |
+| re-paste dedup, 40 rows | 40 statements | **1** |
+| `recompute_all`, 40 rows | 121 statements · 39 ms | **2 · 3 ms** |
+
+Constant in the number of rows rather than linear. Three changes: one query builds a
+dedup index for the whole paste, `insert_application` computes the projection in memory
+with the same `project` the replay uses, and `recompute_all` groups two queries instead of
+looping. The funnel also went from seven passes over the applications to one and a suffix
+sum.
+
+The in-memory index bought a behaviour too: a paste naming the same job twice now adds it
+once. A per-row database check could not see that, because neither row is committed while
+the import is running.
+
+### An index that disagreed with its own lookup
+
+`job_applications_company_role_unique` was `(user_id, company, role)` — case-sensitive —
+while `api.jobs.existing` looked rows up with `lower(company)`. So "Aurora Labs" and
+"aurora labs" were two rows to the constraint and one row to every duplicate check: both
+storable, the second then permanently invisible. It was also why each check was a
+sequential scan, since a predicate on `lower(company)` cannot use an index on `company`.
+Migration `d4f81c07b6a3` folds both. It also replaced `ix_job_applications_stage`
+— `(current_stage, updated_at)`, which served no query anyone issues — with
+`(user_id, applied_at DESC)`, which is what the board actually asks for.
+
+### What the live run showed about the prompts
+
+The parse read five applications out of a deliberately messy list and correctly ignored a
+sixth line that was a note to self. Stages stated in prose came through: "did their online
+assessment last week" → `oa`, "onsite next thursday" → `final`. The one date given was the
+only date recorded. The bare company name with no title came back at **confidence 0.20** and
+landed in review rather than being guessed at.
+
+The research pass ran six real web searches, completed both rows, kept them in order, and
+preserved the stages the person reported. On the row whose posting was ambiguous it wrote
+"Could not verify" and *lowered* its confidence to 0.15 — the instruction most likely to
+have been ignored, and it was not.
+
+### Verified
+
+- **$0.0092** for the parse, **$0.2266** for the research pass with six searches. Six
+  searches for two rows sharpens docs/JOBS.md's open question: the trigger is list length,
+  and cost tracks how little each row carries.
+- The taxonomy prompt is **882 tokens**, under the ~1024 minimum cacheable prefix, so the
+  `cache_control` marker on it is inert. Pinned by an assertion in both directions.
+- The rubric grader graded a design answer live for the first time: 0.28 over four
+  criteria, two demonstrated. The practice classifier tagged a real problem `sliding-window`
+  at 0.95.
+- 258 unit, 215 db, 79 web tests. `make check` and `make check-web` clean.
+
+### A smaller finding, recorded because it cost twenty minutes
+
+A test added without its cleanup fixture leaked two `llm_calls` rows, and those rows broke
+`test_an_in_flight_dollar_reservation_stops_a_concurrent_call` **three files away** — its
+$0.001 daily ceiling was already spent before it started. The failure named the budget
+test, not the leak. Ledger rows are global state, and a test that writes one and does not
+remove it is a test that can fail another one for reasons neither mentions.

@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Index, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, DateTime, Index, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
@@ -428,11 +428,24 @@ class JobApplication(SQLModel, table=True):
     """
 
     __tablename__ = "job_applications"
+    # Both indexes are **functional or ordered**, which `--autogenerate` cannot compare
+    # against the database — so migration `d4f81c07b6a3` is authoritative for their exact
+    # shape and these declarations exist so the model does not silently disagree with it.
     __table_args__ = (
-        # One application per company/role. A pasted list re-pasted is the common case,
-        # and the alternative to this constraint is a board that quietly doubles.
-        UniqueConstraint("user_id", "company", "role", name="job_applications_company_role_unique"),
-        Index("ix_job_applications_stage", "current_stage", "updated_at"),
+        # One application per company/role, **case-folded**, because that is how
+        # `api.jobs._key` compares them. Declared case-sensitively at first, which meant
+        # "Aurora Labs" and "aurora labs" were two rows to the constraint and one row to
+        # every duplicate check — so the second was storable and then unfindable. The
+        # folded index is also what stops each check being a sequential scan.
+        Index(
+            "job_applications_company_role_unique",
+            "user_id",
+            text("lower(company)"),
+            text("lower(role)"),
+            unique=True,
+        ),
+        # What the board actually asks for: this user's applications, newest first.
+        Index("ix_job_applications_user_applied", "user_id", text("applied_at DESC")),
     )
 
     id: str = Field(default_factory=new_id, primary_key=True)

@@ -25,6 +25,8 @@ from api.db import get_engine
 from api.grading.rubric import (
     GRADER_VERSION,
     RUBRIC_CONFIDENCE,
+    _judge,
+    build_prompt,
     cites_the_answer,
     grade_rubric,
     level_max,
@@ -142,15 +144,41 @@ def test_an_unanchored_criterion_falls_back_to_the_widest_scale():
     assert level_max({"id": "x", "weight": 1.0, "levels": {}}) == 4.0
 
 
-def test_the_response_schema_carries_the_items_own_top_anchor():
+def test_the_scale_is_communicated_without_a_schema_bound():
     """Telling a model it may answer 4 on a rubric anchored to 3 invites a level no anchor
-    describes — the ungrounded judgement the anchors exist to prevent."""
+    describes — the ungrounded judgement the anchors exist to prevent.
+
+    This used to be a `maximum` on the response schema, and that **could never have
+    worked**: structured outputs reject the range keywords, so every real rubric grading
+    would have returned a 400. Nothing caught it because no real model had ever graded a
+    design or behavioral answer — the scripted client does not validate the request.
+
+    The constraint is kept in the two places that do work, and this asserts both: the
+    prompt names every anchor, so the model is told the scale in words, and `_judge` clamps
+    whatever comes back. A bound the provider refuses to enforce was never the load-bearing
+    half anyway.
+    """
 
     def level(criteria: list[dict[str, Any]]) -> dict[str, Any]:
         return response_schema(criteria)["properties"]["criteria"]["items"]["properties"]["level"]
 
-    assert level(CRITERIA)["maximum"] == 4.0
-    assert level(reanchored(CRITERIA, ["0", "1", "2", "3"]))["maximum"] == 3.0
+    assert "maximum" not in level(CRITERIA)
+    assert "minimum" not in level(CRITERIA)
+
+    # Said in words instead: the prompt lists each anchor the criterion defines.
+    narrow = reanchored(CRITERIA, ["0", "1", "2", "3"])
+    prompt = build_prompt(DESIGN, "an answer", narrow)
+    assert "level 3:" in prompt
+    assert "level 4:" not in prompt
+
+    # And enforced on the way back in, which is where it actually binds.
+    over = _judge(
+        narrow[0],
+        {"demonstrated": True, "level": 9.0, "citation": ANSWER[:30], "reasoning": "r"},
+        ANSWER,
+    )
+    assert over.level == 3.0
+    assert over.score == 1.0
 
 
 def test_a_top_anchor_is_full_marks_whatever_the_scale():

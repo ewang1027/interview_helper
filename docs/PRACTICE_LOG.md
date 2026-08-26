@@ -6,9 +6,16 @@
 > `concept_evidence` and moves the same `mastery` projection a graded submission does, and
 > a session carrying practice evidence replays exactly. Its gates — Phase 3's API and a
 > live `ModelRouter`, and Phase 4's mastery — were all met by 2026-08-20.
-> **Not built:** the hand-labeled gold set the open questions below ask for, and no real
-> model has classified anything yet: like every other model path here, that waits on
-> Bedrock access ([COST](COST.md)).
+> **Not built:** the hand-labeled gold set the open questions below ask for.
+> **Correction, 2026-08-26.** ~~No real model has classified anything~~ — one has now, and
+> doing it exposed a defect present since this landed: `response_schema` carried `maxItems`
+> and `minimum`/`maximum`, which **structured outputs reject with a 400**, so every real
+> classification would have failed. It was invisible because `classify` swallows every
+> failure by design — a provider that is down must not lose a log entry — so a rejected
+> schema looked exactly like an unreachable provider, which is what this file assumed it
+> was. The four-secondary cap moved into `classify`, and the classifier is now verified
+> live: "Longest Substring Without Repeating Characters" → `sliding-window`, confidence
+> 0.95. Found via [JOBS](JOBS.md), which hit the same rule on its first live call.
 > Two deviations from what follows are recorded in the buildlog wave: the confidence for a
 > *successful* solve (0.7) was unspecified here, and a classification failure lands a
 > problem pending rather than failing the request.
