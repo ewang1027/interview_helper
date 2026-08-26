@@ -161,12 +161,19 @@ describe("applications", () => {
     ).toBeInTheDocument();
   });
 
-  it("marks a row whose tag was proposed rather than confirmed", async () => {
+  it("marks a row whose tag was proposed and nothing was proposed for", async () => {
     stubFetch({
       ...BASE,
       "/api/v1/jobs": {
         applications: [
-          application({ status: "pending_classification", classification_confidence: 0.3 }),
+          application({
+            id: "untagged",
+            company: "Calder & Finch",
+            status: "pending_classification",
+            category: null,
+            subcategory: null,
+            classification_confidence: 0.2,
+          }),
         ],
         count: 1,
       },
@@ -174,6 +181,53 @@ describe("applications", () => {
     renderPage(<Jobs />);
 
     expect(await screen.findByText("needs a tag")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Tag Calder & Finch")).toHaveValue("");
+  });
+
+  it("confirms the proposed tag in one click, without changing it first", async () => {
+    // The bug this pins: the tag control was a <select> pre-set to the proposed value,
+    // so choosing that value fired no `change` event and the proposal could not be
+    // accepted at all — you had to pick some *other* tag first. Confirming is the common
+    // case, so it is a button, and it sends the proposed sub-category unchanged.
+    stubFetch({
+      ...BASE,
+      "/api/v1/jobs": {
+        applications: [
+          application({ status: "pending_classification", classification_confidence: 0.45 }),
+        ],
+        count: 1,
+      },
+    });
+    renderPage(<Jobs />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /Confirm Backend/ }));
+
+    const patch = vi
+      .mocked(fetch)
+      .mock.calls.find(([, init]) => (init as RequestInit | undefined)?.method === "PATCH");
+    expect(patch).toBeDefined();
+    expect(String(patch![0])).toContain("/api/v1/jobs/j1/classification");
+    expect(JSON.parse(String((patch![1] as RequestInit).body))).toEqual({
+      subcategory: "backend",
+    });
+  });
+
+  it("never leaves the tag select sitting on a real tag", async () => {
+    // Structural, not cosmetic: a <select> fires no `change` for the option it already
+    // shows, so any tag it displays is an option nobody can pick. Pinned at the
+    // placeholder, every choice is a change.
+    stubFetch({
+      ...BASE,
+      "/api/v1/jobs": {
+        applications: [application({ status: "pending_classification" })],
+        count: 1,
+      },
+    });
+    renderPage(<Jobs />);
+
+    const select = await screen.findByLabelText("Tag Aurora Labs");
+    expect(select).toHaveValue("");
+    expect(within(select).getByText("Change…")).toBeInTheDocument();
   });
 
   it("offers every stage from the served catalog, not a hard-coded list", async () => {

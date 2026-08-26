@@ -5741,6 +5741,21 @@ have been ignored, and it was not.
   at 0.95.
 - 258 unit, 215 db, 79 web tests. `make check` and `make check-web` clean.
 
+### The tag control could not accept its own proposal
+
+Reported from the running app, and the kind of thing only using it finds. A row awaiting a
+tag showed a `<select>` **pre-set to the proposed sub-category**. A `<select>` fires no
+`change` event for the option it is already displaying, so choosing the proposal did
+nothing — the only way to confirm it was to pick a different tag first, then come back.
+Every test passed, because every test picked a different tag.
+
+Split into two controls: `Confirm <tag>` as a button, since accepting the proposal is the
+common case and deserves one click, and the select kept for changing it. The select is now
+pinned to its placeholder value rather than to the current tag, which is the part that
+matters — a control whose value is one of its own options has a dead option in it by
+construction, and pinning the placeholder makes every choice a change. Three web tests, all
+three verified to fail against the old control.
+
 ### A smaller finding, recorded because it cost twenty minutes
 
 A test added without its cleanup fixture leaked two `llm_calls` rows, and those rows broke

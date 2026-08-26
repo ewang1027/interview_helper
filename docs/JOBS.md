@@ -257,6 +257,14 @@ counted in the funnel, and flagged for review. Confirming or correcting it throu
 `PATCH /jobs/{id}/classification` sets the tag and records confidence `1.0`, because a human
 said so.
 
+**Confirming is one click and is not the same control as changing.** The board gives a row
+with a proposal a `Confirm <tag>` button, and a separate select for picking a different
+one. That split is a correction: the first version put the proposed tag *inside* the
+select, pre-selected — and a `<select>` fires no `change` event for the option it is
+already showing, so accepting the proposal was the one thing the control could not do. You
+had to pick a wrong tag first. The select is now pinned to its placeholder so every choice
+is a change, which makes the whole class of bug unrepresentable rather than fixed once.
+
 The practice log's gate is 0.75 and it **holds back an immutable evidence write**
 ([PRACTICE_LOG](PRACTICE_LOG.md)). This one holds back nothing. An application writes no
 evidence and feeds no projection, so a doubtful tag mis-colours a chart until you fix it and

@@ -1,7 +1,6 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import { useState } from "react";
 import { CATEGORY_LABEL, CategoryDot } from "@/components/jobs/category-breakdown";
 import { Badge, Button, Empty } from "@/components/ui/primitives";
 import { api } from "@/lib/api";
@@ -66,18 +65,13 @@ function Row({
   catalog: JobCatalog | undefined;
   onChanged: () => void;
 }) {
-  const [tagging, setTagging] = useState(false);
-
   const move = useMutation({
     mutationFn: (stage: Stage) => api.setJobStage(application.id, stage),
     onSuccess: onChanged,
   });
   const tag = useMutation({
     mutationFn: (subcategory: string) => api.setJobClassification(application.id, subcategory),
-    onSuccess: () => {
-      setTagging(false);
-      onChanged();
-    },
+    onSuccess: onChanged,
   });
   const remove = useMutation({
     mutationFn: () => api.deleteJob(application.id),
@@ -126,30 +120,46 @@ function Row({
 
       <div className="flex flex-wrap items-center gap-2">
         {application.status === "pending_classification" ? (
-          tagging ? (
+          <span className="flex flex-wrap items-center gap-1">
+            {/* Confirming the proposal is the common case and gets its own button.
+                It used to be an option in the select below, pre-selected — which meant
+                choosing it fired no `change` event at all, so the one action a person
+                most wanted was the one the control could not perform. You could only
+                confirm the proposal by picking a *different* tag first. */}
+            {application.subcategory ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={tag.isPending}
+                title={`Confirm ${CATEGORY_LABEL[application.category ?? "other"]} · ${titleCase(
+                  application.subcategory,
+                )} — proposed, not yet confirmed`}
+                onClick={() => tag.mutate(application.subcategory!)}
+              >
+                {tag.isPending ? "Saving…" : `Confirm ${titleCase(application.subcategory)}`}
+              </Button>
+            ) : (
+              <Badge tone="warning">needs a tag</Badge>
+            )}
             <select
-              autoFocus
               aria-label={`Tag ${application.company}`}
               className="border-hairline bg-page text-ink rounded-md border px-2 py-1 text-xs"
-              defaultValue={application.subcategory ?? ""}
+              /* Always the placeholder, never a real tag. A `<select>` fires no `change`
+                 when you pick the option it is already showing, so a control whose value
+                 is one of its own tags has a dead option in it by construction. Pinning
+                 it to "" makes every pick a change. */
+              value=""
+              disabled={tag.isPending}
               onChange={(event) => event.target.value && tag.mutate(event.target.value)}
             >
-              <option value="">Choose a tag…</option>
+              <option value="">{application.subcategory ? "Change…" : "Choose a tag…"}</option>
               {subcategories.map(({ category, sub }) => (
                 <option key={sub} value={sub}>
                   {titleCase(category)} · {titleCase(sub)}
                 </option>
               ))}
             </select>
-          ) : (
-            <button
-              onClick={() => setTagging(true)}
-              className="cursor-pointer"
-              title="This tag was proposed, not confirmed"
-            >
-              <Badge tone="warning">needs a tag</Badge>
-            </button>
-          )
+          </span>
         ) : null}
 
         <Badge tone={TONE_FOR_OUTCOME[application.outcome]}>
