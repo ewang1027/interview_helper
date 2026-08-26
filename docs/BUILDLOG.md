@@ -5756,6 +5756,40 @@ matters — a control whose value is one of its own options has a dead option in
 construction, and pinning the placeholder makes every choice a change. Three web tests, all
 three verified to fail against the old control.
 
+### CI was red for three commits, and the test suite was deleting real data
+
+Reported as "jobs are failing on GitHub". One assertion:
+`test_every_jobs_route_needs_a_session_cookie` expected `401` and got `503`. CI builds its
+environment from nothing, so `SESSION_SECRET` is unset and every `/api/v1` route answers
+`503 not-configured` — correct, deliberate, and documented by a test two files away. It
+passed locally against a `.env` that has a secret. `test_corpus_routes_db.py` carries a
+docstring describing this exact mistake, from the last time somebody made it.
+
+Chasing it found two worse things, neither of which CI could have caught:
+
+**The jobs teardown deleted every application belonging to the user**, not the ones its
+test created — against conftest's stated rule that nothing here deletes rows it did not
+create. A real import made through the running app was destroyed by a test run; the only
+evidence left was the two `llm_calls` rows it had paid for, $1.40 of them. Fixed by giving
+these tests **their own user**: the board, the funnel and the totals are all per-user, so a
+test signed in as a user it created measures only its own rows and can clean up completely.
+
+**The assertions only held on an empty board.** `reached["applied"] == 2` is true until the
+database has real applications in it, and then a passing suite starts failing for reasons
+that have nothing to do with the code. The same per-user fixture fixes it. Verified by
+planting a row, running the suite, and watching both the row survive and the tests pass —
+which they did not before.
+
+**And two budget tests only passed on a quiet day.** They set `max_usd_per_day=0.001` and
+`max_tokens_per_day=1000`, but enforcement reads the real ledger, so the $1.35 research
+call from earlier refused all eight concurrent calls and the test reported "0 of 8 passed"
+— a failure naming the concurrency it was testing rather than the spend that caused it.
+The ceilings are now set relative to what the day already holds, which restores the shape
+they were describing: one call fits, a second reservation does not.
+
+The pattern in all four is one thing: **a test that reads shared state has to be written
+against what that state will contain, not what it contains today.**
+
 ### A smaller finding, recorded because it cost twenty minutes
 
 A test added without its cleanup fixture leaked two `llm_calls` rows, and those rows broke

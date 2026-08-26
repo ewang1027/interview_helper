@@ -90,6 +90,29 @@ def llm_settings(**overrides: Any) -> Settings:
     return auth_settings().model_copy(update={**MODEL_OVERRIDES, **overrides})
 
 
+def headroom_settings(**overrides: Any) -> Settings:
+    """`llm_settings` with a daily ceiling set *just above whatever is already spent today*.
+
+    A fixed `max_usd_per_day=0.001` reads as "a ceiling one call blows", and that is what it
+    is on an empty ledger. On a shared development database it is a ceiling that is
+    **already blown before the test starts** — enforcement reads real rows, so one real
+    import earlier in the day refuses all eight calls and the test fails saying zero passed
+    instead of one. Measured: a $1.35 research call did exactly that.
+
+    Adding the allowance to what is already there restores the intended shape — one call
+    fits, a second reservation does not — whatever else the day contains.
+    """
+    with Session(get_engine()) as db:
+        spent_usd = llm.usd_spent(db, session_id=None, since=llm.start_of_day())
+        spent_tokens = llm.tokens_spent(db, session_id=None, since=llm.start_of_day())
+    for key, allowance in overrides.items():
+        if key == "max_usd_per_day":
+            overrides[key] = spent_usd + allowance
+        elif key == "max_tokens_per_day":
+            overrides[key] = spent_tokens + allowance
+    return llm_settings(**overrides)
+
+
 @pytest.fixture
 def ledger() -> Iterator[list[str]]:
     """Remove exactly the rows a test wrote. The ledger is append-only in production and
@@ -501,7 +524,7 @@ def test_an_in_flight_dollar_reservation_stops_a_concurrent_call(ledger):
     # Small enough that a single reservation blows it. `complete` reserves
     # `max_tokens` of output priced at the model's output rate, which for any current
     # model is far more than a tenth of a cent.
-    settings = llm_settings(max_usd_per_day=0.001)
+    settings = headroom_settings(max_usd_per_day=0.001)
     clients = [SlowAnthropic() for _ in range(8)]
     allowed: list[int] = []
     lock = threading.Lock()
@@ -592,7 +615,7 @@ def test_concurrent_calls_cannot_all_pass_a_spent_budget(ledger):
     browser tabs or a retrying client are enough to reach this.
     """
     use_settings(**MODEL_OVERRIDES)
-    settings = llm_settings(max_tokens_per_day=1000)
+    settings = headroom_settings(max_tokens_per_day=1000)
     clients = [
         FakeAnthropic(fake_response(input_tokens=1_000_000, output_tokens=0)) for _ in range(8)
     ]

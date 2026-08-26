@@ -19,6 +19,8 @@ a ledger row before it reaches a provider, so even a fully scripted model needs 
 from __future__ import annotations
 
 import json
+import os
+from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any
 
@@ -31,35 +33,62 @@ from sqlmodel import Session, col, delete, select
 from api import jobs
 from api.db import get_engine
 from api.main import app
-from api.models import JobApplication, JobApplicationEvent, LlmCall
+from api.models import JobApplication, JobApplicationEvent, LlmCall, User
 from api.routes.jobs import get_job_parser, get_job_researcher
-from api.users import single_user
 
 pytestmark = pytest.mark.db
 
 
 @pytest.fixture
-def tracked():
-    """Every application a test creates, plus the ledger rows its imports caused."""
-    ids: list[str] = []
+def user_id() -> Iterator[str]:
+    """A user of this test file's own, and the reason every assertion here is safe.
+
+    The board, the funnel and the totals are all **per user**, so a test that signs in as
+    its own user is measuring only the rows it made. Written against the shared local user
+    first, and that was wrong twice over: the teardown deleted applications somebody had
+    really imported, and the assertions — `reached["applied"] == 2` and friends — only held
+    while the board happened to be empty. Both stop being true the first time this database
+    holds real data, which is exactly when a false failure is most expensive.
+
+    `users.github_id` is unique, so the id is random and negative: negative to stay clear of
+    any real GitHub account, random so two tests never collide. Three bytes, not four —
+    the column is a 32-bit `INTEGER` and a four-byte negative overflows it.
+    """
+    github_id = -int.from_bytes(os.urandom(3), "big") - 1
     with Session(get_engine()) as db:
-        calls_before = set(db.exec(select(LlmCall.id)).all())
-    yield ids
+        user = User(github_id=github_id)
+        db.add(user)
+        db.commit()
+        uid = user.id
+    yield uid
     with Session(get_engine()) as db:
-        # Events first: they hold the foreign key into the applications.
-        user = single_user(db)
-        mine = list(
-            db.exec(select(JobApplication.id).where(JobApplication.user_id == user.id)).all()
-        )
+        mine = list(db.exec(select(JobApplication.id).where(JobApplication.user_id == uid)).all())
         if mine:
+            # Events first: they hold the foreign key into the applications.
             db.exec(
                 delete(JobApplicationEvent).where(col(JobApplicationEvent.application_id).in_(mine))
             )
             db.exec(delete(JobApplication).where(col(JobApplication.id).in_(mine)))
-        new = set(db.exec(select(LlmCall.id)).all()) - calls_before
+        db.exec(delete(User).where(col(User.id) == uid))
+        db.commit()
+
+
+@pytest.fixture
+def ledger() -> Iterator[None]:
+    """Remove the `llm_calls` rows these tests cause, by difference against a snapshot.
+
+    Not scoped by user — the ledger has no user column — so it has to be a difference.
+    Leaving them behind is not cosmetic: they are priced at real rates, and a budget test
+    three files away sets a $0.001 daily ceiling that a few stray rows will spend.
+    """
+    with Session(get_engine()) as db:
+        before = set(db.exec(select(LlmCall.id)).all())
+    yield
+    with Session(get_engine()) as db:
+        new = list(set(db.exec(select(LlmCall.id)).all()) - before)
         if new:
             db.exec(delete(LlmCall).where(col(LlmCall.id).in_(new)))
-        db.commit()
+            db.commit()
 
 
 def _row(**overrides: Any) -> dict[str, Any]:
@@ -99,9 +128,10 @@ def _install(parse: ScriptedModel, research: ScriptedModel | None = None) -> Non
 
 
 @pytest.fixture
-def client(tracked) -> TestClient:
+def client(user_id: str, ledger: None) -> Iterator[TestClient]:
+    """Signed in as this test's own user, so the board it sees is the board it made."""
     with TestClient(app) as raw:
-        yield sign_in(raw)
+        yield sign_in(raw, user_id)
 
 
 # --- Importing ----------------------------------------------------------------------------
@@ -366,7 +396,16 @@ def test_deleting_an_application_takes_its_history_with_it(client):
 
 def test_every_jobs_route_needs_a_session_cookie():
     """The prefix carries the dependency, so this is really a test that the router was
-    mounted under it rather than beside it."""
+    mounted under it rather than beside it.
+
+    `use_settings()` is what makes 401 the thing being tested. Without it the app has no
+    `SESSION_SECRET` and every `/api/v1` route answers `503 not-configured` instead —
+    correct, deliberate, and a different assertion. Written without it, this passed locally
+    against a `.env` that has a secret and failed in CI, which builds its environment from
+    nothing. `test_corpus_routes_db.py` carries the same note about the same mistake, which
+    is how this one was diagnosed.
+    """
+    use_settings()
     with TestClient(app) as anonymous:
         assert anonymous.get("/api/v1/jobs").status_code == 401
         assert anonymous.get("/api/v1/jobs/stats").status_code == 401
