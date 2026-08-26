@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Re-run the gate without inventing a commit. Added 2026-08-26, when a push to `main`
+  # produced no run at all — Actions was enabled, nothing was queued, and the event was
+  # simply never delivered. Without a manual trigger the only remedy for a dropped event
+  # is an empty commit, which puts a lie in the history to work around a webhook.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

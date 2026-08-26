@@ -73,7 +73,7 @@ breakdown, because adaptation you cannot inspect is adaptation you cannot trust.
 | `apps/executor/` | Sandboxed code runner (no network, non-root, resource-capped) — isolation, `POST /execute` and `POST /probe` (the complexity probe) are built |
 | `packages/corpus/` | Versioned question corpus + JSON Schema + validator (48 items today) |
 | `research/` | *Empty placeholder.* Corpus ingestion pipeline, Phase 1 — the 48 items were hand-authored, not pipeline-produced |
-| `scripts/` | The gates: secret scan, doc links, doc consistency, reference-solution verification — all four run in CI — plus the local push and hygiene checks |
+| `scripts/` | The gates: secret scan, doc links, doc consistency, reference-solution verification — all four run in CI — plus the local push and hygiene checks. CI runs on every push to `main` and every pull request, and can be re-run by hand with `gh workflow run CI` |
 | `hooks/` | `pre-push`: secret scan and the docs-with-code check, installed by `make setup` |
 | `infra/compose/` | The whole stack — Postgres, api, executor, web and a Caddy front door. `make up-stack` |
 | `infra/ecs/` | Step 2's scaffolding: the API task definition, and what exists in the account |
