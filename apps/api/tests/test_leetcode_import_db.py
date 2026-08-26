@@ -17,8 +17,10 @@ from sqlmodel import Session, col, delete, select
 
 from api.db import get_engine
 from api.main import app
-from api.models import ConceptEvidence, Mastery, PracticeProblem, PracticeSolve
+from api.mastery import recompute
+from api.models import ConceptEvidence, PracticeProblem, PracticeSolve
 from api.routes.practice import get_leetcode_client
+from api.users import single_user
 
 pytestmark = pytest.mark.db
 
@@ -80,19 +82,33 @@ CATALOGUE = {
 
 @pytest.fixture
 def imported() -> Any:
-    """Clears the practice tables around each test — they are not session-scoped, so the
-    `created_sessions` teardown next door does not reach them."""
+    """Remove exactly the practice rows a test created, then rebuild the projection.
+
+    It used to *clear the practice tables* — `select(PracticeProblem)` with no filter, and
+    `delete(Mastery)` with no `where` at all, which is the whole adaptive projection. Both
+    are the same mistake the job tests made and conftest's rule forbids: a teardown scoped
+    to a table rather than to the rows its test wrote. Caught by the canary in `conftest`
+    on the first run after it was added, which is what that canary is for.
+
+    `mastery` is rebuilt rather than deleted. It is a projection over `concept_evidence`,
+    so once this test's evidence is gone the correct state is whatever the *remaining*
+    evidence implies — and `recompute` is what says so. Emptying the table instead left the
+    database in the one state the whole design calls impossible: a projection that does not
+    match the rows it derives from.
+    """
+    with Session(get_engine()) as db:
+        before = set(db.exec(select(PracticeProblem.id)).all())
     yield
     with Session(get_engine()) as db:
-        ids = [row.id for row in db.exec(select(PracticeProblem)).all()]
+        ids = list(set(db.exec(select(PracticeProblem.id)).all()) - before)
         if ids:
             db.exec(delete(PracticeSolve).where(col(PracticeSolve.problem_id).in_(ids)))
             db.exec(
                 delete(ConceptEvidence).where(col(ConceptEvidence.practice_problem_id).in_(ids))
             )
             db.exec(delete(PracticeProblem).where(col(PracticeProblem.id).in_(ids)))
-        db.exec(delete(Mastery))
         db.commit()
+        recompute(db, single_user(db).id)
 
 
 def client_with(script: ScriptedLeetCode) -> TestClient:
@@ -187,7 +203,14 @@ def test_importing_the_same_problem_twice_does_not_duplicate_it(imported):
     assert again["imported"] == []
     assert again["skipped"][0]["reason"] == "already logged"
     with Session(get_engine()) as db:
-        assert len(db.exec(select(PracticeProblem)).all()) == 1
+        # Counted by slug, not by counting the table. `select(PracticeProblem)` with no
+        # filter asserts that this test is the only thing in the database, which was true
+        # only because the teardown emptied the table first — the very over-deletion that
+        # teardown no longer does.
+        rows = db.exec(
+            select(PracticeProblem).where(col(PracticeProblem.url).contains("two-sum"))
+        ).all()
+    assert len(rows) == 1
 
 
 def test_a_url_and_its_bare_slug_are_the_same_problem(imported):

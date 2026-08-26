@@ -128,18 +128,23 @@ test-sandbox: ## Every test that needs real Docker: escape suite, /execute, /pro
 	uv run pytest -q -m sandbox
 
 test-e2e: ## One scripted coding session against a live stack — needs Postgres AND Docker
-	uv run pytest -q -m e2e
+	TEST_MARKER=e2e bash scripts/test_db.sh
 
-test-db: ## DB-backed tests against a live Postgres (make dev first)
-	@# Seeded first, because `items` is a projection of the corpus and the planner reads it.
-	@# Twice now, authoring corpus items and then running this produced a wall of failures
-	@# whose only cause was a stale table -- 47 of them the first time, and nothing in the
-	@# output said so. CI already seeds before this step; this brings local into line.
-	uv run python -m api.seed
-	uv run pytest apps/api/tests -q -m db
+test-db: ## DB-backed tests, against a database of their own (make dev first)
+	@# Runs against `<your database>_test`, created and migrated by the script. These used
+	@# to run against the development database on the promise that no teardown would delete
+	@# a row it had not created -- and on 2026-08-26 one did, taking a real job-application
+	@# list with it. conftest.py now refuses to run them anywhere but a `_test` database.
+	@#
+	@# Seeded every run, because `items` is a projection of the corpus and the planner
+	@# reads it. Twice, authoring corpus items and then running this produced a wall of
+	@# failures whose only cause was a stale table.
+	bash scripts/test_db.sh
 
 test-llm: ## The only tests that call a real model — costs money, needs credentials and Postgres
-	uv run pytest -q -m llm -rs
+	@# Same test database as the rest: these write real ledger rows, and a ledger row left
+	@# in the development database is spend that a budget test elsewhere will trip over.
+	TEST_MARKER=llm bash scripts/test_db.sh -rs
 
 cost-report: ## Per-session token and dollar spend from the llm_calls ledger
 	uv run python -m api.cost_report

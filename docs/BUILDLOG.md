@@ -5797,3 +5797,75 @@ A test added without its cleanup fixture leaked two `llm_calls` rows, and those 
 $0.001 daily ceiling was already spent before it started. The failure named the budget
 test, not the leak. Ledger rows are global state, and a test that writes one and does not
 remove it is a test that can fail another one for reasons neither mentions.
+
+---
+
+## Wave — Guardrails, after the tests deleted real data · 2026-08-26
+
+A fixture teardown deleted a real job-application list earlier today. The fix for *that*
+fixture was one line. This is the answer to the question that followed — what stops the
+next one — and writing it found two more instances of the same bug.
+
+### Three layers, weakest assumption last
+
+**A database the tests cannot reach.** `scripts/test_db.sh` derives `<your database>_test`
+from whatever `.env` configures, creates it, migrates and seeds it, and runs the suite
+there. `make test-db`, `make test-e2e` and `make test-llm` all go through it, so there is
+one place that knows which database tests use. CI's Postgres service was renamed to match,
+deliberately: CI should exercise the same guardrail a developer does rather than being the
+one place it is bypassed.
+
+**A refusal.** `conftest.pytest_collection_modifyitems` aborts the run if any `db`, `llm`
+or `e2e` test is collected and the database name does not end in `_test`. Forgetting the
+script is now a `UsageError` naming the script, not a quiet deletion. `ALLOW_TESTS_ON_THIS_
+DATABASE=1` is the escape hatch, typed out where it is visible like `ALLOW_UNDOCUMENTED=1`
+on the docs gate.
+
+**A canary.** A session-scoped fixture plants a bait row in every table these tests delete
+from — owned by the local user, because that is the account a careless teardown sweeps up —
+and checks it is still there at the end. A correctly scoped teardown cannot touch it; an
+over-broad one always does. `users`, `sessions`, `idempotency_keys` and `mastery` are not
+watched, each for a reason recorded next to the fixture.
+
+The layers do different jobs. The first makes the damage impossible, the second makes
+bypassing the first loud, and the third catches the *bug* rather than its consequences — on
+the run that introduces it, before it can ever meet real data.
+
+### What the canary found on its first run
+
+Two more of the same defect, neither known and neither mine:
+
+- `test_leetcode_import_db.py` did `select(PracticeProblem)` with **no filter** and deleted
+  every row it found — its docstring said "clears the practice tables", so it was doing what
+  it claimed. It also did `delete(Mastery)` with no `WHERE` at all: the entire adaptive
+  projection, every run. Replaced with a snapshot difference, and mastery is now **rebuilt**
+  by `recompute` rather than emptied — it is a projection over `concept_evidence`, so the
+  correct state after removing a test's evidence is whatever the remaining evidence implies,
+  not nothing.
+- `test_jobs_live.py` carried the original bug verbatim. It had been fixed in the db tests
+  and missed here, so **`make test-llm` would have deleted the list all over again.**
+
+One test also had to change: it asserted `len(select(PracticeProblem).all()) == 1`, which is
+a claim that the test is the only thing in the database. True only because the teardown had
+just emptied the table. Now scoped to the slug it imported.
+
+That is the pattern under all five instances, including the original: **a test that reads or
+writes shared state has to be written against what that state will contain, not what it
+happens to contain today.**
+
+### Verified
+
+- The canary was checked in both directions: reintroducing the original bug fails the run
+  with `deleted rows it did not create, in: job_application_events, job_applications`.
+- The refusal was checked by pointing the suite at the development database, which now
+  answers `refusing to run database tests against 'interview_helper'`.
+- 214 db tests and 8 llm tests pass against `interview_helper_test`; the development
+  database, which by then held **47 real applications**, was untouched by either run.
+- A backup was taken and confirmed to contain all 47 — `backups/` is gitignored, which
+  matters on a public repo.
+
+### Not fixed
+
+The development database still has no scheduled backup; `make backup` is manual, and the
+only dump older than today predates the tables it would have needed to restore. That is
+docs/OPERATIONS.md's open item and this is the second time it has mattered.

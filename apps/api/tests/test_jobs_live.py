@@ -33,7 +33,6 @@ from api.db import get_engine
 from api.errors import ProblemError
 from api.models import JobApplication, JobApplicationEvent, LlmCall
 from api.settings import get_settings
-from api.users import single_user
 
 pytestmark = pytest.mark.llm
 
@@ -54,21 +53,25 @@ follow up with the recruiter about #2
 
 @pytest.fixture
 def cleanup() -> Iterator[None]:
-    """Remove exactly what this test wrote, including the ledger rows it caused."""
+    """Remove exactly what this test wrote — by difference against a snapshot, not by user.
+
+    Written as "every application belonging to the local user" first, which is the same
+    over-deletion that destroyed a real job list on 2026-08-26. Fixed in the db tests and
+    missed here, then caught by the canary in `conftest` on its first run against this
+    file — so `make test-llm` would have deleted the same list all over again.
+    """
     with Session(get_engine()) as db:
-        before = set(db.exec(select(LlmCall.id)).all())
+        applications_before = set(db.exec(select(JobApplication.id)).all())
+        calls_before = set(db.exec(select(LlmCall.id)).all())
     yield
     with Session(get_engine()) as db:
-        user = single_user(db)
-        mine = list(
-            db.exec(select(JobApplication.id).where(JobApplication.user_id == user.id)).all()
-        )
+        mine = list(set(db.exec(select(JobApplication.id)).all()) - applications_before)
         if mine:
             db.exec(
                 delete(JobApplicationEvent).where(col(JobApplicationEvent.application_id).in_(mine))
             )
             db.exec(delete(JobApplication).where(col(JobApplication.id).in_(mine)))
-        new = set(db.exec(select(LlmCall.id)).all()) - before
+        new = list(set(db.exec(select(LlmCall.id)).all()) - calls_before)
         if new:
             db.exec(delete(LlmCall).where(col(LlmCall.id).in_(new)))
         db.commit()
