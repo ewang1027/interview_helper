@@ -260,6 +260,46 @@ the adaptive engine auditable: every number traces to graded artifacts you can r
 ([ADAPTIVE.md](ADAPTIVE.md#evidence-not-scores)). If a grader bug is found and fixed,
 correct the evidence and replay — never hand-patch the projection.
 
+### Job applications
+
+*Built 2026-08-25.* What you applied to and how far each one got — [JOBS](JOBS.md) is the
+design.
+
+| Method | Path | Purpose | State |
+|---|---|---|---|
+| `POST` | `/jobs/import` | Paste a list; parses, tags, and researches long ones | ✅ built |
+| `POST` | `/jobs` | Add one application by hand — no model call | ✅ built |
+| `GET` | `/jobs` | List, filterable by `category`, `stage` and `outcome` | ✅ built |
+| `GET` | `/jobs/catalog` | The stage ladder and the category taxonomy | ✅ built |
+| `GET` | `/jobs/stats` | The funnel, conversion rates and category breakdown | ✅ built |
+| `POST` | `/jobs/recompute` | Replay every application's stage projection from its events | ✅ built |
+| `GET` | `/jobs/{id}` | The application and every stage it has been in | ✅ built |
+| `POST` | `/jobs/{id}/stage` | Move to a stage — appends an event, never overwrites | ✅ built |
+| `PATCH` | `/jobs/{id}/classification` | Confirm or correct the tag a parse proposed | ✅ built |
+| `DELETE` | `/jobs/{id}` | Remove an application and its history | ✅ built |
+
+**`POST /jobs/import` is synchronous and answers `201` with the rows already written.** It
+can make two model calls and the second one reaches the network, so it is the slowest route
+in this API — but a `202` would mean polling to find out what it added, and the thing
+somebody wants to see after pasting a list is the list.
+
+**The response says whether the research pass ran, and why not when it did not.**
+`researched` and `research_skipped` are reported rather than hidden, because "a model
+looked these up on the web" and "a model read what you typed" produce rows that look
+identical and are not equally trustworthy. The four reasons are: the list was at or below
+`JOBS_RESEARCH_THRESHOLD`, the provider is Bedrock, the provider failed, or the pass did
+not finish inside its round cap.
+
+**`POST /jobs/{id}/stage` appends.** A stage is an event, and `current_stage` /
+`furthest_stage` / `outcome` are a projection over the event log — the same relationship
+`mastery` has to `concept_evidence`. `POST /jobs/recompute` rebuilds all three from the
+events, and is the only way to check that the board and the history still agree.
+
+**An unknown stage answers `400`, not `422`.** `stage` is a `Literal` in the request model,
+so the body fails schema validation before the route's own check is reached — which is the
+boundary this document draws everywhere else and is worth stating here because the route
+does carry a `422` for the same value arriving from an import.
+
 ### Practice log
 
 *Built 2026-08-21.* Problems you solved elsewhere, folded into the same mastery —

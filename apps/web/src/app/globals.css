@@ -43,6 +43,21 @@
   /* Never measured. Deliberately outside the ramp: absence is not a low score. */
   --ability-none: #f2f1ed;
 
+  /* Categorical — *identity*, not magnitude, and the only palette here that is.
+     The ability ramp above is one hue light-to-dark because it encodes how much;
+     these are four hues in a fixed order because they encode which. Slots are
+     assigned by entity and never cycled or reordered, so a filter that hides one
+     category cannot repaint the others.
+
+     Validated rather than chosen by eye (docs/JOBS.md): worst adjacent CVD ΔE 9.1
+     light / 8.4 dark, normal-vision 22.9 / 19.8. Aqua and yellow sit below 3:1 on
+     the light surface, so every mark using them ships a visible label — identity is
+     never colour alone here. */
+  --series-swe: #2a78d6;
+  --series-ai: #eb6834;
+  --series-quant: #1baf7a;
+  --series-other: #eda100;
+
   /* Status — fixed, never themed, and never carrying meaning without a label. */
   --status-good: #0ca30c;
   --status-warning: #fab219;
@@ -77,6 +92,12 @@
     --ability-5: #184f95;
     --ability-none: #232322;
 
+    /* The same four hues re-stepped for the dark surface, not an automatic flip. */
+    --series-swe: #3987e5;
+    --series-ai: #d95926;
+    --series-quant: #199e70;
+    --series-other: #c98500;
+
     --status-good-text: #0ca30c;
   }
 }
@@ -105,6 +126,11 @@
   --ability-4: #3987e5;
   --ability-5: #184f95;
   --ability-none: #232322;
+
+  --series-swe: #3987e5;
+  --series-ai: #d95926;
+  --series-quant: #199e70;
+  --series-other: #c98500;
 
   --status-good-text: #0ca30c;
 }

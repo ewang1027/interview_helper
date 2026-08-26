@@ -28,6 +28,7 @@ detail behind it.
 | **6** AWS deploy | **partial** — step 1 of 5 | Dockerfiles for `api`, `executor` and `web`; `make up-stack` runs all of it behind a **Caddy front door** routing by path, the job the ALB does — so compose mirrors the target topology. Only the front door publishes a port. Sandbox isolation re-verified from inside the containerised launcher | steps 2–5: one service on Fargate by hand, Terraform, the rest of the stack, the portability gate — **all blocked on an authenticated AWS session**, not on code |
 | **7–8** Voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
+| **10** Job applications | **built** | two tables, the **stage event log** and the projection over it, ten endpoints, a Sonnet 5 paste parser, an Opus 5 **web-search research pass**, and the `/jobs` page — the funnel counts `furthest_stage`, so a rejection does not erase the rounds before it | a real model against a real pasted list; the gold set for calibrating the tagging; time-in-stage, which the events already record and nothing reports |
 
 ~~One thing worth knowing before reading anything else as further along than it is: **no
 full session has run against a live model.**~~ **Closed 2026-08-25.** A full session ran on
@@ -5537,3 +5538,98 @@ to.** That is the finding, and it applies to more than this test.
 The AWS Budgets alarm docs/INFRA.md specifies is a different thing and still unbuilt: it
 bounds *infrastructure* spend. This bounds the model spend, which is the half that can run
 away in an afternoon.
+
+---
+
+## Wave — Job applications · 2026-08-25
+
+A tracker for the applications themselves, beside the practice log rather than inside it:
+the practice log is about what you know, this is about what is happening to you while you
+find out. [JOBS](JOBS.md) is the design; ten endpoints and a `/jobs` page are built.
+
+### The decision the rest follows from
+
+**Stages are events, not a column.** Every transition appends to `job_application_events`,
+and `current_stage` / `furthest_stage` / `outcome` are a projection over it — the same
+relationship `mastery` has to `concept_evidence`, and `POST /jobs/recompute` rebuilds it
+the same way.
+
+A mutable `stage` column would have been three fewer files. It also cannot answer the
+question the tracker exists for: *how many onsites did I get*, asked in March about a
+season that ended in February, when every one of those applications has since become a
+rejection.
+
+The corollary is `furthest_stage`, and it is the part worth remembering. Count the funnel
+off `current_stage` and a rejection after a final round removes that application from the
+"reached a final round" bucket — so the funnel **improves every time something goes badly**,
+and the `final` → `offer` conversion climbs toward 100% as rejections arrive. Subtle enough
+to go unnoticed for a season, which is exactly how long the data takes to matter.
+
+### What the model does, and what it is not allowed to do
+
+Two calls at two tiers, and only one of them can fail an import:
+
+- **the parse** — Sonnet 5, structured output, one call per import. Turns a paste into rows
+  and tags each with a sub-category. If it fails, the import fails; there is nothing to fall
+  back to.
+- **the research pass** — Opus 5 with the **web search** server tool, only above
+  `JOBS_RESEARCH_THRESHOLD` rows (default 10). Looks up the real postings and fills in what
+  a terse list left out.
+
+The research pass **cannot cost the import**. Every failure path returns the rows it was
+given, and the ordering is what makes that true: the rows exist before the second call is
+made. The case that took the most care is the quiet one — a research pass that returns
+*fewer* rows than it was handed, silently dropping the applications whose postings it could
+not find. A returned list that is not exactly as long as the input is discarded whole.
+
+Two fields are carried over from the parse rather than taken from the research: `stage` and
+`applied_on`. Nothing on the web knows whether you have had the phone screen yet, and left
+to the model every row comes back `applied` because the posting does not mention you.
+
+### The finding: web search does not exist on Bedrock
+
+The first version routed the research pass through `ModelRouter` like every other model call
+here. **Web search is a first-party Claude API server-side tool and Amazon Bedrock does not
+offer it** — nor web fetch, nor code execution. This repo's default is
+`MODEL_PROVIDER=bedrock`, so that design could not have worked at all.
+
+`api.jobs.research_available` now checks the provider *before* the call and returns a
+reason, so a Bedrock deployment gets the parse, no research, and a sentence saying why —
+rather than a 400 halfway through an import. The general shape is worth keeping: a job can
+depend on a **capability**, not only on a model, and the routing table makes that easy to
+forget.
+
+### The ledger grew a column
+
+`llm_calls.web_search_requests`. Web search is billed **per search** at $10/1,000, on top of
+the tokens the results consume, and that charge appears in no `usage.*_tokens` field. A
+thirty-search research call would have reported at a fraction of its real cost against a $1
+session ceiling — where thirty uncounted searches is about a third of the ceiling.
+
+`JOBS_RESEARCH_MAX_SEARCHES` is passed to the tool as `max_uses`, so the ceiling sits in the
+request the provider counts against rather than in a check that runs after the money.
+
+### Verified
+
+- **32 tests**, 18 of them against live Postgres: the projection (a rejection keeps its
+  high-water mark; out-of-order stages do not demote; terminal stages are unranked), the
+  taxonomy (sub-categories globally unique, which is what makes the derived big category
+  unambiguous), both import paths, re-paste idempotence, and every research failure path
+  returning its rows.
+- **Two bugs the tests found**, both real: `delete_application` queued the parent delete in
+  the same unit of work as its events and Postgres refused it on the foreign key; and the
+  route surface gate caught ten endpoints missing from [API](API.md), which is what that
+  gate is for.
+- The web searches reach the ledger: a scripted four-search import writes
+  `web_search_requests = 4` and a `cost_usd` at or above $0.04.
+- 79 web tests, `make check` and `make check-web` clean.
+
+### Not verified
+
+**No real model has parsed a real list.** Both calls are scripted in every test, so the
+prompts are unvalidated against the messy input they exist to survive — and the research
+pass has never made an actual web search. The `/jobs` page has not been opened in a browser,
+like every other route in this app.
+
+Nothing here writes `concept_evidence` or moves mastery, deliberately: applying to a quant
+firm is not evidence that you know stochastic calculus.

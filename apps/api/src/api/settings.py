@@ -34,6 +34,25 @@ class Settings(BaseSettings):
     model_interviewer: str = "us.anthropic.claude-sonnet-4-6"
     model_grader: str = "us.anthropic.claude-sonnet-4-6"
     model_utility: str = "us.anthropic.claude-sonnet-4-6"
+
+    # docs/JOBS.md's two halves. Named separately from `model_utility` because they are
+    # deliberately different tiers: the parse is a structured extraction over pasted text,
+    # and the research pass is an agentic loop with **web search** — which is a first-party
+    # Claude API feature and is *not available on Bedrock*, so `MODEL_PROVIDER=bedrock`
+    # gets the parse and no research at all. The parse still runs, which is why the
+    # research pass is written as an enrichment that can fail without losing the rows.
+    model_job_parser: str = "claude-sonnet-5"
+    model_job_researcher: str = "claude-opus-5"
+
+    # Above this many parsed rows, the research pass runs (docs/JOBS.md). A per-import
+    # threshold rather than a per-row rule: a short list pasted from a spreadsheet usually
+    # already carries the company and title, and a long one is the case where the paste is
+    # terse and the missing detail is worth paying to look up.
+    jobs_research_threshold: int = Field(default=10, ge=0)
+    # A ceiling on billable searches per import, enforced by the tool definition itself.
+    # `max_uses` is what the provider counts against; this is the number it is set to.
+    jobs_research_max_searches: int = Field(default=30, gt=0)
+
     anthropic_api_key: str | None = None
 
     max_tokens_per_session: int = Field(default=400_000, gt=0)

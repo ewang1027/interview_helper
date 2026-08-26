@@ -437,6 +437,136 @@ export interface ReviewQueue {
   due: (PracticeProblem & { days_overdue: number })[];
 }
 
+// ─── Job applications ────────────────────────────────────────────────────────
+
+/** The ladder, in order. `furthest_stage` is always one of these. */
+export type LadderStage =
+  | "applied"
+  | "oa"
+  | "phone_screen"
+  | "round_1"
+  | "round_2"
+  | "final"
+  | "offer";
+
+/** Off the ladder: ways a pipeline ends rather than places in it. */
+export type TerminalStage = "rejected" | "withdrawn" | "ghosted";
+
+export type Stage = LadderStage | TerminalStage;
+
+export type JobCategory = "swe" | "ai" | "quant" | "other";
+
+export type JobStatus = "pending_classification" | "tracked";
+
+export type JobOutcome = "open" | "offer" | "rejected" | "withdrawn" | "ghosted";
+
+export interface JobApplication {
+  id: string;
+  company: string;
+  role: string;
+  location: string | null;
+  url: string | null;
+  /** How the row got here, so a mis-parse is attributable to the path that made it. */
+  source: "manual" | "paste" | "paste+research";
+  category: JobCategory | null;
+  subcategory: string | null;
+  classification_confidence: number | null;
+  classification_model: string | null;
+  status: JobStatus;
+  current_stage: Stage;
+  current_stage_label: string;
+  /** The high-water mark. What the funnel counts — never `current_stage`. */
+  furthest_stage: LadderStage;
+  outcome: JobOutcome;
+  notes: string | null;
+  applied_at: string;
+  updated_at: string;
+}
+
+export interface JobEvent {
+  id: string;
+  sequence: number;
+  stage: Stage;
+  stage_label: string;
+  note: string | null;
+  occurred_at: string;
+}
+
+export interface JobDetail extends JobApplication {
+  events: JobEvent[];
+}
+
+export interface JobList {
+  applications: JobApplication[];
+  count: number;
+}
+
+export interface JobCatalog {
+  categories: Record<JobCategory, string[]>;
+  ladder: LadderStage[];
+  terminal: TerminalStage[];
+  stage_labels: Record<string, string>;
+}
+
+export interface FunnelStep {
+  stage: LadderStage;
+  label: string;
+  /** How many applications *ever reached* this rung. */
+  reached: number;
+  /** Of everything applied to. */
+  share: number;
+  /** Of the rung above — where the pipeline actually leaks. */
+  conversion: number;
+}
+
+export interface JobStats {
+  total: number;
+  open: number;
+  offers: number;
+  rejected: number;
+  responded: number;
+  response_rate: number;
+  needs_review: number;
+  funnel: FunnelStep[];
+  by_category: Partial<
+    Record<
+      JobCategory,
+      {
+        total: number;
+        active: number;
+        offers: number;
+        responded: number;
+        subcategories: Record<string, number>;
+      }
+    >
+  >;
+  by_stage: Record<string, number>;
+}
+
+export interface ImportJobsResult {
+  created: number;
+  duplicates: number;
+  /** Whether the web-search pass ran. Rows from a parse and rows from a
+   *  researched parse look identical and are not equally trustworthy. */
+  researched: boolean;
+  research_skipped: string | null;
+  model: string | null;
+  cost_usd: number;
+  web_searches: number;
+  applications: JobApplication[];
+}
+
+export interface CreateJobBody {
+  company: string;
+  role: string;
+  location?: string | null;
+  url?: string | null;
+  subcategory?: string | null;
+  stage?: Stage;
+  notes?: string | null;
+  applied_at?: string | null;
+}
+
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
 export interface Principal {

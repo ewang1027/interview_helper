@@ -65,6 +65,11 @@ class Usage:
     output_tokens: int
     cache_read_tokens: int
     cache_write_tokens: int
+    # Server-side web searches, which are billed per search rather than per token. Not in
+    # `total` below for exactly that reason: `total` is what the *token* ceilings count,
+    # and folding a search into it would mean one number standing for two different units.
+    # The dollar ceilings see it, because `api.pricing.cost_of` prices it.
+    web_search_requests: int = 0
 
     @property
     def total(self) -> int:
@@ -103,6 +108,11 @@ def usage_of(response: Any) -> Usage:
         output_tokens=int(getattr(raw, "output_tokens", 0) or 0),
         cache_read_tokens=int(getattr(raw, "cache_read_input_tokens", 0) or 0),
         cache_write_tokens=int(getattr(raw, "cache_creation_input_tokens", 0) or 0),
+        # `usage.server_tool_use.web_search_requests`, absent on every response that
+        # declared no server tool — which is why it is read as defensively as the rest.
+        web_search_requests=int(
+            getattr(getattr(raw, "server_tool_use", None), "web_search_requests", 0) or 0
+        ),
     )
 
 
@@ -415,6 +425,7 @@ def settle(call_id: str, *, usage: Usage, cost_usd: float, latency_ms: int, fail
         row.output_tokens = usage.output_tokens
         row.cache_read_tokens = usage.cache_read_tokens
         row.cache_write_tokens = usage.cache_write_tokens
+        row.web_search_requests = usage.web_search_requests
         # The reservation is over; `cost_usd` below is what it really cost.
         row.reserved_usd = 0.0
         row.cost_usd = cost_usd
@@ -549,6 +560,7 @@ def _record_and_wrap(
         output_tokens=usage.output_tokens,
         cache_read_tokens=usage.cache_read_tokens,
         cache_write_tokens=usage.cache_write_tokens,
+        web_search_requests=usage.web_search_requests,
     )
     settle(call_id, usage=usage, cost_usd=cost, latency_ms=latency_ms, failed=False)
     if session_id:

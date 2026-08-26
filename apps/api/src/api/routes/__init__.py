@@ -13,7 +13,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from api.auth import require_principal
-from api.routes import corpus, costs, events, mastery, practice, sessions
+from api.routes import corpus, costs, events, jobs, mastery, practice, sessions
 
 # One dependency on the router rather than one per route, so a route added later without
 # auth is impossible rather than merely unlikely. A per-route decorator is a thing you can
@@ -22,6 +22,7 @@ api_v1 = APIRouter(prefix="/api/v1", dependencies=[Depends(require_principal)])
 api_v1.include_router(corpus.router)
 api_v1.include_router(costs.router)
 api_v1.include_router(events.router)
+api_v1.include_router(jobs.router)
 api_v1.include_router(mastery.router)
 api_v1.include_router(practice.router)
 api_v1.include_router(sessions.router)

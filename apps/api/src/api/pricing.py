@@ -40,6 +40,13 @@ logger = logging.getLogger(__name__)
 CACHE_WRITE_MULTIPLIER = 1.25
 CACHE_READ_MULTIPLIER = 0.1
 
+# Server-side web search, billed per search at $10 per 1,000 — flat, not per model, and
+# *on top of* the tokens the results consume. This is the only line here that is not a
+# token rate, and it exists because docs/JOBS.md's research pass is the first call in this
+# project to declare a server-side tool. Left out, a thirty-search research call would
+# report roughly a third of what it cost against a $1 session ceiling.
+WEB_SEARCH_USD = 0.01
+
 
 @dataclass(frozen=True)
 class Rate:
@@ -107,6 +114,7 @@ def cost_of(
     output_tokens: int,
     cache_read_tokens: int = 0,
     cache_write_tokens: int = 0,
+    web_search_requests: int = 0,
     when: datetime | None = None,
 ) -> float:
     """Dollars for one call. Zero for a model with no rate, and a warning saying so.
@@ -115,19 +123,28 @@ def cost_of(
     money already spent, so refusing to write the ledger row would lose the token counts
     too. `make cost-report` counts unpriced calls separately, so a zero here shows up as a
     missing rate rather than as free work.
+
+    Web searches are added even when the model is unpriced: that charge is flat and known
+    whatever the model was, and dropping it would be a second error on top of the missing
+    rate rather than a conservative one.
     """
+    searches = web_search_requests * WEB_SEARCH_USD
     rate = rate_for(model, when=when)
     if rate is None:
         logger.warning(
-            "no rate for model %r (%r); recording the call at $0", model, normalise(model)
+            "no rate for model %r (%r); recording the call at $%.4f (web search only)",
+            model,
+            normalise(model),
+            searches,
         )
-        return 0.0
+        return searches
     per_token_in = rate.input_usd / 1_000_000
     return (
         input_tokens * per_token_in
         + output_tokens * rate.output_usd / 1_000_000
         + cache_read_tokens * per_token_in * CACHE_READ_MULTIPLIER
         + cache_write_tokens * per_token_in * CACHE_WRITE_MULTIPLIER
+        + searches
     )
 
 

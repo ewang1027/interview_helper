@@ -1,9 +1,10 @@
 # Web app
 
-> **Status:** Built (2026-08-24) — **every route below exists**: the dashboard,
-> `/session/new`, the live session view with a workspace per mode, the report,
-> `/concepts`, `/concepts/{id}`, `/history`, `/corpus` and `/costs`. `make check-web` and
-> a CI job run eslint, tsc and 26 component tests.
+> **Status:** Built (2026-08-24, `/jobs` added 2026-08-25) — **every route below
+> exists**: the dashboard, `/session/new`, the live session view with a workspace per
+> mode, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`,
+> `/practice` and `/jobs`. `make check-web` and a CI job run eslint, tsc and 79 component
+> tests.
 > **Not built:** the Playwright gate; `/corpus` lists nothing, because the endpoint it
 > needs does not exist (see that section); Monaco loads from a CDN. Nothing here has been
 > opened in a browser yet — see the caveat under **Testing**, which is the most important
@@ -74,6 +75,7 @@ maintain, for a service with exactly one browser client.
 | `/concepts/[id]` | One concept: ability over time, the evidence behind it, related items |
 | `/history` | Session history, filterable by mode and date |
 | `/corpus` | Browse the corpus. Statements of unseen items stay redacted |
+| `/jobs` | The job tracker — the application funnel, the category breakdown, paste-import, and the board |
 | `/practice` | The practice log — log a problem solved elsewhere, and what is due to re-solve |
 | `/practice/[id]` | One logged problem: confirm its concept, record a re-solve, read its evidence |
 | `/costs` | Token and dollar spend from the ledger |
@@ -203,6 +205,29 @@ draw the DAG.
   of session state ([API.md](API.md#session-state-machine)); the client mirrors it.
 - **Local UI state:** component-local. No global store — there is very little genuinely
   global state, and adding one invites business logic to migrate into the frontend.
+
+## Colour: two palettes, two jobs
+
+Until `/jobs` there was one chart palette here — the **ability ramp**, a single hue from
+light to dark, encoding *how much*. The job tracker needed a second kind, and the
+distinction is worth stating because reaching for the wrong one is the usual way a chart
+starts lying:
+
+- **Sequential** (`--ability-1..5`) encodes **magnitude**. One hue. More is darker. The
+  mastery heatmap uses it; so does anything where the steps are ordered.
+- **Categorical** (`--series-swe`, `--series-ai`, `--series-quant`, `--series-other`)
+  encodes **identity**. Four fixed hues, assigned per entity and never cycled or reordered,
+  so hiding one category cannot repaint the others.
+
+The funnel on `/jobs` uses *neither*: it is one series, so bar length carries the magnitude
+and the colour is constant. A ramp across its rungs would imply the stage itself had a
+magnitude.
+
+The four categorical hues were **validated rather than chosen** — worst adjacent CVD ΔE 9.1
+light / 8.4 dark, normal-vision 22.9 / 19.8, against both surfaces. Two of them sit below
+3:1 on the light surface, so every mark using them ships a visible text label; identity is
+never carried by colour alone on that page, which is the same rule the heatmap keeps when it
+prints evidence counts in its cells.
 
 ## Testing
 

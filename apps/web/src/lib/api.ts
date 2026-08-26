@@ -17,7 +17,13 @@
 import type {
   BudgetStatus,
   ConceptDetail,
+  CreateJobBody,
+  ImportJobsResult,
   ImportResult,
+  JobCatalog,
+  JobDetail,
+  JobList,
+  JobStats,
   LogProblemBody,
   CorpusItemDetail,
   CorpusItemList,
@@ -33,6 +39,7 @@ import type {
   ProblemList,
   Report,
   ReviewQueue,
+  Stage,
   TaxonomyView,
   SessionDetail,
   SessionList,
@@ -241,4 +248,33 @@ export const api = {
       is_success: isSuccess,
       notes: notes || null,
     }),
+
+  // Job applications
+  jobCatalog: () => request<JobCatalog>("/jobs/catalog"),
+  jobStats: () => request<JobStats>("/jobs/stats"),
+  listJobs: (params: { category?: string; stage?: string; outcome?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (params.category) query.set("category", params.category);
+    if (params.stage) query.set("stage", params.stage);
+    if (params.outcome) query.set("outcome", params.outcome);
+    return request<JobList>(`/jobs${query.toString() ? `?${query}` : ""}`);
+  },
+  job: (id: string) => request<JobDetail>(`/jobs/${id}`),
+  /**
+   * Paste a list. Slow by design — it can make two model calls and the second one
+   * reaches the network — so callers show pending state rather than assuming this
+   * returns like the others.
+   */
+  importJobs: (text: string, key: string) =>
+    post<ImportJobsResult>("/jobs/import", { text }, key),
+  createJob: (body: CreateJobBody) => post<JobDetail>("/jobs", body),
+  /** Appends an event. The current stage is a projection, never assigned. */
+  setJobStage: (id: string, stage: Stage, note?: string) =>
+    post<JobDetail>(`/jobs/${id}/stage`, { stage, note: note || null }),
+  setJobClassification: (id: string, subcategory: string) =>
+    request<JobDetail>(`/jobs/${id}/classification`, {
+      method: "PATCH",
+      body: JSON.stringify({ subcategory }),
+    }),
+  deleteJob: (id: string) => request<void>(`/jobs/${id}`, { method: "DELETE" }),
 };

@@ -353,6 +353,13 @@ class LlmCall(SQLModel, table=True):
     output_tokens: int
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
+    # Server-side web searches this call made. Not a token count and deliberately not
+    # folded into one: web search is billed per *search* ($10/1,000) on top of the tokens
+    # the results consume, so a ledger that counted only tokens under-reported a
+    # research call by the one component that does not appear in `usage.*_tokens`.
+    # Zero for every call that declares no server tool, which is all of them but
+    # docs/JOBS.md's research pass.
+    web_search_requests: int = 0
     cost_usd: float
     latency_ms: int
     created_at: datetime = Field(default_factory=_utcnow, sa_column=_ts())
@@ -398,4 +405,79 @@ class PracticeSolve(SQLModel, table=True):
     attempted_at: datetime = Field(default_factory=_utcnow, sa_column=_ts())
     notes: str | None = None
     concept_evidence_id: str | None = Field(default=None, foreign_key="concept_evidence.id")
+    created_at: datetime = Field(default_factory=_utcnow, sa_column=_ts())
+
+
+# --- Job applications (docs/JOBS.md, Phase 10) -------------------------------------------
+
+
+class JobApplication(SQLModel, table=True):
+    """One application, and where it currently stands.
+
+    `current_stage`, `furthest_stage` and `outcome` are a **projection over
+    `job_application_events`**, exactly as `mastery` is a projection over
+    `concept_evidence`: the events are what happened, these three are a cache of what they
+    add up to, and `api.jobs.recompute` rebuilds them from the events alone. Storing them
+    is what lets the pipeline board sort and filter in SQL; deriving them is what stops the
+    board and the history disagreeing.
+
+    `furthest_stage` is separate from `current_stage` on purpose, and it is the field the
+    funnel counts. A rejection after an onsite moves `current_stage` to `rejected` and
+    leaves `furthest_stage` at `final` — so "how many onsites did I reach" stays answerable
+    after the outcome is known, which a single mutable stage column cannot do.
+    """
+
+    __tablename__ = "job_applications"
+    __table_args__ = (
+        # One application per company/role. A pasted list re-pasted is the common case,
+        # and the alternative to this constraint is a board that quietly doubles.
+        UniqueConstraint("user_id", "company", "role", name="job_applications_company_role_unique"),
+        Index("ix_job_applications_stage", "current_stage", "updated_at"),
+    )
+
+    id: str = Field(default_factory=new_id, primary_key=True)
+    user_id: str = Field(foreign_key="users.id", index=True)
+    company: str
+    role: str
+    location: str | None = None
+    url: str | None = None
+    # "manual" | "paste" | "paste+research" — how the row got here, so a mis-parse is
+    # attributable to the path that produced it rather than to the person who pasted.
+    source: str = "manual"
+    category: str | None = None  # "swe" | "ai" | "quant" | "other"
+    subcategory: str | None = None
+    classification_confidence: float | None = None
+    classification_model: str | None = None
+    # "pending_classification" until a tag is confirmed, then "tracked". Unlike the
+    # practice log this gate blocks nothing downstream — no evidence is written from an
+    # application — so it is a review queue rather than a hold.
+    status: str = "pending_classification"
+    current_stage: str = "applied"
+    furthest_stage: str = "applied"
+    outcome: str = "open"  # "open" | "offer" | "rejected" | "withdrawn" | "ghosted"
+    notes: str | None = None
+    applied_at: datetime = Field(default_factory=_utcnow, sa_column=_ts())
+    created_at: datetime = Field(default_factory=_utcnow, sa_column=_ts())
+    updated_at: datetime = Field(default_factory=_utcnow, sa_column=_ts())
+
+
+class JobApplicationEvent(SQLModel, table=True):
+    """Append-only: every stage this application has ever been in, in order.
+
+    Append-only for the same reason `concept_evidence` is. The funnel, the conversion
+    rates and time-in-stage are all questions about *history*, and a table that is updated
+    in place can answer none of them the moment the outcome arrives.
+    """
+
+    __tablename__ = "job_application_events"
+    __table_args__ = (
+        UniqueConstraint("application_id", "sequence", name="job_application_events_seq_unique"),
+    )
+
+    id: str = Field(default_factory=new_id, primary_key=True)
+    application_id: str = Field(foreign_key="job_applications.id", index=True)
+    sequence: int  # 0 = applied, monotonic per application
+    stage: str
+    note: str | None = None
+    occurred_at: datetime = Field(default_factory=_utcnow, sa_column=_ts())
     created_at: datetime = Field(default_factory=_utcnow, sa_column=_ts())

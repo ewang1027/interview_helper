@@ -69,7 +69,7 @@ breakdown, because adaptation you cannot inspect is adaptation you cannot trust.
 | Path | What it is |
 |---|---|
 | `apps/api/` | FastAPI — `/health` and `/auth/*` at the root, and behind a session cookie under `/api/v1` the **session layer** (plan → submit → grade → report), mastery, costs and `corpus/status`. The deterministic coding grader, GitHub OAuth, the model-call path, the **interviewer agent** and the **SSE stream** live here too |
-| `apps/web/` | Next.js 15 app — dashboard, session creation with its plan preview, the live interview and its four workspaces, the report, concepts, history, corpus, costs, and the practice log |
+| `apps/web/` | Next.js 15 app — dashboard, session creation with its plan preview, the live interview and its four workspaces, the report, concepts, history, corpus, costs, the practice log, and the **job-application tracker** |
 | `apps/executor/` | Sandboxed code runner (no network, non-root, resource-capped) — isolation, `POST /execute` and `POST /probe` (the complexity probe) are built |
 | `packages/corpus/` | Versioned question corpus + JSON Schema + validator (48 items today) |
 | `research/` | *Empty placeholder.* Corpus ingestion pipeline, Phase 1 — the 48 items were hand-authored, not pipeline-produced |
@@ -107,6 +107,7 @@ buildlog disagree about what exists, the buildlog is right.**
 | [VOICE](docs/VOICE.md) | Vapi adapter, latency budget, what changes for speech | 7 | Spec |
 | [OPERATIONS](docs/OPERATIONS.md) | Backups, deploys, alarms, runbook | 8 | ✅ Local backup built · rest is spec |
 | [PRACTICE_LOG](docs/PRACTICE_LOG.md) | External problem tracker: LLM classification, spaced re-solve queue | 9 (needs 3+4) | ✅ Built |
+| [JOBS](docs/JOBS.md) | Application tracker: paste-import, the stage funnel, LLM tagging and the web-search research pass | 10 (needs 3) | ✅ API + page built |
 
 ## Quick start
 
@@ -153,8 +154,8 @@ cookie set on the API's port is cross-site to the browser and will not come back
 
 ## Build status
 
-**Phases 0, 2 and 3 complete for what they were scoped to; 4 and 9 built; 1 partially
-landed, 6 begun**, deliberately out of order — each was taken far enough to unblock the
+**Phases 0, 2 and 3 complete for what they were scoped to; 4, 9 and 10 built; 1
+partially landed, 6 begun**, deliberately out of order — each was taken far enough to unblock the
 next. See
 [`docs/BUILDLOG.md`](docs/BUILDLOG.md) for what actually exists and what each phase still
 owes.
@@ -220,3 +221,12 @@ owes.
       confidence gate, and the spaced re-solve queue, landed 2026-08-21. A logged solve
       writes real `concept_evidence` and moves the same mastery a graded submission does.
       The classifier is uncalibrated — no gold set, and no real model has run it*
+- [x] **10 — Job applications** — *the tracker landed 2026-08-25: two tables, a stage
+      **event log** with the board derived from it, ten endpoints and a `/jobs` page. A
+      pasted list is parsed and tagged by one structured Sonnet 5 call; above ten rows a
+      second Opus 5 pass **searches the web** for the postings and fills in what the list
+      left out. The funnel counts `furthest_stage`, so a rejection after an onsite still
+      counts as an onsite reached. Web search is billed per search and does not appear in
+      any token count, so the ledger grew a column for it. **No real model has parsed a
+      real list yet** — both calls are scripted in the tests — and the page has not been
+      opened in a browser, like every other route here*

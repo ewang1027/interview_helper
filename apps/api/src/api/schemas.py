@@ -119,3 +119,73 @@ class ReviewRequest(BaseModel):
     is_success: bool
     notes: str | None = Field(default=None, max_length=4000)
     attempted_at: datetime | None = None
+
+
+# --- Job applications (docs/JOBS.md) ---------------------------------------------------
+
+
+Stage = Literal[
+    "applied",
+    "oa",
+    "phone_screen",
+    "round_1",
+    "round_2",
+    "final",
+    "offer",
+    "rejected",
+    "withdrawn",
+    "ghosted",
+]
+
+
+class ImportJobsRequest(BaseModel):
+    """A pasted list of applications, as text.
+
+    `text` is capped because it goes straight into a model request: an unbounded field is
+    an unbounded bill, and a 400 naming the limit is a better answer than a budget refusal
+    that mentions neither the paste nor its size. 100,000 characters is far more than any
+    real list of applications and still well inside one call.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=100_000)
+
+
+class CreateJobRequest(BaseModel):
+    """One application, entered by hand.
+
+    No classification call: you typed the role, so you know what it is. `subcategory` is
+    optional and the row lands in review without it — the same state a low-confidence
+    parse produces, so there is one queue rather than two.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    company: str = Field(min_length=1, max_length=200)
+    role: str = Field(min_length=1, max_length=200)
+    location: str | None = Field(default=None, max_length=200)
+    url: str | None = Field(default=None, max_length=2000)
+    subcategory: str | None = Field(default=None, max_length=64)
+    stage: Stage = "applied"
+    notes: str | None = Field(default=None, max_length=4000)
+    applied_at: datetime | None = None
+
+
+class StageRequest(BaseModel):
+    """A move to a new stage. Appends an event; never overwrites the last one."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    stage: Stage
+    note: str | None = Field(default=None, max_length=1000)
+    occurred_at: datetime | None = None
+
+
+class JobClassificationRequest(BaseModel):
+    """Confirming or correcting a tag. The big category is derived, never sent —
+    which is what makes an inconsistent pair unrepresentable rather than merely unlikely."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    subcategory: str = Field(min_length=1, max_length=64)

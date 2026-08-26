@@ -29,7 +29,13 @@ from api.pricing import normalise
 from api.settings import Settings, get_settings
 
 Job = Literal[
-    "session_planning", "interviewing", "grading", "classification", "practice_log_classify"
+    "session_planning",
+    "interviewing",
+    "grading",
+    "classification",
+    "practice_log_classify",
+    "job_parse",
+    "job_research",
 ]
 
 # docs/COST.md: effort is tuned per job — "grading high, utility classification low".
@@ -41,6 +47,15 @@ EFFORT_FOR_JOB: dict[Job, str] = {
     "grading": "high",
     "classification": "low",
     "practice_log_classify": "low",
+    # Extraction from text a human pasted without thinking about a parser, plus a taxonomy
+    # tag on each row. Above `classification` because the input is adversarially messy —
+    # a spreadsheet column, an email, a Notion export — and the failure mode of getting it
+    # wrong is a board full of rows that need hand-correcting.
+    "job_parse": "medium",
+    # An agentic loop over web search. docs/COST.md's rule that effort is tuned per job
+    # cuts the other way here: this is the one call in the system that decides how many
+    # billable searches to make, and a cheaper setting buys a worse decision about that.
+    "job_research": "high",
 }
 
 # `output_config.effort` is rejected by models older than the 4.6 family. Model ids are
@@ -78,6 +93,12 @@ class ModelRouter:
             # router does not know would have been a label that could quietly drift from
             # what was actually called.
             "practice_log_classify": s.model_utility,
+            # Their own settings rather than a reuse of `model_utility`, because
+            # docs/JOBS.md pins the two halves to different tiers for a reason the ledger
+            # should be able to show: the parse is a cheap structured extraction, and the
+            # research pass is the expensive one that reaches the network.
+            "job_parse": s.model_job_parser,
+            "job_research": s.model_job_researcher,
         }[job]
 
     def effort_for(self, job: Job) -> str | None:

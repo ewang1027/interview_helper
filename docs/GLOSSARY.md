@@ -87,6 +87,37 @@ weakness ranking. → [PRACTICE_LOG](PRACTICE_LOG.md#rest-endpoints-and-state-ma
 after being solved 3 times; `due_at` is cleared and it is never prompted again.
 → [PRACTICE_LOG](PRACTICE_LOG.md#spaced-re-solve-scheduling)
 
+## Job applications
+
+**Application** — one company/role pair you applied to, tracked in `job_applications`.
+Writes no `concept_evidence` and moves no mastery, deliberately ([JOBS](JOBS.md)).
+
+**Stage** — where an application stands. Seven **ladder** stages in order — `applied`,
+`oa`, `phone_screen`, `round_1`, `round_2`, `final`, `offer` — and three **terminal** ones
+off the ladder: `rejected`, `withdrawn`, `ghosted`. Terminal stages are deliberately
+unranked; ranking them would count every withdrawal as progress.
+
+**Furthest stage** — the highest ladder rung an application ever reached, as opposed to
+`current_stage`, where it is now. The funnel counts this one, so a rejection after an onsite
+still counts as an onsite reached. Counting the funnel off `current_stage` instead would
+make it improve every time something went badly.
+
+**Stage event** — an append-only row in `job_application_events`. The events are what
+happened; the three stage columns on the application are a projection over them, in the same
+sense `mastery` is a projection over `concept_evidence`.
+
+**The parse** — the Sonnet 5 structured call that turns a pasted list into tagged rows
+(`job="job_parse"`). Runs on every import.
+
+**The research pass** — the Opus 5 call with the **web search** tool that completes a long
+list from the real postings (`job="job_research"`). Runs only above
+`JOBS_RESEARCH_THRESHOLD` rows, cannot cost the import when it fails, and does not exist on
+Bedrock.
+
+**Category / sub-category** — two levels of tagging: `swe` · `ai` · `quant` · `other`, and a
+sub-category under each. The model picks only the sub-category and the category is derived
+from it, so an inconsistent pair is unrepresentable.
+
 ## Execution and the sandbox
 
 **Sandbox vs executor** — `apps/executor` is the *service*; the **sandbox** is the

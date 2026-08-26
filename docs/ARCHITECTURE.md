@@ -117,8 +117,8 @@ platform constraint decided the design.
 ## Data model
 
 **Built.** Every table below exists, applied by migrations `6e1d353bc543` (initial),
-`1408f9143d32` (gradings record failures) and `137646f0d9a1` (timestamps carry their
-timezone). `concepts`, `items`, `concept_edges` and `item_concepts` come from `make seed`;
+`1408f9143d32` (gradings record failures), `137646f0d9a1` (timestamps carry their
+timezone) and `a7c19e4d5b02` (the job tables, and `llm_calls.web_search_requests`). `concepts`, `items`, `concept_edges` and `item_concepts` come from `make seed`;
 `users`, `sessions`, `artifacts`, `gradings`, `concept_evidence` and `mastery` are written
 by a real session; `turns` and `llm_calls` by the interviewer. `research_runs` and the
 practice-log tables are still empty — nothing produces their rows yet.
@@ -143,6 +143,7 @@ worse, would *not* raise inside Phase 4's date arithmetic.
 | `idempotency_keys` | One row per `Idempotency-Key` a client has used, with the response it got. PK `(user_id, endpoint, key)` — the insert is what refuses a concurrent retry, since a read-then-write cannot. No expiry yet ([API](API.md#conventions)) |
 | `research_runs` | Provenance for corpus builds. |
 | `practice_problems`, `practice_solves` | Phase 9. External (LeetCode/Codeforces) problems logged manually, their classification against the corpus taxonomy, and their spaced re-solve schedule. See [PRACTICE_LOG](PRACTICE_LOG.md). |
+| `job_applications`, `job_application_events` | Phase 10. Applications you made, and every stage each one has been in. The events are append-only; `current_stage`, `furthest_stage` and `outcome` on the parent are a **projection** over them, rebuilt by `POST /jobs/recompute` — the same relationship `mastery` has to `concept_evidence`. See [JOBS](JOBS.md). |
 
 pgvector **will be** used for semantic retrieval over corpus items and over your own past
 mistakes — "show me things I got wrong that resemble this" is intended as a first-class
@@ -166,7 +167,12 @@ granted. The substitution is configuration, not code —
 [COST.md](COST.md#what-actually-runs-today) records the measurements and how to undo it.
 
 All calls go through `ModelRouter`, so provider (Bedrock vs Anthropic direct) and model
-choice are config, not call-site decisions. [PRACTICE_LOG](PRACTICE_LOG.md)'s problem
+choice are config, not call-site decisions — **with one caveat the job tracker found.** A
+job can depend on a *capability* rather than only on a model: `job_research`
+([JOBS](JOBS.md)) needs the server-side **web search** tool, which the first-party Claude
+API has and **Bedrock does not**. The router still resolves it, so nothing about the
+indirection changed; what changed is that a call site now has to ask whether its provider
+can do the thing at all, and `api.jobs.research_available` is where that is asked. [PRACTICE_LOG](PRACTICE_LOG.md)'s problem
 classification points at the same model as "Classification, extraction" above, through a
 job of its own — `practice_log_classify`. Both documents used to say it needed no new job
 type; it needed no new *model*, and the distinction turned out to matter, because the

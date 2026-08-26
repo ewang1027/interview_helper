@@ -230,6 +230,27 @@ These are also the only calls in the system with **no `session_id`**: a problem 
 elsewhere belongs to no interview, so they land against the daily budget and appear in
 `/costs` under their own job rather than under any session's spend.
 
+[JOBS](JOBS.md)'s two calls log here as `job="job_parse"` (Sonnet 5, effort `medium`) and
+`job="job_research"` (Opus 5, effort `high`). Like the practice log's, neither carries a
+`session_id`: an application belongs to no interview.
+
+**`job_research` is the first call in this system billed for something that is not a
+token.** The server-side web search tool costs **$10 per 1,000 searches**, flat, on top of
+the tokens the results consume — and that charge appears in no `usage.*_tokens` field. So
+`llm_calls` grew `web_search_requests` (migration `a7c19e4d5b02`), `api.pricing.cost_of`
+prices it, and `Usage.web_search_requests` deliberately stays *out* of `Usage.total`:
+`total` is what the token ceilings count, and folding a search into it would make one
+number stand for two units. The dollar ceilings see it, which is the half that matters.
+
+Without that column a thirty-search research call would have reported at a fraction of what
+it cost, against a $1 session ceiling that thirty searches consume about a third of.
+`JOBS_RESEARCH_MAX_SEARCHES` (default 30) is passed to the tool as `max_uses`, so the
+ceiling sits in the request the provider counts against rather than in a check that runs
+after the money is gone.
+
+**Web search is not available on Bedrock.** Under `MODEL_PROVIDER=bedrock` the research pass
+is skipped with a reason and only `job_parse` is billed — see [JOBS](JOBS.md).
+
 `api.llm.record_call` writes the row, **in its own transaction**, before the caller sees the
 completion. The spend happened whatever the caller does next, and a caller that raises
 afterwards would otherwise roll back the only record of it — the same reasoning that puts a
