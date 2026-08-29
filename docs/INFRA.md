@@ -2,6 +2,9 @@
 
 > **Status:** **Step 1 built (2026-08-25)** — `make up-stack` runs the whole application
 > in containers behind one front door, and the sandbox still isolates from inside one.
+> Since 2026-08-29 every Docker target follows a per-machine daemon pin —
+> [One daemon per machine](#one-daemon-per-machine) — after a second daemon made the
+> data volume vanish from view.
 > Steps 2–5 are specification: **no AWS resource exists yet**, and the next one needs an
 > authenticated AWS session rather than more code. Nothing before Phase 6 depends on AWS.
 > Related: [SECURITY](SECURITY.md) (what these controls enforce) · [OPERATIONS](OPERATIONS.md) (running it once deployed) · [COST](COST.md) · [GLOSSARY](GLOSSARY.md#infrastructure)
@@ -172,6 +175,39 @@ meaningful as a side effect.
 **Only the front door publishes a port.** `api` and `executor` are reachable only on the
 compose network, which is the same boundary private subnets draw in AWS. It also keeps the
 session cookie first-party without the web app proxying anything.
+
+### One daemon per machine
+
+The fifth problem arrived four days after the other four, and it is the project-name
+lesson again, one level up. **The compose project name decides which volume the data is
+in; the daemon decides which volumes exist at all.** This machine grew a second Docker
+daemon on 2026-08-27 — Docker Desktop, alongside the colima that had run every
+`make up-stack` so far — and `docker` stopped being one thing: each daemon keeps its own
+volumes, and the ambient context (which Desktop takes over on install) names the only
+one any command can see. The next `make up-stack` followed it to the new daemon, Postgres
+initialised an empty `compose_postgres_data` there, and `/jobs` answered 500 over a
+missing table while 47 applications sat intact in the other daemon's volume. The third
+incident that presented as data loss, and the first with nothing actually lost —
+[BUILDLOG](BUILDLOG.md) has the account, [OPERATIONS](OPERATIONS.md#backups) the
+recovery.
+
+The choice of daemon is now explicit, in two halves:
+
+- **`.docker-context`** (machine-local, gitignored) names the daemon this checkout's data
+  lives on. The Makefile exports it as `DOCKER_CONTEXT`, which every docker and compose
+  child honors — the pin decides, not whatever `docker context use` last said.
+  `backup_db.sh` reads it directly too, because launchd invokes it without make, and a
+  nightly backup on the wrong daemon would faithfully archive an empty database.
+- **`scripts/daemon_guard.sh`** fronts every Docker-touching target. With a pin, the
+  pinned daemon must answer, and the error says how to start it. Without one it counts
+  the *distinct* daemons answering — by daemon ID, because Desktop's `default` and
+  `desktop-linux` contexts are one daemon wearing two names — and refuses at two, naming
+  the pin as the fix. One reachable daemon passes silently: a fresh machine owes no
+  ceremony, which is what step 5's portability gate needs.
+
+The detail worth keeping: nobody has to run anything unusual to hit this. Installing
+Docker Desktop is enough — it takes the active context, and every `docker` command
+afterwards quietly means a different machine.
 
 ### The executor holds the Docker socket, and that is the local model
 

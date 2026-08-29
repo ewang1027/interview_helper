@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-08-26
+## Where things stand — 2026-08-29
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -5869,3 +5869,97 @@ happens to contain today.**
 The development database still has no scheduled backup; `make backup` is manual, and the
 only dump older than today predates the tables it would have needed to restore. That is
 docs/OPERATIONS.md's open item and this is the second time it has mattered.
+---
+
+## Wave — The third data loss was a second Docker daemon · 2026-08-29
+
+**The report was a 500 on `/jobs` and "it deleted my history again — third time." The
+finding is that nothing was deleted, this time or arguably ever in the way it appeared:
+the machine had grown a second Docker daemon, and the stack had come up on the empty
+one.**
+
+`GET /api/v1/jobs` was failing with `relation "job_applications" does not exist` — not a
+missing migration but a database with **no tables at all**. Docker Desktop was installed
+on 2026-08-27 alongside the colima daemon that had run every `make up-stack` until then,
+and installation takes the active `docker` context. The next stack start followed that
+context to Desktop's daemon, which had no `compose_postgres_data`; Postgres initialised
+an empty one and the whole application came up over a database holding nothing. 47 job
+applications, 54 stage events, 15 sessions and 39 turns sat intact the entire time in
+colima's volume — invisible from the daemon every command now meant.
+
+The compose file already documents this failure's twin: a `name:` key renames the volume,
+"so the stack comes up against an *empty database* and the data looks deleted while
+sitting in an orphaned volume." Same lesson, one level up — the project name decides
+which volume on a daemon; the daemon decides which volumes exist. Neither failure needs
+anyone to run anything unusual, which is what makes both worth a guard: installing
+Docker Desktop was the entire mistake.
+
+### Recovered, in order of paranoia
+
+1. A raw tar of colima's volume, mounted read-only, before anything else touched it —
+   `backups/pgdata-colima-raw-20260829.tgz` (14MB).
+2. A `pg_dump` from a throwaway Postgres started on that volume. Worth recording: the
+   volume's last write was 2026-08-26 23:59, and the newest dump in `backups/` was from
+   17:15 that afternoon — the volume was six hours fresher than the best backup, and
+   three days of nothing had passed since.
+3. The Desktop stack stopped, and the stack brought up **on colima** against the real
+   volume. Its empty volume is still on the Desktop daemon, deliberately untouched:
+   removing a Postgres volume during a data-loss incident is how the incident gets a
+   sequel. `docker --context desktop-linux volume rm compose_postgres_data` once there is
+   no reason left to want it.
+
+### The guard: one daemon per machine
+
+The same two-layer shape as the test-database refusal (2026-08-26), because the shape
+worked. [INFRA](INFRA.md#one-daemon-per-machine) is the reference; the short version:
+
+- **A pin.** `.docker-context` — machine-local, gitignored — names the daemon this
+  checkout's data lives on. The Makefile exports it as `DOCKER_CONTEXT`, so every docker
+  and compose child follows it and the ambient context stops mattering inside this repo.
+  `backup_db.sh` reads the pin itself, because launchd runs it without make — and a
+  nightly backup pointed by ambient context would have spent the rest of time faithfully
+  archiving Desktop's empty database.
+- **A refusal.** `scripts/daemon_guard.sh` fronts every Docker-touching target. With a
+  pin, the pinned daemon must answer, and the error names the start command. Without
+  one, it counts *distinct* reachable daemons — by daemon ID, since Desktop's `default`
+  and `desktop-linux` contexts are one daemon wearing two names — and two is a refusal
+  naming the pin as the fix. One is a silent pass: a fresh machine owes no ceremony, so
+  step 5's portability gate is unharmed.
+
+### The 2026-08-26 open item closes
+
+That entry ended: "The development database still has no scheduled backup ... and this is
+the second time it has mattered." Third time now, and closed:
+
+- `make backup-schedule` loads a launchd job (`com.interview-helper.backup`) running the
+  standard dump nightly at 21:00. A missed 21:00 coalesces to the next wake. The plist
+  pins PATH, because launchd grants no login shell and `docker` otherwise fails to
+  resolve at exactly the moment nobody is watching. Output: `backups/backup.log`.
+- Dumps prune to the newest 60 (`BACKUP_KEEP`), matching the scheduled naming pattern
+  only — a raw volume tar or a renamed keep-forever dump is not the prune's business.
+- `make restore` now dumps the database it is about to overwrite, first. The moment that
+  calls for a restore is the moment you are least sure which state is the good one; the
+  wrong call is now a second restore instead of a loss.
+
+### Verified
+
+- The stack on the pinned daemon serves the history: five services healthy, and
+  `GET /api/v1/jobs` through the Caddy front door answers **200 with all 47
+  applications**, checked with a freshly minted session cookie.
+- The guard, in both directions: with the pin it passes; with the pin removed and both
+  daemons live it refuses, naming the three contexts, the two distinct daemons behind
+  them, and the fix. (Its context-dedup was checked against the real machine: `default`
+  and `desktop-linux` correctly count as one daemon.)
+- The launchd job, not just its installation: `launchctl kickstart` ran it once for
+  real — `runs = 1, last exit code = 0`, a 92K dump written through launchd's own
+  environment, proving the PATH pin and the daemon pin both hold where no login shell
+  exists.
+- The ambient-context trap reproduced once more from the other side, unprompted: a bare
+  `docker compose ps` in the shell, still on the Desktop context, showed an empty stack
+  while the pinned one was healthy — the exact confusion the pin exists to end.
+
+### Not fixed
+
+The backups still live on the same laptop as the database — a machine-loss event takes
+both. Cheap offsite (a private repo for dumps, or an iCloud-synced copy) is a decision
+about where personal data goes, so it is deliberately not made unilaterally here.

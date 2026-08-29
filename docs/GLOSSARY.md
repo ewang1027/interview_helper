@@ -203,6 +203,11 @@ graded; a failed one writes none. A grader crash must never produce a fabricated
 **Container / image / registry** — the packaged filesystem plus run command; the built
 artifact; where built artifacts are stored (ECR on AWS).
 
+**Daemon pin** — `.docker-context`, a machine-local gitignored file naming the Docker
+daemon this checkout's data lives on. Exported as `DOCKER_CONTEXT` by every make target,
+read directly by the backup script, enforced by `scripts/daemon_guard.sh`.
+→ [INFRA](INFRA.md#one-daemon-per-machine)
+
 **ECS / Fargate** — AWS's container orchestrator, and the mode of it where AWS runs the
 container without you owning a VM. → [INFRA](INFRA.md)
 

@@ -52,3 +52,7 @@ apps/executor/scratch/
 .coverage
 coverage.xml
 htmlcov/
+
+# Which Docker daemon this machine's data lives on (docs/INFRA.md#one-daemon-per-machine).
+# Machine-local by nature — the other machine's answer is different.
+/.docker-context

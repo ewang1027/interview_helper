@@ -129,7 +129,8 @@ make test-sandbox     # every test needing real Docker: escapes, /execute, /prob
 make test-e2e         # one scripted coding session — needs Postgres AND Docker
 make test-llm         # the only tests that call a real model — costs money, needs credentials
 make verify-solutions # every reference solution through the same harness candidates get
-make backup           # dump the local database to backups/ (nothing else backs it up)
+make backup           # dump the local database to backups/ (pruned to the newest 60)
+make backup-schedule  # launchd runs that dump nightly at 21:00 — docs/OPERATIONS.md
 make restore FILE=... CONFIRM=1   # replace the database with a dump
 make down             # tear down the local stack — data survives; `down -v` does not
 ```
@@ -140,6 +141,9 @@ deployment*, not a dev convenience, and the portability gate in [INFRA](docs/INF
 runs exactly it on a second machine. The web app talks to the API
 through a same-origin proxy rather than to `localhost:8000`, because the session cookie is
 `SameSite=Lax` and the API mounts no CORS — see [WEB](docs/WEB.md#one-origin-and-why).
+Every Docker target follows the machine's daemon pin (`.docker-context`) and refuses to
+guess between two live daemons — a second daemon makes the first one's volumes invisible,
+which reads as deleted data ([INFRA](docs/INFRA.md#one-daemon-per-machine)).
 
 Set `SESSION_SECRET` in `.env` before the API is useful: without one, every `/api/v1`
 route answers `503` naming it rather than running open. `make login` then prints a cookie

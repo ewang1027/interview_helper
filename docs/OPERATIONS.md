@@ -1,8 +1,9 @@
 # Operations
 
-> **Status:** Specification, **except local backup/restore, which is built and drilled
-> (2026-08-24)**. The rest lands in **Phase 8**, though the deployed backup pieces become
-> real as soon as Phase 6 deploys.
+> **Status:** Specification, **except local backup/restore — built and drilled
+> (2026-08-24), scheduled nightly with retention (2026-08-29), and used for a real
+> recovery the same day**. The rest lands in **Phase 8**, though the deployed backup
+> pieces become real as soon as Phase 6 deploys.
 > Related: [INFRA](INFRA.md) (what is being operated) · [COST](COST.md) (spend alarms) · [SECURITY](SECURITY.md) (incident boundaries)
 
 Running this thing after it exists. Single operator, so the goal is not a formal on-call
@@ -40,12 +41,28 @@ the machine actually holding the data".
 ```sh
 make backup                                     # backups/interview_helper-<stamp>.sql.gz
 make restore FILE=backups/… CONFIRM=1           # replaces the database with that file
+make backup-schedule                            # launchd runs the dump nightly at 21:00
+make backup-unschedule                          # stop scheduling it
 ```
 
 `CONFIRM=1` is typed out for the same reason `ALLOW_UNDOCUMENTED=1` is: the destructive
 thing should be visible in the command that does it. The dump uses `--clean --if-exists`,
 so it replays over a populated database — a restore that only works into an empty one is a
 restore nobody can perform in the situation they need it.
+
+**Nightly since 2026-08-29.** `make backup-schedule` loads a launchd job
+(`com.interview-helper.backup`) that runs the same dump at 21:00; macOS coalesces a
+missed run to the next wake, so a laptop closed at 21:00 dumps when the lid opens rather
+than skipping the night. Output lands in `backups/backup.log`, dumps prune to the newest
+60 (`BACKUP_KEEP`), and `make restore` now dumps the database it is about to replace
+before replacing it. The 2026-08-26 buildlog entry ended by calling the missing schedule
+the open item, and 2026-08-29 re-proved it: when the volume was recovered that day, its
+last write was six hours newer than the newest dump anyone had thought to take.
+
+The dump follows the machine's **daemon pin** (`.docker-context` —
+[INFRA](INFRA.md#one-daemon-per-machine)) even under launchd, which knows nothing about
+make. Without that, a nightly job on a machine with two Docker daemons archives whichever
+database the ambient context points at — including, faithfully and forever, an empty one.
 
 **What survives, measured rather than assumed** — a marker row was written, the stack was
 torn down with `make down`, and it was still there afterwards:
@@ -55,6 +72,7 @@ torn down with `make down`, and it was still there afterwards:
 | Killing `uvicorn` or `next dev` | Safe — both are stateless |
 | `make down` then `make dev` | **Safe — verified** |
 | `colima stop`, or rebooting the machine | Safe — the volume is on the VM's disk |
+| The stack up on a *second* Docker daemon | **Looks destroyed** — intact in the other daemon's volume; pinned and refused since 2026-08-29 ([INFRA](INFRA.md#one-daemon-per-machine)) |
 | `docker compose down -v` | **Destroyed** |
 | `docker volume rm compose_postgres_data` | **Destroyed** |
 | `colima delete`, Docker Desktop "reset" | **Destroyed** |
@@ -71,6 +89,15 @@ as step 3 below, and the app answered 200 on every page.
 
 The one thing that drill does *not* prove is the Phase 8 gate below, which diffs a restored
 projection against production's. There is no production.
+
+**And then it was performed in anger (2026-08-29).** Docker Desktop, installed two days
+earlier, had taken the active context; the stack came up on its daemon against a
+brand-new empty volume, and for the third time everything looked deleted. The recovery
+was this page's own advice run for real: a raw tar of the orphaned volume before anything
+else touched it, a `pg_dump` from a throwaway Postgres started on that volume, then the
+stack repointed at the daemon holding the data. 47 applications, 54 stage events and 15
+sessions came back intact — nothing had ever been deleted. The full account, and the
+guard that ends the failure mode, are in [BUILDLOG](BUILDLOG.md).
 
 ### Deployed, later
 

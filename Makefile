@@ -2,10 +2,22 @@
 SHELL := /bin/bash
 COMPOSE := docker compose -f infra/compose/docker-compose.yml
 
+# Machine-local daemon pin. This machine runs two Docker daemons (colima, and Docker
+# Desktop since 2026-08-27), each with its own volumes — and on 2026-08-29 the ambient
+# context handed `make up-stack` the empty one, which is indistinguishable from every
+# row being deleted. `.docker-context` (gitignored) names the daemon the data lives on;
+# exporting DOCKER_CONTEXT makes every docker/compose child follow it regardless of
+# `docker context use`. scripts/daemon_guard.sh is the enforcing half.
+DAEMON_PIN := $(strip $(shell cat .docker-context 2>/dev/null))
+ifneq ($(DAEMON_PIN),)
+export DOCKER_CONTEXT := $(DAEMON_PIN)
+endif
+
 .PHONY: help setup dev up dev-api dev-web down check check-web lint typecheck test fmt \
         corpus-validate seed test-sandbox test-e2e test-db cost-report secret-scan \
         doc-links doc-check hygiene verify-solutions login test-llm build-web \
-        backup restore coverage build-stack up-stack down-stack logs-stack push clean
+        backup restore coverage build-stack up-stack down-stack logs-stack push clean \
+        daemon-guard backup-schedule backup-unschedule
 
 help: ## Show this help
 	@# [a-zA-Z0-9_-] not [a-z-]: the narrower class silently dropped `test-e2e`
@@ -25,7 +37,10 @@ setup: ## Install Python deps and the pre-push hooks (secret scan, docs-with-cod
 	fi
 	git config core.hooksPath hooks
 
-dev: ## Bring up Postgres (api/web/executor containers land in Phase 6 — see infra/compose/docker-compose.yml)
+daemon-guard: ## Refuse Docker work while two daemons are live and no .docker-context picks one
+	@bash scripts/daemon_guard.sh
+
+dev: daemon-guard ## Bring up Postgres (api/web/executor containers land in Phase 6 — see infra/compose/docker-compose.yml)
 	$(COMPOSE) up -d
 	uv run alembic -c apps/api/alembic.ini upgrade head
 
@@ -41,10 +56,10 @@ dev-web: ## Run the web app against the API (next dev, proxies /api and /auth to
 build-web: ## Production build of the web app
 	cd apps/web && pnpm build
 
-build-stack: ## Build the api, executor and web images
+build-stack: daemon-guard ## Build the api, executor and web images
 	$(COMPOSE) --profile stack build
 
-up-stack: ## Run the whole thing in containers on :3000 (docs/INFRA.md step 1)
+up-stack: daemon-guard ## Run the whole thing in containers on :3000 (docs/INFRA.md step 1)
 	@# Not `dev`: this is the supported deployment, and the portability gate in
 	@# docs/INFRA.md step 5 runs exactly this on a second machine. `make dev` stays the
 	@# Postgres-only target the local uvicorn/next workflow uses.
@@ -53,13 +68,13 @@ up-stack: ## Run the whole thing in containers on :3000 (docs/INFRA.md step 1)
 	@echo "  the stack is on http://localhost:3000 — one origin, api behind the front door"
 	@echo "  make logs-stack to follow it, make down-stack to stop"
 
-down-stack: ## Stop the container stack (the database volume survives)
+down-stack: daemon-guard ## Stop the container stack (the database volume survives)
 	$(COMPOSE) --profile stack down
 
-logs-stack: ## Follow every service's logs
+logs-stack: daemon-guard ## Follow every service's logs
 	$(COMPOSE) --profile stack logs -f
 
-down: ## Tear down the local stack
+down: daemon-guard ## Tear down the local stack
 	$(COMPOSE) down
 
 check: lint typecheck test corpus-validate doc-links doc-check check-web secret-scan hygiene ## Everything CI runs, then a commit-hygiene report
@@ -121,13 +136,13 @@ login: ## Mint a session cookie for the local user (needs SESSION_SECRET and the
 seed: ## Load the corpus into the database
 	uv run python -m api.seed
 
-test-sandbox: ## Every test that needs real Docker: escape suite, /execute, /probe, grading
+test-sandbox: daemon-guard ## Every test that needs real Docker: escape suite, /execute, /probe, grading
 	@# Not scoped to apps/executor: the coding grader's end-to-end tests live in
 	@# apps/api and need the same real daemon, and a path-scoped target would have
 	@# skipped them silently — which is the failure mode this repo keeps finding.
 	uv run pytest -q -m sandbox
 
-test-e2e: ## One scripted coding session against a live stack — needs Postgres AND Docker
+test-e2e: daemon-guard ## One scripted coding session against a live stack — needs Postgres AND Docker
 	TEST_MARKER=e2e bash scripts/test_db.sh
 
 test-db: ## DB-backed tests, against a database of their own (make dev first)
@@ -152,11 +167,17 @@ cost-report: ## Per-session token and dollar spend from the llm_calls ledger
 push: ## Build and push a service image to ECR: make push SERVICE=api
 	@bash scripts/push_image.sh "$(SERVICE)"
 
-backup: ## Dump the local database to backups/ (gzipped pg_dump)
+backup: daemon-guard ## Dump the local database to backups/ (gzipped pg_dump)
 	@bash scripts/backup_db.sh dump
 
-restore: ## Restore the database from a dump: make restore FILE=backups/... CONFIRM=1
+restore: daemon-guard ## Restore the database from a dump: make restore FILE=backups/... CONFIRM=1
 	@CONFIRM=$(CONFIRM) bash scripts/backup_db.sh restore "$(FILE)"
+
+backup-schedule: ## Install the launchd job: nightly dump at 21:00, missed runs fire on wake
+	@bash scripts/backup_schedule.sh install
+
+backup-unschedule: ## Remove the nightly backup job
+	@bash scripts/backup_schedule.sh remove
 
 clean: ## Remove caches and build artifacts
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
