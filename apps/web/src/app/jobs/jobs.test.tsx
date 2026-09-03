@@ -242,6 +242,98 @@ describe("applications", () => {
     }
   });
 
+  it("narrows the board to a search, matching terms in any order", async () => {
+    // The reason the search exists: finding one row to move it along, in a list long
+    // enough that scrolling for it is the slow part.
+    stubFetch({
+      ...BASE,
+      "/api/v1/jobs": {
+        applications: [
+          application(),
+          application({ id: "j2", company: "Calder & Finch", role: "Quant Trader" }),
+          application({ id: "j3", company: "Meridian", role: "Backend Engineer" }),
+        ],
+        count: 3,
+      },
+    });
+    renderPage(<Jobs />);
+
+    await userEvent.type(await screen.findByLabelText("Search applications"), "backend meridian");
+
+    expect(await screen.findByLabelText("Move Meridian to a stage")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Move Calder & Finch to a stage")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Move Aurora Labs to a stage")).not.toBeInTheDocument();
+    // The denominator stays visible: "1 shown" and "1 of 3 match" are different claims.
+    expect(screen.getByText("1 of 3 match · showing 1")).toBeInTheDocument();
+  });
+
+  it("says a search matched nothing, without claiming the board is empty", async () => {
+    // "No applications yet" would be false and unrecoverable — the search box has to
+    // survive its own empty result or there is no way back to the list.
+    stubFetch(BASE);
+    renderPage(<Jobs />);
+
+    const search = await screen.findByLabelText("Search applications");
+    await userEvent.type(search, "nowhere");
+
+    expect(await screen.findByText(/Nothing matches/)).toBeInTheDocument();
+    expect(screen.queryByText("No applications yet")).not.toBeInTheDocument();
+    expect(search).toBeInTheDocument();
+  });
+
+  it("shows twenty rows, then ten more per click", async () => {
+    // A board that silently stops at twenty looks like a complete list of twenty, so
+    // the count and the button both name the numbers they are working with.
+    const many = Array.from({ length: 35 }, (_, index) =>
+      application({ id: `j${index}`, company: `Company ${index}` }),
+    );
+    stubFetch({ ...BASE, "/api/v1/jobs": { applications: many, count: 35 } });
+    renderPage(<Jobs />);
+
+    const rows = () => screen.getAllByLabelText(/^Move Company \d+ to a stage$/);
+    await screen.findByText("Showing 20 of 35");
+    expect(rows()).toHaveLength(20);
+
+    await userEvent.click(screen.getByRole("button", { name: "Load 10 more" }));
+    expect(rows()).toHaveLength(30);
+
+    // The tail says how many are actually left, rather than promising ten it cannot give.
+    await userEvent.click(screen.getByRole("button", { name: "Load 5 more" }));
+    expect(rows()).toHaveLength(35);
+    expect(screen.queryByRole("button", { name: /Load .* more/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Showing 35 of 35")).toBeInTheDocument();
+  });
+
+  it("leaves an expanded board expanded after a stage change", async () => {
+    // The workflow the search and the paging exist for is *moving* a row, and a stage
+    // change refetches the list. If that collapsed the board back to twenty, updating
+    // row thirty would scroll the row you were working on out of existence — so the
+    // window survives new data, and only a filter change resets it.
+    const many = Array.from({ length: 35 }, (_, index) =>
+      application({ id: `j${index}`, company: `Company ${index}` }),
+    );
+    stubFetch({ ...BASE, "/api/v1/jobs": { applications: many, count: 35 } });
+    renderPage(<Jobs />);
+
+    await screen.findByText("Showing 20 of 35");
+    await userEvent.click(screen.getByRole("button", { name: "Load 10 more" }));
+
+    await userEvent.selectOptions(
+      screen.getByLabelText("Move Company 25 to a stage"),
+      "phone_screen",
+    );
+
+    // Asserted, so the test cannot pass by the mutation never having fired: the board
+    // is only proven to survive a refetch if a refetch was actually provoked.
+    await vi.waitFor(() =>
+      expect(
+        vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith("/jobs/j25/stage")),
+      ).toBe(true),
+    );
+    expect(await screen.findByText("Showing 30 of 35")).toBeInTheDocument();
+    expect(screen.getAllByLabelText(/^Move Company \d+ to a stage$/)).toHaveLength(30);
+  });
+
   it("renders an empty board without dividing by zero", async () => {
     stubFetch({
       ...BASE,

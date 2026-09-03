@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-08-29
+## Where things stand — 2026-09-03
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -24,7 +24,7 @@ detail behind it.
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **complete** | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | — *(closed 2026-08-25: a real session ran end to end on the Anthropic API — conversation, `run_code` against the sandbox, submission, grading, evidence. Bedrock is still gated on a use-case form; the provider switch is one env var)* |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within ten sessions — five until `W_UNLOCKS` woke up | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus |
-| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode import, `/login`. Monaco served locally rather than from a CDN. 30 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
+| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode import, `/login`. Monaco served locally rather than from a CDN. The applications board is searchable and pages twenty rows at a time. 85 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
 | **6** AWS deploy | **partial** — step 1 of 5 | Dockerfiles for `api`, `executor` and `web`; `make up-stack` runs all of it behind a **Caddy front door** routing by path, the job the ALB does — so compose mirrors the target topology. Only the front door publishes a port. Sandbox isolation re-verified from inside the containerised launcher | steps 2–5: one service on Fargate by hand, Terraform, the rest of the stack, the portability gate — **all blocked on an authenticated AWS session**, not on code |
 | **7–8** Voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
@@ -5963,3 +5963,55 @@ the second time it has mattered." Third time now, and closed:
 The backups still live on the same laptop as the database — a machine-loss event takes
 both. Cheap offsite (a private repo for dumps, or an iCloud-synced copy) is a decision
 about where personal data goes, so it is deliberately not made unilaterally here.
+
+## Wave — The board grew past the length of one screen · 2026-09-03
+
+`/jobs` renders every application it is given, and that was the correct design for the
+week it was written, when there were four. At 47 rows the page is long enough that the
+thing it exists for — *find this one and move it along* — starts with scrolling, and the
+funnel and the category breakdown above it are pushed off screen by a list nobody is
+reading top to bottom.
+
+Two affordances on the board, both client-side, both in `components/jobs/pipeline.tsx`:
+
+- **A search box** over company, role and location. Every whitespace-separated term has
+  to appear, in any order, so "aurora backend" and "backend aurora" find the same row.
+- **Twenty rows, then ten per click.** The count beside the button prints both numbers,
+  and the button names what it will actually add — the tail of a list says `Load 5 more`
+  rather than promising ten it cannot give.
+
+### Client-side, because the list already arrives whole
+
+`GET /jobs` takes a `limit` that defaults to 200 and the page requests no less, so all 47
+rows are in the browser before anything is typed. A `q=` parameter would have been a
+second way to ask a question the page has already asked, with a round trip and a stale
+window between the two answers. The condition under which that stops being true is
+written down rather than left implicit: when the list outgrows the limit, the search
+belongs in SQL and the component keeps the shape it has.
+
+### The two states that would have been wrong
+
+Both are the same failure — a message that is false at the moment it is most needed — and
+both are pinned by a test:
+
+- **A search matching nothing must not say "No applications yet".** That message is not
+  only untrue, it is unrecoverable: it replaces the list *and* the box you would clear to
+  get back. The empty-search state keeps the input and says what is being searched.
+- **The window survives a refetch, and only a filter change resets it.** Moving a row's
+  stage invalidates the list and refetches it. Had the component been keyed on that data
+  it would have remounted, collapsing the board to twenty and scrolling the row you were
+  working on out of existence — while doing exactly what the person asked for. It is
+  keyed on the category filter instead, where a reset is the point.
+
+### Verified
+
+- **85 component tests, up from 81**, all green, plus `tsc --noEmit` and eslint clean.
+  The four new ones: a two-term search matching in either order, an empty search result
+  keeping its box, twenty rows then `Load 10 more` then `Load 5 more` to the end of 35,
+  and an expanded board still showing thirty after a stage change — that last one asserts
+  the `POST /jobs/{id}/stage` actually fired, so it cannot pass by the mutation never
+  having happened.
+- Not verified: any of it **in a browser**. Phase 5's standing caveat is unchanged and
+  this wave does not narrow it — the component tests assert structure, so the search
+  box's focus ring, the button's tap target and how a 35-row list actually reflows are
+  unreviewed like the rest of the visual layer.

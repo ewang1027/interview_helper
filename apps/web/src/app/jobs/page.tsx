@@ -133,7 +133,7 @@ export default function Jobs() {
       <Card>
         <CardHeader
           title="The board"
-          hint="Every application, newest first. Changing a stage appends to its history."
+          hint="Newest first, twenty at a time — search to reach one directly. Changing a stage appends to its history."
           action={
             <div className="flex flex-wrap gap-1">
               {([undefined, "swe", "ai", "quant", "other"] as const).map((value) => (
@@ -159,7 +159,17 @@ export default function Jobs() {
           ) : applications.error ? (
             <ApiErrorNotice error={applications.error} />
           ) : (
-            <Pipeline applications={rows} catalog={catalog.data} onChanged={refresh} />
+            /* Keyed on the filter so switching categories starts the board over at
+               twenty rows with an empty search — a different question deserves a fresh
+               answer. Deliberately *not* keyed on the data: a refetch after a stage
+               change must leave an expanded board expanded, or moving row forty along
+               would scroll the row you are working on out of existence. */
+            <Pipeline
+              key={category ?? "all"}
+              applications={rows}
+              catalog={catalog.data}
+              onChanged={refresh}
+            />
           )}
         </CardBody>
       </Card>

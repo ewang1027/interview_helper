@@ -3,7 +3,7 @@
 > **Status:** Built (2026-08-24, `/jobs` added 2026-08-25) — **every route below
 > exists**: the dashboard, `/session/new`, the live session view with a workspace per
 > mode, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`,
-> `/practice` and `/jobs`. `make check-web` and a CI job run eslint, tsc and 79 component
+> `/practice` and `/jobs`. `make check-web` and a CI job run eslint, tsc and 85 component
 > tests.
 > **Not built:** the Playwright gate; `/corpus` lists nothing, because the endpoint it
 > needs does not exist (see that section); Monaco loads from a CDN. Nothing here has been
@@ -75,7 +75,7 @@ maintain, for a service with exactly one browser client.
 | `/concepts/[id]` | One concept: ability over time, the evidence behind it, related items |
 | `/history` | Session history, filterable by mode and date |
 | `/corpus` | Browse the corpus. Statements of unseen items stay redacted |
-| `/jobs` | The job tracker — the application funnel, the category breakdown, paste-import, and the board |
+| `/jobs` | The job tracker — the application funnel, the category breakdown, paste-import, and the board (searchable, twenty rows at a time) |
 | `/practice` | The practice log — log a problem solved elsewhere, and what is due to re-solve |
 | `/practice/[id]` | One logged problem: confirm its concept, record a re-solve, read its evidence |
 | `/costs` | Token and dollar spend from the ledger |
@@ -119,6 +119,38 @@ Three refusals are surfaced rather than hidden, because each one means something
   the reason given — the solve would have nowhere to write its evidence.
 - A resolved classification cannot be re-tagged. `concept_evidence` is immutable, so the
   page says so instead of offering an edit that would be refused.
+
+### The board: search, and twenty rows at a time
+
+Added 2026-09-03, when the board had grown past fifty rows and the job it exists for —
+*move this one along* — had become scrolling for the row first. Two affordances, and the
+decisions behind them are worth stating because each has an obvious wrong version:
+
+- **Search is client-side, and that is a scale decision rather than a shortcut.**
+  `GET /jobs` already returns the whole list in one response (`limit` defaults to 200), so
+  every row is in the browser before anything is typed. Filtering there costs no request
+  and cannot go stale against the list it filters; a server-side `q=` would be a second
+  way to ask a question the page has already asked. It stops being right when the list
+  outgrows that limit, at which point the search belongs in SQL and the component keeps
+  its shape.
+- **It covers company, role and location**, matching every whitespace-separated term in
+  any order — so "aurora backend" finds what "backend aurora" finds. Word order is not
+  something a person should have to guess at, and the placeholder names the three fields
+  rather than leaving the scope to be discovered by a search that silently matches
+  nothing.
+- **Twenty rows, then ten per click.** The count beside the button prints both numbers
+  (`Showing 20 of 47`), for the reason the heatmap prints evidence counts in its cells: a
+  list that silently stops at twenty reads as a complete list of twenty. The button names
+  what it will actually add, so the tail of a list says `Load 5 more` rather than
+  promising ten it cannot give.
+
+Two states that would otherwise be wrong are handled explicitly. A search matching nothing
+says so **and keeps the search box** — "No applications yet" would be both false and
+unrecoverable, since there would be no control left to clear. And the window survives a
+refetch but not a filter change: moving a row's stage re-fetches the list, and collapsing
+the board back to twenty there would scroll the row you were working on out of existence,
+so the component is keyed on the category filter and deliberately not on its data. All
+four behaviours are pinned by tests in `src/app/jobs/jobs.test.tsx`.
 
 ## The live session view
 
@@ -232,9 +264,9 @@ prints evidence counts in its cells.
 ## Testing
 
 - Component tests for the four workspaces against recorded SSE fixtures, so no live
-  backend is required. **Built** — `pnpm test`, in `make check-web` and in CI. **73 tests**
+  backend is required. **Built** — `pnpm test`, in `make check-web` and in CI. **85 tests**
   covering the stream reducer, the heatmap, three of the four workspaces, the API client,
-  and the dashboard, session-creation, report, practice-log and login pages.
+  and the dashboard, session-creation, report, practice-log, applications and login pages.
 
   Pages are tested with **`fetch` stubbed, not `api` stubbed**, which is the choice that
   makes them worth having: it exercises the client in `lib/api.ts` too — the problem+json

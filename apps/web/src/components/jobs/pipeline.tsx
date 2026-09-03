@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { CATEGORY_LABEL, CategoryDot } from "@/components/jobs/category-breakdown";
 import { Badge, Button, Empty } from "@/components/ui/primitives";
 import { api } from "@/lib/api";
@@ -20,6 +21,14 @@ import type { JobApplication, JobCatalog, Stage } from "@/lib/types";
  * A row awaiting a tag is marked rather than hidden. Unlike the practice log's
  * confidence gate, this one holds nothing back — an application writes no
  * evidence — so `pending_classification` is a nudge, not a quarantine.
+ *
+ * **Search and paging are client-side, and that is a scale decision rather than
+ * a shortcut.** `GET /jobs` already returns the whole list in one response
+ * (`limit` defaults to 200), so the rows are in the browser before anything is
+ * typed: filtering them there is instant and costs no request, and a server-side
+ * `q=` would be a second way to ask the same question. It stops being the right
+ * call when the list outgrows that limit — at which point the search belongs in
+ * SQL and this component keeps the same shape.
  */
 
 const TONE_FOR_OUTCOME = {
@@ -30,6 +39,25 @@ const TONE_FOR_OUTCOME = {
   ghosted: "warning",
 } as const;
 
+/** How many rows the board opens with, and how many each "Load more" adds. */
+const FIRST_PAGE = 20;
+const PAGE = 10;
+
+/**
+ * What a search term is matched against.
+ *
+ * Company, role and location — the three fields a row is actually recognised by,
+ * and the placeholder says so. A search box that silently ignores the field you
+ * typed into it reads as a broken list rather than as a narrow one, so the
+ * scope is stated rather than left to be discovered.
+ */
+function haystack(application: JobApplication): string {
+  return [application.company, application.role, application.location]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
 export function Pipeline({
   applications,
   catalog,
@@ -39,20 +67,88 @@ export function Pipeline({
   catalog: JobCatalog | undefined;
   onChanged: () => void;
 }) {
+  const [query, setQuery] = useState("");
+  const [visible, setVisible] = useState(FIRST_PAGE);
+
+  // Every whitespace-separated term has to appear, so "aurora backend" finds the row
+  // that "backend aurora" does. Word order is not something anyone should have to
+  // guess at, and a single `includes` over the joined fields makes them guess.
+  const terms = useMemo(() => query.toLowerCase().split(/\s+/).filter(Boolean), [query]);
+  const matches = useMemo(
+    () =>
+      terms.length
+        ? applications.filter((application) => {
+            const text = haystack(application);
+            return terms.every((term) => text.includes(term));
+          })
+        : applications,
+    [applications, terms],
+  );
+
   if (!applications.length) {
     return <Empty title="No applications yet" detail="Paste a list, or add one by hand." />;
   }
+
+  const shown = matches.slice(0, visible);
+  const remaining = matches.length - shown.length;
+
   return (
-    <ul className="divide-hairline divide-y">
-      {applications.map((application) => (
-        <Row
-          key={application.id}
-          application={application}
-          catalog={catalog}
-          onChanged={onChanged}
+    <div className="space-y-3">
+      <input
+        type="search"
+        aria-label="Search applications"
+        placeholder="Search company, role or location…"
+        value={query}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          // A narrowed list starts from the top again. The point of searching is to get
+          // to one row, and carrying a sixty-row window into a three-row result is not
+          // that — nor is leaving the page long after you asked it to be short.
+          setVisible(FIRST_PAGE);
+        }}
+        className="border-hairline bg-page text-ink w-full rounded-md border px-2 py-1.5 text-sm"
+      />
+
+      {matches.length === 0 ? (
+        <Empty
+          title={`Nothing matches “${query.trim()}”`}
+          detail={`Search covers company, role and location, across the ${applications.length} in the current filter.`}
         />
-      ))}
-    </ul>
+      ) : (
+        <>
+          <ul className="divide-hairline divide-y">
+            {shown.map((application) => (
+              <Row
+                key={application.id}
+                application={application}
+                catalog={catalog}
+                onChanged={onChanged}
+              />
+            ))}
+          </ul>
+
+          {/* The denominator is printed for the same reason the heatmap prints its
+              evidence counts: a list that silently stops at twenty looks like a
+              complete list of twenty. */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-ink-muted text-xs">
+              {terms.length
+                ? `${matches.length} of ${applications.length} match · showing ${shown.length}`
+                : `Showing ${shown.length} of ${applications.length}`}
+            </p>
+            {remaining > 0 ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setVisible((count) => count + PAGE)}
+              >
+                Load {Math.min(PAGE, remaining)} more
+              </Button>
+            ) : null}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
