@@ -254,10 +254,16 @@ function Legend() {
 }
 
 function Table({ concepts }: { concepts: HeatmapConcept[] }) {
-  const rows = [...concepts].sort((a, b) => {
-    if ((a.normalized === null) !== (b.normalized === null)) return a.normalized === null ? 1 : -1;
-    return (a.normalized ?? 0) - (b.normalized ?? 0);
-  });
+  const rows = useMemo(
+    () =>
+      [...concepts].sort((a, b) => {
+        if ((a.normalized === null) !== (b.normalized === null)) {
+          return a.normalized === null ? 1 : -1;
+        }
+        return (a.normalized ?? 0) - (b.normalized ?? 0);
+      }),
+    [concepts],
+  );
 
   return (
     <div className="border-hairline max-h-96 overflow-auto rounded border">
