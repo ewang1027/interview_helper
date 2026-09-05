@@ -91,6 +91,9 @@ export function Pipeline({
 
   const shown = matches.slice(0, visible);
   const remaining = matches.length - shown.length;
+  // Never below the opening twenty: collapsing past the state the board starts in would
+  // be a third thing the pair means, and there is nothing there to want.
+  const collapsible = shown.length - FIRST_PAGE;
 
   return (
     <div className="space-y-3">
@@ -136,15 +139,33 @@ export function Pipeline({
                 ? `${matches.length} of ${applications.length} match · showing ${shown.length}`
                 : `Showing ${shown.length} of ${applications.length}`}
             </p>
-            {remaining > 0 ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setVisible((count) => count + PAGE)}
-              >
-                Load {Math.min(PAGE, remaining)} more
-              </Button>
-            ) : null}
+            {/* Both steps are computed from what is actually on screen rather than from
+                `visible`, which can sit above it — the last "more" of a 35-row list
+                takes the counter to 40. Off `shown.length`, each button's label is a
+                promise about the list a person is looking at, and the pair stays a
+                mirror: ten out, ten back, floored at the twenty the board opened with.
+                Neither is rendered when it would do nothing; a control that is present
+                and inert is the failure the tag select already taught this page. */}
+            <div className="flex flex-wrap items-center gap-2">
+              {collapsible > 0 ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setVisible(Math.max(FIRST_PAGE, shown.length - PAGE))}
+                >
+                  Load {Math.min(PAGE, collapsible)} less
+                </Button>
+              ) : null}
+              {remaining > 0 ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setVisible(shown.length + PAGE)}
+                >
+                  Load {Math.min(PAGE, remaining)} more
+                </Button>
+              ) : null}
+            </div>
           </div>
         </>
       )}

@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-09-03
+## Where things stand — 2026-09-04
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -24,7 +24,7 @@ detail behind it.
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **complete** | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | — *(closed 2026-08-25: a real session ran end to end on the Anthropic API — conversation, `run_code` against the sandbox, submission, grading, evidence. Bedrock is still gated on a use-case form; the provider switch is one env var)* |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within ten sessions — five until `W_UNLOCKS` woke up | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus |
-| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode import, `/login`. Monaco served locally rather than from a CDN. The applications board is searchable and pages twenty rows at a time. 85 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
+| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode import, `/login`. Monaco served locally rather than from a CDN. The applications board is searchable and pages twenty rows at a time. 86 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
 | **6** AWS deploy | **partial** — step 1 of 5 | Dockerfiles for `api`, `executor` and `web`; `make up-stack` runs all of it behind a **Caddy front door** routing by path, the job the ALB does — so compose mirrors the target topology. Only the front door publishes a port. Sandbox isolation re-verified from inside the containerised launcher | steps 2–5: one service on Fargate by hand, Terraform, the rest of the stack, the portability gate — **all blocked on an authenticated AWS session**, not on code |
 | **7–8** Voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
@@ -6015,3 +6015,30 @@ both are pinned by a test:
   this wave does not narrow it — the component tests assert structure, so the search
   box's focus ring, the button's tap target and how a 35-row list actually reflows are
   unreviewed like the rest of the visual layer.
+
+### The way back — 2026-09-04
+
+`Load more` had no inverse. A board expanded to thirty-five stayed at thirty-five for the
+rest of the session — the only route back to a short page was a category switch or a
+reload, both of which throw away more than the row count. So the button has a mirror:
+`Load 10 less`, floored at the twenty the board opens with, since collapsing past the
+opening state would be a third thing the pair means and there is nothing there to want.
+
+The arithmetic is the part worth recording. Both steps are computed from the rows **on
+screen**, not from the counter behind them, because the two are not always the same
+number: the last `Load 5 more` of a 35-row list sets the counter to 40. A collapse
+measured from the counter would have gone 40 → 30 and hidden five rows while its label
+promised ten — a control that lies by five, in the direction nobody checks. Measured from
+`shown.length` it goes 35 → 25, and the label is a promise about the list a person is
+looking at.
+
+Neither button renders when it would do nothing: no `Load less` at twenty, no `Load more`
+at the end. That is the same rule the tag select earned the hard way on 2026-08-26 — a
+control that is present and inert is worse than one that is absent, because its presence
+is a claim that it does something.
+
+**Verified:** 86 component tests, up from 85, plus eslint and `tsc --noEmit` clean. The
+new one walks a 35-row board out to the end and back — `Load 10 more`, `Load 5 more`,
+then `Load 10 less` to twenty-five and `Load 5 less` to twenty — asserting the label at
+each step and that the collapse control is absent at both ends of its range. Still
+unopened in a browser, like the rest of Phase 5.

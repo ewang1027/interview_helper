@@ -207,7 +207,7 @@ owes.
       the whole 159-concept taxonomy; `/session/new` shows the plan before you commit to
       it; the live view carries the transcript, the interviewer's tool calls and each
       hint's cost, with a workspace per mode. Gated by `make check-web` and a CI job —
-      eslint, tsc, 85 component tests, production build. **Nothing has been opened in a
+      eslint, tsc, 86 component tests, production build. **Nothing has been opened in a
       browser yet**, so the visual layer is unreviewed; the Playwright gate is owed, and
       so is a live session against a real interviewer*
 - [ ] **6 — AWS deploy** — *step 1 of the ramp landed 2026-08-25: Dockerfiles for

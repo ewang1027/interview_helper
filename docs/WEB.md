@@ -3,7 +3,7 @@
 > **Status:** Built (2026-08-24, `/jobs` added 2026-08-25) — **every route below
 > exists**: the dashboard, `/session/new`, the live session view with a workspace per
 > mode, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`,
-> `/practice` and `/jobs`. `make check-web` and a CI job run eslint, tsc and 85 component
+> `/practice` and `/jobs`. `make check-web` and a CI job run eslint, tsc and 86 component
 > tests.
 > **Not built:** the Playwright gate; `/corpus` lists nothing, because the endpoint it
 > needs does not exist (see that section); Monaco loads from a CDN. Nothing here has been
@@ -138,11 +138,16 @@ decisions behind them are worth stating because each has an obvious wrong versio
   something a person should have to guess at, and the placeholder names the three fields
   rather than leaving the scope to be discovered by a search that silently matches
   nothing.
-- **Twenty rows, then ten per click.** The count beside the button prints both numbers
-  (`Showing 20 of 47`), for the reason the heatmap prints evidence counts in its cells: a
-  list that silently stops at twenty reads as a complete list of twenty. The button names
-  what it will actually add, so the tail of a list says `Load 5 more` rather than
-  promising ten it cannot give.
+- **Twenty rows, then ten per click — and ten back.** The count beside the buttons prints
+  both numbers (`Showing 20 of 47`), for the reason the heatmap prints evidence counts in
+  its cells: a list that silently stops at twenty reads as a complete list of twenty. Each
+  button names what it will actually do, so the tail of a list says `Load 5 more` rather
+  than promising ten it cannot give, and `Load 5 less` when five is all that stands
+  between the board and the twenty it opened with. Both steps are computed from the rows
+  **on screen** rather than from the counter behind them, which can sit above it — the
+  last `Load 5 more` of a 35-row list takes that counter to 40, and a collapse measured
+  from there would hide five rows while promising ten. Neither button renders when it
+  would do nothing: `Load less` is absent at twenty, `Load more` at the end of the list.
 
 Two states that would otherwise be wrong are handled explicitly. A search matching nothing
 says so **and keeps the search box** — "No applications yet" would be both false and
@@ -150,7 +155,7 @@ unrecoverable, since there would be no control left to clear. And the window sur
 refetch but not a filter change: moving a row's stage re-fetches the list, and collapsing
 the board back to twenty there would scroll the row you were working on out of existence,
 so the component is keyed on the category filter and deliberately not on its data. All
-four behaviours are pinned by tests in `src/app/jobs/jobs.test.tsx`.
+five behaviours are pinned by tests in `src/app/jobs/jobs.test.tsx`.
 
 ## The live session view
 
@@ -264,7 +269,7 @@ prints evidence counts in its cells.
 ## Testing
 
 - Component tests for the four workspaces against recorded SSE fixtures, so no live
-  backend is required. **Built** — `pnpm test`, in `make check-web` and in CI. **85 tests**
+  backend is required. **Built** — `pnpm test`, in `make check-web` and in CI. **86 tests**
   covering the stream reducer, the heatmap, three of the four workspaces, the API client,
   and the dashboard, session-creation, report, practice-log, applications and login pages.
 

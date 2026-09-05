@@ -304,6 +304,37 @@ describe("applications", () => {
     expect(screen.getByText("Showing 35 of 35")).toBeInTheDocument();
   });
 
+  it("collapses ten at a time, no further than the twenty it opened with", async () => {
+    // The mirror of "load more", and the two have to agree about the list actually on
+    // screen: the last "more" of a 35-row list takes the counter to 40, so a "less"
+    // computed off that counter would hide five rows while promising ten.
+    const many = Array.from({ length: 35 }, (_, index) =>
+      application({ id: `j${index}`, company: `Company ${index}` }),
+    );
+    stubFetch({ ...BASE, "/api/v1/jobs": { applications: many, count: 35 } });
+    renderPage(<Jobs />);
+
+    const rows = () => screen.getAllByLabelText(/^Move Company \d+ to a stage$/);
+    const less = () => screen.queryByRole("button", { name: /Load .* less/ });
+
+    // Nothing to collapse yet, so the control is absent rather than present and inert.
+    await screen.findByText("Showing 20 of 35");
+    expect(less()).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Load 10 more" }));
+    await userEvent.click(screen.getByRole("button", { name: "Load 5 more" }));
+    expect(rows()).toHaveLength(35);
+
+    await userEvent.click(screen.getByRole("button", { name: "Load 10 less" }));
+    expect(rows()).toHaveLength(25);
+
+    // Five left above the floor, and the label says five rather than ten.
+    await userEvent.click(screen.getByRole("button", { name: "Load 5 less" }));
+    expect(rows()).toHaveLength(20);
+    expect(screen.getByText("Showing 20 of 35")).toBeInTheDocument();
+    expect(less()).not.toBeInTheDocument();
+  });
+
   it("leaves an expanded board expanded after a stage change", async () => {
     // The workflow the search and the paging exist for is *moving* a row, and a stage
     // change refetches the list. If that collapsed the board back to twenty, updating
