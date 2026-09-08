@@ -62,6 +62,13 @@ def test_no_two_rows_claim_the_same_problem():
         ("https://neetcode.io/problems/duplicate-integer/", "duplicate-integer"),
         ("neetcode.io/problems/is-anagram", "is-anagram"),
         ("https://neetcode.io/problems/is-anagram?list=neetcode150", "is-anagram"),
+        # What the site's address bar actually holds while you are solving one: a tab
+        # segment after the slug and the list you came from in the query.
+        (
+            "https://neetcode.io/problems/reverse-a-linked-list/question?list=neetcode150",
+            "reverse-a-linked-list",
+        ),
+        ("https://neetcode.io/problems/is-anagram/solution", "is-anagram"),
         ("  https://neetcode.io/problems/Two-Integer-Sum  ", "two-integer-sum"),
         # A name only NeetCode uses, typed on its own.
         ("duplicate-integer", "duplicate-integer"),

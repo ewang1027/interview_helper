@@ -6152,3 +6152,24 @@ find-duplicate-integer  -> find-the-duplicate-number   Find the Duplicate Number
 - **Nothing opened in a browser.** Phase 5's standing caveat is unchanged: the badge's
   placement in a row that already carries a concept and a status is unreviewed, like the
   rest of the visual layer.
+
+### Reported broken within the hour, and the code was right
+
+*"It doesn't seem to work — it says it is not a LeetCode problem"*, against
+`neetcode.io/problems/reverse-a-linked-list/question?list=neetcode150`. The resolver
+handled that URL correctly the whole time. What answered the request was `compose-api-1`,
+**an image built 2026-08-29** — nine days before any of this existed. `make up-stack`
+rebuilt it and the same URL resolves to `reverse-linked-list` inside the container.
+
+Worth recording because the failure is not in this feature and will happen again: every
+gate in this repo runs against the working tree, and **nothing tells you which build is
+answering on :3000.** A green `make check` and a stale container are indistinguishable from
+the outside, and the symptom — a feature that behaves exactly as it did before the commit —
+reads as a bug in the change rather than in the deployment. No gate is proposed here; the
+observation is the useful half.
+
+The one real gap it exposed: the tests covered `?list=` and a trailing slash but **not a
+path segment after the slug**, which is what the site's address bar actually holds while
+you are solving a problem — it appends `/question`. That URL and the `/solution` form are
+parametrised cases now. The regex was right by construction, which is exactly the kind of
+correctness that stops being true on the next edit if nothing pins it.
