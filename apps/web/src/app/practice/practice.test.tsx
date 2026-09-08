@@ -144,6 +144,8 @@ describe("practice log", () => {
             slug: "two-sum",
             title: "Two Sum",
             difficulty: "Easy",
+            source_site: "leetcode",
+            neetcode: null,
             suggested_concept_id: "hash-map-counting",
             why: "LeetCode tags this 'hash-table'",
             topic_tags: ["array", "hash-table"],
@@ -153,6 +155,8 @@ describe("practice log", () => {
             slug: "coin-change",
             title: "Coin Change",
             difficulty: "Medium",
+            source_site: "leetcode",
+            neetcode: null,
             suggested_concept_id: null,
             why: "tagged 'dynamic-programming', which this taxonomy splits several ways",
             topic_tags: ["dynamic-programming"],
@@ -174,6 +178,46 @@ describe("practice log", () => {
     expect(await screen.findByText("hash-map-counting")).toBeInTheDocument();
     expect(await screen.findByText("no suggestion")).toBeInTheDocument();
     expect(await screen.findByText("1 skipped")).toBeInTheDocument();
+  });
+
+  it("says which imported problems came from NeetCode, and which list", async () => {
+    // A NeetCode link imports the LeetCode problem it names — `duplicate-integer` is
+    // `contains-duplicate` — so the row is titled by LeetCode and badged by NeetCode.
+    stubFetch({
+      ...BASE,
+      "/api/v1/practice/import/leetcode": {
+        imported: [
+          {
+            id: "p1",
+            slug: "contains-duplicate",
+            title: "Contains Duplicate",
+            difficulty: "Easy",
+            source_site: "neetcode",
+            neetcode: {
+              slug: "duplicate-integer",
+              pattern: "Arrays & Hashing",
+              lists: ["blind75", "neetcode150", "neetcode250"],
+            },
+            suggested_concept_id: "hash-map-counting",
+            why: "LeetCode tags this 'hash-table'",
+            topic_tags: ["array", "hash-table"],
+          },
+        ],
+        skipped: [],
+        awaiting_confirmation: 1,
+        with_a_suggestion: 1,
+      },
+    });
+    renderPage(<Practice />);
+
+    await userEvent.type(
+      await screen.findByLabelText(/Paste links or slugs/),
+      "https://neetcode.io/problems/duplicate-integer",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+
+    expect(await screen.findByText("Contains Duplicate")).toBeInTheDocument();
+    expect(await screen.findByText("NeetCode 150")).toBeInTheDocument();
   });
 
   it("cannot import with neither a paste nor a username", async () => {

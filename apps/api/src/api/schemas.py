@@ -58,7 +58,10 @@ class SubmissionRequest(BaseModel):
 # --- Practice log (docs/PRACTICE_LOG.md) ----------------------------------------------
 
 
-SourceSite = Literal["leetcode", "codeforces", "other"]
+# `neetcode` is not a fourth kind of problem — the NeetCode 150 is a curated ordering of
+# LeetCode problems — but it is a different place to have worked one, and that is what this
+# column records. `api.neetcode` resolves a NeetCode link to the LeetCode problem it names.
+SourceSite = Literal["leetcode", "neetcode", "codeforces", "other"]
 
 
 class LogProblemRequest(BaseModel):
@@ -95,6 +98,10 @@ class ClassificationRequest(BaseModel):
 
 class ImportLeetCodeRequest(BaseModel):
     """Slugs or URLs to import, and/or a public profile to read recent solves from.
+
+    **A neetcode.io link is a valid entry here** and imports the LeetCode problem it names,
+    recorded against `source_site="neetcode"` — see `api.neetcode`. The field keeps its
+    name because what is fetched is still LeetCode metadata, for NeetCode links too.
 
     `slugs` is capped at `leetcode.MAX_SLUGS`: each one is a separate request to
     leetcode.com, so an unbounded list is both a slow HTTP handler and an impolite thing

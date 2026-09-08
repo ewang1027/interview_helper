@@ -1,4 +1,4 @@
-"""The LeetCode import against a live Postgres, with a scripted LeetCode.
+"""The import against a live Postgres, with a scripted LeetCode — and NeetCode links.
 
 Never touches the network: the HTTP client is injected, exactly as the executor and model
 clients are. A test that reaches leetcode.com is a test that fails when somebody else
@@ -77,6 +77,8 @@ CATALOGUE = {
     "two-sum": ("array", "hash-table"),
     "coin-change": ("array", "dynamic-programming", "breadth-first-search"),
     "daily-temperatures": ("array", "stack", "monotonic-stack"),
+    # NeetCode calls this one `duplicate-integer`, which is why it is here.
+    "contains-duplicate": ("array", "hash-table", "sorting"),
 }
 
 
@@ -191,7 +193,7 @@ def test_one_bad_slug_does_not_lose_the_rest(imported):
     assert len(body["skipped"]) == 2
     assert {row["reason"] for row in body["skipped"]} == {
         "LeetCode has no such problem",
-        "not a LeetCode problem slug or URL",
+        "not a LeetCode or NeetCode problem slug or URL",
     }
 
 
@@ -221,6 +223,61 @@ def test_a_url_and_its_bare_slug_are_the_same_problem(imported):
 
     assert len(body["imported"]) == 1
     assert body["skipped"][0]["reason"] == "already logged"
+
+
+def test_a_neetcode_link_imports_the_leetcode_problem_it_names(imported):
+    """The whole feature in one test.
+
+    NeetCode calls `contains-duplicate` `duplicate-integer`, so the link cannot be turned
+    into a LeetCode slug by string surgery — the bundled catalogue does it. What is fetched
+    is LeetCode metadata either way; what differs is that the row remembers you were working
+    the NeetCode 150, and keeps the page you were reading as its URL.
+    """
+    script = ScriptedLeetCode(CATALOGUE)
+    body = do_import(
+        client_with(script), slugs=["https://neetcode.io/problems/duplicate-integer"]
+    ).json()
+
+    assert script.asked == ["contains-duplicate"], "neetcode.io is never asked anything"
+    row = body["imported"][0]
+    assert row["slug"] == "contains-duplicate"
+    assert row["source_site"] == "neetcode"
+    assert row["neetcode"]["slug"] == "duplicate-integer"
+    assert "neetcode150" in row["neetcode"]["lists"]
+    assert row["suggested_concept_id"] == "hash-map-counting"
+
+    with Session(get_engine()) as db:
+        problem = db.get(PracticeProblem, row["id"])
+        assert problem.source_site == "neetcode"
+        assert problem.url == "https://neetcode.io/problems/duplicate-integer/"
+        # Held for confirmation exactly as a LeetCode import is — the site changes nothing
+        # about the gate that stops a guess becoming permanent.
+        assert problem.status == "pending_classification"
+
+
+def test_the_same_problem_from_either_site_is_one_row(imported):
+    """Dedupe is on the LeetCode slug, not the URL. Otherwise a NeetCode 150 run would log
+    a second copy of every problem already in the log, each with its own schedule, and both
+    would move `mastery` for the one solve."""
+    client = client_with(ScriptedLeetCode(CATALOGUE))
+    do_import(client, slugs=["contains-duplicate"])
+    again = do_import(client, slugs=["https://neetcode.io/problems/duplicate-integer"]).json()
+
+    assert again["imported"] == []
+    assert again["skipped"][0]["reason"] == "already logged"
+    assert again["skipped"][0]["slug"] == "contains-duplicate"
+
+
+def test_a_neetcode_link_the_catalogue_has_never_seen_names_the_way_around_it(imported):
+    """The catalogue is a checked-in file and NeetCode keeps adding problems. A stale entry
+    is a skip that tells you what to do, not an unreadable link."""
+    body = do_import(
+        client_with(ScriptedLeetCode(CATALOGUE)),
+        slugs=["https://neetcode.io/problems/added-last-week"],
+    ).json()
+
+    assert body["imported"] == []
+    assert "paste the LeetCode link instead" in body["skipped"][0]["reason"]
 
 
 def test_a_username_pulls_recent_solves(imported):

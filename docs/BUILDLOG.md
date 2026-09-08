@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-09-04
+## Where things stand — 2026-09-07
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -24,10 +24,10 @@ detail behind it.
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **complete** | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | — *(closed 2026-08-25: a real session ran end to end on the Anthropic API — conversation, `run_code` against the sandbox, submission, grading, evidence. Bedrock is still gated on a use-case form; the provider switch is one env var)* |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within ten sessions — five until `W_UNLOCKS` woke up | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus |
-| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode import, `/login`. Monaco served locally rather than from a CDN. The applications board is searchable and pages twenty rows at a time. 86 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
+| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, `/login`. Monaco served locally rather than from a CDN. The applications board is searchable and pages twenty rows at a time. 87 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
 | **6** AWS deploy | **partial** — step 1 of 5 | Dockerfiles for `api`, `executor` and `web`; `make up-stack` runs all of it behind a **Caddy front door** routing by path, the job the ALB does — so compose mirrors the target topology. Only the front door publishes a port. Sandbox isolation re-verified from inside the containerised launcher | steps 2–5: one service on Fargate by hand, Terraform, the rest of the stack, the portability gate — **all blocked on an authenticated AWS session**, not on code |
 | **7–8** Voice, hardening | **not started** | — | — |
-| **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
+| **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does. The import takes **NeetCode links** as well as LeetCode ones (2026-09-07) | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
 | **10** Job applications | **built** | two tables, the **stage event log** and the projection over it, ten endpoints, a Sonnet 5 paste parser, an Opus 5 **web-search research pass**, and the `/jobs` page. **Run live 2026-08-26**: a messy five-row paste parsed correctly, six real web searches, an import down to 3 SQL statements from 240 | the gold set for calibrating the tagging; time-in-stage, which the events already record and nothing reports; a research trigger based on what a row is missing rather than how long the list is |
 
 ~~One thing worth knowing before reading anything else as further along than it is: **no
@@ -6042,3 +6042,99 @@ new one walks a 35-row board out to the end and back — `Load 10 more`, `Load 5
 then `Load 10 less` to twenty-five and `Load 5 less` to twenty — asserting the label at
 each step and that the collapse control is absent at both ends of its range. Still
 unopened in a browser, like the rest of Phase 5.
+
+
+## Wave — NeetCode links are LeetCode problems under other names · 2026-09-07
+
+Asked for directly: *allow the practice portion to accept NeetCode problems as well — I am
+aware they are the same LeetCode problems, but I do the NeetCode 150 and find it helpful.*
+
+The framing was already correct, and it is what made this small. The NeetCode 150 is a
+curated **ordering** of problems that exist on LeetCode, so nothing new is fetched, no new
+kind of problem exists, and the classification path is untouched. What was missing was that
+a pasted neetcode.io link was skipped as *not a LeetCode problem slug or URL*, and that a
+row could not say where you had actually been working.
+
+### It is not a prefix swap, which is the only reason there is any code
+
+NeetCode retitles the problems it lists, and the slugs follow:
+
+```
+neetcode.io/problems/duplicate-integer        leetcode.com/problems/contains-duplicate
+neetcode.io/problems/two-integer-sum          leetcode.com/problems/two-sum
+neetcode.io/problems/is-anagram               leetcode.com/problems/valid-anagram
+neetcode.io/problems/top-k-elements-in-list   leetcode.com/problems/top-k-frequent-elements
+```
+
+**74 of them.** So a link has to be looked up, and neetcode.io publishes no API — its
+problem table ships inside the site's JavaScript bundle. `scripts/build_neetcode_catalogue.py`
+fetches the bundle named by the page (the filename carries a content hash and changes on
+every deploy), slices the array literal at its matching bracket, and writes
+`apps/api/src/api/data/neetcode.json`. Extracting once and checking the result in makes the
+mapping reviewable, fast and testable with no network at all; the price is that it goes
+stale, which is stated below rather than hidden.
+
+Measured on the 2026-09-07 bundle: **973** problems listed, **588** with a neetcode.io page
+of their own, **74** renamed and **514** sharing LeetCode's slug. All 150 of the NeetCode
+150 have pages. The script refuses to write a file whose lists are not 75, 150 and 250 — a
+bundle whose shape changed *just enough to still parse* is the failure worth catching, not a
+network error, and a test asserts the same three counts against the checked-in file.
+
+Titles and slugs only. No statement, no solution, no video — the line `api.leetcode` draws,
+for the same reason.
+
+### The decision that mattered: two slugs, one problem
+
+Dedupe was a set of stored URLs. Left alone, a NeetCode 150 run would have logged a **second
+copy of every problem already in the log** — each with its own three-solve schedule, each
+writing its own immutable `concept_evidence`, so one solve moves `mastery` twice. Identity
+moved to the LeetCode slug (`same_problem_key`), and existing rows are canonicalised through
+the same function, so a problem logged from either site is one row. Anything neither site
+knows — a hand-logged Codeforces problem — still keys on its own URL, exactly as before.
+
+The stored `url` stays NeetCode's, though. That is the page you were reading and the one you
+would open again; `source_site` records the site and the LeetCode slug decides identity, so
+the two questions are answered separately instead of one standing in for the other.
+
+### What this deliberately did not take
+
+- **NeetCode's own labels classify nothing.** Its pattern groups are `Arrays & Hashing`,
+  `1-D Dynamic Programming`, `Graphs` — precisely the families this taxonomy splits several
+  ways, and precisely what the 2026-08-24 blocker rules exist to refuse. The concept still
+  comes from LeetCode's topic tags, under the same rules, and the pattern is carried for
+  display only.
+- **No progress import.** The 2026-08-24 entry above says NeetCode "has no API for your
+  progress", and that is still true and still unaddressed. It answered *import what I solved
+  on NeetCode*; this answers *accept a link I pasted from NeetCode*, which is a different
+  question with a much smaller answer.
+- **No auto-accept**, no change to the confidence gate, no migration: `source_site` has
+  always been a plain text column, so `neetcode` is a new value in a `Literal` and in one
+  web `SITES` array, not a schema change.
+
+### Verified
+
+- **28 offline tests** on the mapping and the identity rule — 23 in `test_neetcode.py`, 2 in
+  `test_practice.py`, 3 against a live Postgres. The mappings asserted are named ones
+  checked by hand against both sites, not a count that would pass on a shuffled table; a
+  wrong mapping logs a solve you did not do, against a concept you did not exercise, and
+  that evidence is immutable.
+- `make test-db`: **217 passed**, 1 skipped. The three new ones prove a NeetCode link asks
+  LeetCode for `contains-duplicate` and nothing asks neetcode.io; that the same problem from
+  both sites is one row; and that an unknown neetcode.io link is skipped with the catalogue's
+  extraction date and *paste the LeetCode link instead*.
+- **87 component tests**, up from 86, plus eslint and `tsc --noEmit` clean. The new one
+  asserts an imported NeetCode row is titled by LeetCode and badged `NeetCode 150`.
+- `make check-web` could not be run through its own target — corepack on this machine
+  invokes pnpm 12.3.4 against a repo pinned to 11.24.0 and refuses. The three tools were run
+  directly out of `apps/web/node_modules/.bin`, which is what the target does. Unrelated to
+  this change and not fixed here.
+
+### Not verified
+
+- **Staleness has no gate.** The catalogue is a snapshot of bundle
+  `main.f39af0c52a4e9fb5.js`, taken 2026-09-07. A problem NeetCode adds after that is
+  skipped with a message naming the date and the way around it, and nothing notices on its
+  own — rerunning the script is a manual act with no reminder attached to it.
+- **Nothing opened in a browser.** Phase 5's standing caveat is unchanged: the badge's
+  placement in a row that already carries a concept and a status is unreviewed, like the
+  rest of the visual layer.

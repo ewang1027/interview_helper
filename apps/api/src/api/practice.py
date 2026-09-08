@@ -37,7 +37,7 @@ from typing import Any
 
 from sqlmodel import Session, col, select
 
-from api import leetcode, llm
+from api import leetcode, llm, neetcode
 from api.errors import ProblemError, not_found, unprocessable, wrong_state
 from api.grading.coding import SECONDARY_CONFIDENCE
 from api.mastery import apply_evidence, as_utc, lock_projection
@@ -410,6 +410,48 @@ def log_problem(
     return problem
 
 
+def same_problem_key(url: str) -> str:
+    """What two rows for the same problem share, whichever site they were logged from.
+
+    A NeetCode link and a LeetCode link name one problem, so the dedupe key has to be the
+    LeetCode slug rather than the URL — otherwise working the NeetCode 150 would log a
+    second copy of every problem already in the log, each with its own schedule, and both
+    would move `mastery` for the same solve. Anything neither site knows keys on its own
+    URL, which is what the old set did for everything.
+    """
+    nc = neetcode.slug_from(url)
+    entry = neetcode.lookup(nc) if nc else None
+    if entry is not None:
+        return entry.leetcode_slug
+    return leetcode.slug_from(url) or url
+
+
+def _resolve(raw: str) -> tuple[str, str, str, neetcode.NeetCodeProblem | None] | str:
+    """`(leetcode slug, source site, url to store, NeetCode row)`, or why it was skipped.
+
+    A neetcode.io link is resolved through the bundled catalogue to the LeetCode problem it
+    names — that is where the metadata comes from either way — but the *stored* URL stays
+    the NeetCode one, because that is the page you were working from and the one you would
+    want to open again.
+    """
+    nc_slug = neetcode.slug_from(raw)
+    if nc_slug is not None:
+        entry = neetcode.lookup(nc_slug)
+        if entry is None:
+            # A problem NeetCode added since the catalogue was extracted. The LeetCode link
+            # is the way around it, and saying so beats "unreadable".
+            return (
+                f"not in the bundled NeetCode catalogue (extracted "
+                f"{neetcode.extracted_at()}) — paste the LeetCode link instead"
+            )
+        return entry.leetcode_slug, "neetcode", entry.url, entry
+
+    slug = leetcode.slug_from(raw)
+    if slug is None:
+        return "not a LeetCode or NeetCode problem slug or URL"
+    return slug, "leetcode", leetcode.PROBLEM_URL.format(slug=slug), None
+
+
 def import_from_leetcode(
     db: Session,
     *,
@@ -417,7 +459,13 @@ def import_from_leetcode(
     slugs: Sequence[str],
     http: Any = None,
 ) -> dict[str, Any]:
-    """Import LeetCode problems by slug, suggesting a concept from their topic tags.
+    """Import problems by slug or link, suggesting a concept from their LeetCode topic tags.
+
+    **NeetCode links are accepted and resolved to the LeetCode problem they name** — the
+    NeetCode 150 is a curated ordering of problems that already exist there, and NeetCode
+    renames 74 of them (`api.neetcode`). Only where the solve happened differs: the row
+    records `source_site="neetcode"` and keeps the NeetCode URL, and the metadata is read
+    from LeetCode either way, so nothing about the classification path changes.
 
     Every import is **held** for confirmation rather than auto-accepted — see `log_problem`'s
     `hold`. What this removes is not the confirmation, it is having to search a
@@ -429,16 +477,16 @@ def import_from_leetcode(
     """
     imported: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
-    seen = {row.url for row in db.exec(select(PracticeProblem)).all()}
+    seen = {same_problem_key(row.url) for row in db.exec(select(PracticeProblem)).all()}
 
     with leetcode.session(http) as client:
         for raw in slugs:
-            slug = leetcode.slug_from(raw)
-            if slug is None:
-                skipped.append({"input": raw, "reason": "not a LeetCode problem slug or URL"})
+            resolved = _resolve(raw)
+            if isinstance(resolved, str):
+                skipped.append({"input": raw, "reason": resolved})
                 continue
-            url = leetcode.PROBLEM_URL.format(slug=slug)
-            if url in seen:
+            slug, source_site, url, entry = resolved
+            if slug in seen:
                 skipped.append({"input": raw, "slug": slug, "reason": "already logged"})
                 continue
             try:
@@ -465,18 +513,28 @@ def import_from_leetcode(
                 user_id=user_id,
                 title=found.title,
                 url=url,
-                source_site="leetcode",
+                source_site=source_site,
                 difficulty_label=found.difficulty,
                 proposal=proposal,
                 hold=True,
             )
-            seen.add(url)
+            seen.add(slug)
             imported.append(
                 {
                     "id": problem.id,
                     "slug": slug,
                     "title": found.title,
                     "difficulty": found.difficulty,
+                    "source_site": source_site,
+                    "neetcode": (
+                        {
+                            "slug": entry.neetcode_slug,
+                            "pattern": entry.pattern,
+                            "lists": list(entry.lists),
+                        }
+                        if entry is not None
+                        else None
+                    ),
                     "suggested_concept_id": concept_id,
                     "why": why,
                     "topic_tags": list(found.topic_tags),

@@ -124,3 +124,23 @@ def test_an_unclassified_problem_produces_no_evidence_at_all():
     against, and writing against a guess is what `concept_evidence` being immutable
     forbids."""
     assert practice.evidence_rows(_problem(primary=None, secondaries=[]), success=True) == []
+
+
+# --- One problem, whichever site you worked it on ------------------------------------------
+
+
+def test_a_neetcode_link_and_a_leetcode_link_are_the_same_problem():
+    """The dedupe key the import uses. Keyed on the URL — as it was — working the NeetCode
+    150 would have logged a second copy of every problem already in the log, each with its
+    own schedule, and both would move `mastery` for what was one solve."""
+    assert (
+        practice.same_problem_key("https://neetcode.io/problems/duplicate-integer/")
+        == practice.same_problem_key("https://leetcode.com/problems/contains-duplicate/")
+        == "contains-duplicate"
+    )
+
+
+def test_a_problem_neither_site_knows_keys_on_its_own_url():
+    """A hand-logged Codeforces problem is still deduped exactly as it was before."""
+    url = "https://codeforces.com/problemset/problem/4/A"
+    assert practice.same_problem_key(url) == url

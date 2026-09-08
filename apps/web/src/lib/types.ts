@@ -356,7 +356,8 @@ export interface BudgetStatus {
 
 export type ProblemStatus = "pending_classification" | "active" | "retired";
 
-export type SourceSite = "leetcode" | "codeforces" | "other";
+/** `neetcode` is a LeetCode problem worked through the NeetCode 150 — where, not what. */
+export type SourceSite = "leetcode" | "neetcode" | "codeforces" | "other";
 
 export interface PracticeProblem {
   id: string;
@@ -408,9 +409,13 @@ export interface ProblemList {
 export interface ImportResult {
   imported: {
     id: string;
+    /** Always the LeetCode slug — a NeetCode link is resolved to the problem it names. */
     slug: string;
     title: string;
     difficulty: string | null;
+    source_site: SourceSite;
+    /** Set when the link came from NeetCode: its own slug, pattern group and lists. */
+    neetcode: { slug: string; pattern: string; lists: string[] } | null;
     /** Pre-selected, but still awaiting confirmation — see `awaiting_confirmation`. */
     suggested_concept_id: string | null;
     why: string;

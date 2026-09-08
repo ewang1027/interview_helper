@@ -374,7 +374,7 @@ class PracticeProblem(SQLModel, table=True):
     id: str = Field(default_factory=new_id, primary_key=True)
     title: str
     url: str
-    source_site: str  # "leetcode" | "codeforces" | "other"
+    source_site: str  # "leetcode" | "neetcode" | "codeforces" | "other"
     notes: str | None = None
     difficulty_label: str | None = None
     primary_concept_id: str | None = Field(default=None, foreign_key="concepts.id")

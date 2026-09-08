@@ -88,7 +88,13 @@ def import_leetcode(
     principal: CurrentPrincipal,
     http: LeetCode,
 ) -> dict[str, Any]:
-    """Import LeetCode problems by slug or URL, or from a public profile's recent solves.
+    """Import problems by slug or URL, or from a public profile's recent solves.
+
+    **NeetCode links are accepted too.** The NeetCode 150 is a curated ordering of problems
+    that already exist on LeetCode — under different slugs for 74 of them — so a
+    neetcode.io link is resolved to the LeetCode problem it names (`api.neetcode`), and the
+    row records that the solve happened on NeetCode. Nothing is fetched from neetcode.io:
+    the mapping is a bundled table and the metadata still comes from LeetCode.
 
     Metadata only — a title, a difficulty and the topic tags. No problem statement is
     requested or stored, which is what keeps this inside docs/PRACTICE_LOG.md's rule

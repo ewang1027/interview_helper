@@ -8,12 +8,17 @@ import { Badge, Button, Card, CardBody, CardHeader } from "@/components/ui/primi
 import { api, idempotencyKey } from "@/lib/api";
 
 /**
- * Import from LeetCode by pasting links, or from a public profile.
+ * Import by pasting links — LeetCode or NeetCode — or from a public LeetCode profile.
  *
  * **Metadata only.** This asks LeetCode for a title, a difficulty and the topic tags —
  * the same fields you would type by hand. No problem statement is requested or stored,
  * which is what keeps it inside the practice log's manual-entry-only rule rather than
  * an exception to it.
+ *
+ * **A NeetCode link imports the LeetCode problem it names.** The NeetCode 150 is a
+ * curated ordering of problems that already exist there, under different slugs for 74 of
+ * them, so the mapping is a table the API bundles and neetcode.io is never fetched. What
+ * differs is where the row says you solved it, which is the part worth remembering.
  *
  * **Everything lands awaiting confirmation, and that is deliberate.** A resolved
  * classification cannot be re-tagged — its evidence is written, and evidence is
@@ -46,8 +51,8 @@ export function LeetCodeImport({ onImported }: { onImported: () => void }) {
   return (
     <Card>
       <CardHeader
-        title="Import from LeetCode"
-        hint="Titles, difficulty and topic tags only — never the problem text."
+        title="Import solved problems"
+        hint="LeetCode or NeetCode links — titles, difficulty and topic tags only, never the problem text."
       />
       <CardBody className="space-y-3">
         <div>
@@ -56,7 +61,9 @@ export function LeetCodeImport({ onImported }: { onImported: () => void }) {
             className="text-ink-muted mb-1 block text-xs font-medium tracking-wide uppercase"
           >
             Paste links or slugs
-            <span className="ml-2 normal-case">one per line, or comma separated</span>
+            <span className="ml-2 normal-case">
+              LeetCode or NeetCode, one per line or comma separated
+            </span>
           </label>
           <textarea
             id="lc-paste"
@@ -64,7 +71,7 @@ export function LeetCodeImport({ onImported }: { onImported: () => void }) {
             value={pasted}
             onChange={(event) => setPasted(event.target.value)}
             spellCheck={false}
-            placeholder={"https://leetcode.com/problems/two-sum/\nlongest-substring-without-repeating-characters\nmerge-k-sorted-lists"}
+            placeholder={"https://leetcode.com/problems/two-sum/\nhttps://neetcode.io/problems/duplicate-integer\nmerge-k-sorted-lists"}
             className="border-hairline bg-surface text-ink w-full resize-y rounded-md border p-2 font-mono text-xs"
           />
         </div>
@@ -113,6 +120,13 @@ export function LeetCodeImport({ onImported }: { onImported: () => void }) {
                     >
                       {row.title}
                     </Link>
+                    {row.neetcode ? (
+                      <Badge
+                        title={`NeetCode calls this ${row.neetcode.slug} — ${row.neetcode.pattern}`}
+                      >
+                        {row.neetcode.lists.includes("neetcode150") ? "NeetCode 150" : "NeetCode"}
+                      </Badge>
+                    ) : null}
                     {row.suggested_concept_id ? (
                       <Badge tone="good">{row.suggested_concept_id}</Badge>
                     ) : (
@@ -141,6 +155,12 @@ export function LeetCodeImport({ onImported }: { onImported: () => void }) {
             ) : null}
           </div>
         ) : null}
+
+        <p className="text-ink-muted text-xs">
+          A NeetCode link resolves to the LeetCode problem it names, so the same problem
+          logged from either site is one row with one schedule — recorded as solved on
+          NeetCode, not counted twice.
+        </p>
 
         <p className="text-ink-muted text-xs">
           A tag that names a family this taxonomy splits several ways —{" "}

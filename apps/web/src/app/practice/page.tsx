@@ -28,7 +28,7 @@ import type { PracticeProblem, ProblemStatus, SourceSite } from "@/lib/types";
  * because no model provider is reachable yet.
  */
 
-const SITES: SourceSite[] = ["leetcode", "codeforces", "other"];
+const SITES: SourceSite[] = ["leetcode", "neetcode", "codeforces", "other"];
 
 const FILTERS: { label: string; value: ProblemStatus | undefined }[] = [
   { label: "All", value: undefined },

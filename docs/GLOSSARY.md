@@ -75,9 +75,16 @@ detect weakness.
 
 ## Practice log
 
-**Practice problem** — an external (LeetCode/Codeforces) problem you logged manually
+**Practice problem** — an external (LeetCode/NeetCode/Codeforces) problem you logged manually
 after solving it: title, URL, notes, and a taxonomy classification. Never stores the
 problem's own statement text. → [PRACTICE_LOG](PRACTICE_LOG.md)
+
+**NeetCode catalogue** — the checked-in table mapping each neetcode.io problem to the
+LeetCode problem it is (`apps/api/src/api/data/neetcode.json`, rebuilt by
+`scripts/build_neetcode_catalogue.py`). NeetCode renames 74 of the problems it lists, so a
+link cannot be translated by string surgery; the catalogue is how a NeetCode link becomes an
+import, and the LeetCode slug it yields is the identity two rows for one problem share. →
+[PRACTICE_LOG](PRACTICE_LOG.md#a-neetcode-link-names-a-leetcode-problem-2026-09-07)
 
 **Review queue (practice log)** — practice problems that are `active` and past their
 `due_at`, ranked most-overdue first — the problem-level analog of the planner's

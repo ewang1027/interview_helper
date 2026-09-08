@@ -308,7 +308,7 @@ does carry a `422` for the same value arriving from an import.
 | Method | Path | Purpose | State |
 |---|---|---|---|
 | `POST` | `/practice/problems` | Log a solved problem; classifies it synchronously | ✅ built |
-| `POST` | `/practice/import/leetcode` | Import by slug/URL, or a public profile's recent solves | ✅ built |
+| `POST` | `/practice/import/leetcode` | Import by slug/URL — LeetCode or NeetCode — or a public profile's recent solves | ✅ built |
 | `GET` | `/practice/problems` | List, cursor-paginated, filterable by `concept_id` and `status` | ✅ built |
 | `GET` | `/practice/problems/{id}` | Detail, solve history, and the evidence those solves produced | ✅ built |
 | `PATCH` | `/practice/problems/{id}/classification` | Confirm or correct the tag; writes the held evidence | ✅ built |
@@ -326,6 +326,16 @@ fields the log already stores for a hand-typed entry — and requires no credent
 projections name their fields explicitly, so no query here can return a statement even by
 accident, which is what keeps this inside [PRACTICE_LOG](PRACTICE_LOG.md)'s
 manual-entry-only rule rather than an exception to it.
+
+**A neetcode.io link is a valid entry, and imports the LeetCode problem it names.** The
+NeetCode 150 is a curated ordering of problems that already exist on LeetCode, renamed for
+74 of them, so the path resolves the link through a table the API bundles and then reads the
+same LeetCode metadata — neetcode.io is never fetched. The row records
+`source_site="neetcode"` and keeps the NeetCode URL, and each `imported` entry carries
+`source_site` plus a `neetcode` object (`slug`, `pattern`, `lists`) or `null`. **Identity is
+the LeetCode slug**, so the same problem pasted from both sites is imported once and the
+second is `already logged` — see [PRACTICE_LOG](PRACTICE_LOG.md#a-neetcode-link-names-a-leetcode-problem-2026-09-07).
+The path keeps its name because what it fetches is still LeetCode metadata.
 
 **Everything imported is held for confirmation, however confident the tag.** LeetCode's own
 topic tags name a concept in this taxonomy in most cases (`sliding-window`, `union-find`,

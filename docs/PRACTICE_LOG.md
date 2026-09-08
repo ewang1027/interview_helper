@@ -19,6 +19,10 @@
 > Two deviations from what follows are recorded in the buildlog wave: the confidence for a
 > *successful* solve (0.7) was unspecified here, and a classification failure lands a
 > problem pending rather than failing the request.
+> **Extended 2026-09-07:** the import accepts **NeetCode links**, resolving them to the
+> LeetCode problems they name — `source_site` gained a `neetcode` value, and dedupe moved
+> from the URL to the LeetCode slug so one problem is one row whichever site you worked it
+> on. Nothing is fetched from neetcode.io; the mapping is a checked-in table.
 > Related: [ARCHITECTURE](ARCHITECTURE.md#data-model) ·
 > [ADAPTIVE](ADAPTIVE.md) (the evidence/scheduling machinery this reuses) ·
 > [CORPUS](CORPUS.md) (why this is manual-entry-only) ·
@@ -75,6 +79,41 @@ Two things this deliberately does *not* buy with the new access:
   a live credential on a machine whose repo is public, and pasting links reaches the same
   place without one.
 
+### A NeetCode link names a LeetCode problem (2026-09-07)
+
+Asked for directly: *sometimes I am doing practice using the NeetCode 150.* The NeetCode
+150 is a curated **ordering** of problems that already exist on LeetCode, so accepting one
+is a naming question, not a new source of problems — the metadata still comes from
+LeetCode's GraphQL endpoint, through the same projections, under the same rule as above.
+
+It is not a prefix swap, which is the only reason any code was needed. NeetCode retitles
+**74** of the problems it lists and their slugs follow: `contains-duplicate` is
+`duplicate-integer` there, `two-sum` is `two-integer-sum`, `valid-anagram` is `is-anagram`.
+neetcode.io publishes no API either, so the table lives in its JavaScript bundle. This repo
+extracts it once and checks the result in — `apps/api/src/api/data/neetcode.json`, rebuilt
+by `scripts/build_neetcode_catalogue.py` — which makes the mapping reviewable and testable
+offline, at the price of going stale. **588** of the 973 problems NeetCode lists have pages
+of their own; all 150 of the NeetCode 150 do, 74 under a renamed slug and 514 sharing
+LeetCode's.
+
+Three decisions worth stating, because each could have gone the other way:
+
+- **Two slugs for one problem is one row.** Dedupe keys on the LeetCode slug, not on the
+  URL, so working the NeetCode 150 does not log a second copy of every problem already in
+  the log. The alternative writes two schedules for one problem and moves `mastery` twice
+  for one solve — see `same_problem_key`.
+- **The stored `url` stays NeetCode's.** That is the page you were reading and the one you
+  would open again; `source_site` says which site, and the LeetCode slug is what identity
+  is decided on.
+- **NeetCode's own labels classify nothing.** Its `pattern` groups (`Arrays & Hashing`,
+  `1-D Dynamic Programming`) are exactly the families this taxonomy splits several ways, so
+  the concept still comes from LeetCode's topic tags under the rules below. The catalogue
+  carries the pattern for display only.
+
+A neetcode.io link this build's catalogue has never seen — a problem added since it was
+extracted — is skipped with the date of the extraction and the LeetCode link named as the
+way around it. Nothing here notices staleness on its own; rerunning the script is manual.
+
 ## Data model
 
 Two tables — **already created by migration `6e1d353bc543`** — plus an extension to the
@@ -88,7 +127,7 @@ existing `concept_evidence` table
 | `id` | ULID | |
 | `title` | text | User-entered |
 | `url` | text | Pointer only, never fetched |
-| `source_site` | enum(`leetcode`,`codeforces`,`other`) | |
+| `source_site` | enum(`leetcode`,`neetcode`,`codeforces`,`other`) | Where you worked it, not what it is — a `neetcode` row is a LeetCode problem (2026-09-07) |
 | `notes` | text, nullable | User's own notes — never problem text |
 | `difficulty_label` | text, nullable | Raw external label ("Medium", CF rating "1700") — a different currency from corpus `Difficulty.elo`; never conflated with it |
 | `primary_concept_id` | text, FK → `concepts.id` | Mirrors corpus `Item.primary_concept` |
@@ -245,6 +284,11 @@ pending_classification ──(confirm/correct, or auto-accept ≥0.75)──▶ 
   here and `design` covers three. LeetCode co-tags DP problems with the alternative
   solutions people post, and trusting that once imported `coin-change` as a graph problem.
 - **No LeetCode credential.** Public metadata only.
+- **No fetch of neetcode.io at all**, at runtime or in a test. The only thing that talks to
+  it is `scripts/build_neetcode_catalogue.py`, run by hand.
+- **No NeetCode progress import.** There is no public API for what you have solved there
+  (recorded 2026-08-24 and still true), and the accepted link is the whole of what this
+  adds — you tell it what you solved, exactly as before.
 - **No full FSRS memory model** (difficulty parameter, retrievability curve) — a
   3-repetition cap doesn't need one.
 - **No multi-tenancy** — consistent with the rest of the app.
