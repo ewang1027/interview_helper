@@ -6124,6 +6124,20 @@ the two questions are answered separately instead of one standing in for the oth
   extraction date and *paste the LeetCode link instead*.
 - **87 component tests**, up from 86, plus eslint and `tsc --noEmit` clean. The new one
   asserts an imported NeetCode row is titled by LeetCode and badged `NeetCode 150`.
+- **Five renamed mappings checked against live LeetCode**, which is the only thing the
+  offline tests cannot prove — a mapping can be internally consistent and still name a slug
+  LeetCode does not have:
+
+```
+duplicate-integer       -> contains-duplicate          Contains Duplicate         hash-map-counting
+two-integer-sum         -> two-sum                     Two Sum                    hash-map-counting
+is-anagram              -> valid-anagram               Valid Anagram              hash-map-counting
+top-k-elements-in-list  -> top-k-frequent-elements     Top K Frequent Elements    heap-top-k
+find-duplicate-integer  -> find-the-duplicate-number   Find the Duplicate Number  two-pointers
+```
+
+  Five, not 588: each is a request to somebody else's service, and the sample that matters
+  is the renamed one — a slug NeetCode shares with LeetCode cannot be wrong in this way.
 - `make check-web` could not be run through its own target — corepack on this machine
   invokes pnpm 12.3.4 against a repo pinned to 11.24.0 and refuses. The three tools were run
   directly out of `apps/web/node_modules/.bin`, which is what the target does. Unrelated to
