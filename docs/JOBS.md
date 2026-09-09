@@ -6,6 +6,10 @@
 > deliberately messy five-application paste parsed into five correct rows, and the research
 > pass completed six real web searches. 40 tests, 22 against live Postgres, 3 against a
 > live model.
+> **Extended 2026-09-09:** a **rejections tracker** — `GET /jobs/stats` grew a `rejections`
+> block, and the page a card and a board filter for it. Each rejection is filed under the
+> rung it came *after* (`furthest_stage`, as the funnel counts) with the days from applying
+> to the rejection event; see decision 5 below.
 > **Not built:** `/jobs` has never been opened in a browser, like every other route here.
 > Nothing writes `concept_evidence` or feeds [ADAPTIVE](ADAPTIVE.md)'s projection; see
 > "What this deliberately does not do".
@@ -166,6 +170,40 @@ drop-in for another provider, and the routing table in
 [ARCHITECTURE](ARCHITECTURE.md#model-routing) makes it easy to forget that a *job* can
 depend on a capability rather than only on a model.
 
+### 5. A rejection is filed under the rung it came after
+
+Asked for directly: *add a rejected tracker on my applications page as well.* The count
+already existed — `rejected` was one of the stats — and a count is the least a tracker can
+say. What a rejection is worth knowing is **when it came**: ten noes at `applied` is a
+problem with the applications, ten after a final round is a different problem, and a
+tracker that files both under "rejected" has thrown away the distinction.
+
+So `GET /jobs/stats` carries a `rejections` block, and every number in it is read off
+`furthest_stage` for the same reason the funnel is (decision 2): a rejection after an onsite
+was a rejection *after an onsite*, and `current_stage` cannot say so.
+
+| Field | What it says |
+|---|---|
+| `total`, `rate` | How many, and of everything applied to |
+| `after_stage[]` | For each rung of the ladder, how many rejections came after it — `count`, and `share` **of the rejections**, not of the applications, because the question is "when do they say no" |
+| `median_days_to_rejection` | From `applied_at` to the rejection event, over the rejections that have one |
+| `recent[]` | The ten newest: company, role, the rung it was rejected after, when, and the days it took |
+
+The moment of a rejection is its **latest `rejected` event**. A row can be moved to
+rejected, reopened when the recruiter writes back, and rejected again; the later event is
+the one that was meant, and the row is still one rejection. A rejected row whose events
+carry no `rejected` event at all — a projection disagreeing with its log, which
+`POST /jobs/recompute` exists to catch — is dated by when it was last touched rather than
+dropped, so the count and the list cannot disagree.
+
+Two things it deliberately is not. It is **not a bar on the funnel**: `rejected` is off the
+ladder (decision 2), and drawing it as a rung would put a way a pipeline *ends* among the
+places in it. And it is **not a reason field** — nothing asks why. Most rejections arrive
+with no reason, and a field that is usually empty invites the person to invent one.
+
+The days-to-rejection number is the first piece of time-in-stage this tracker reports; the
+rest is still the open question below.
+
 ## What the first live call found
 
 Everything below this heading was discovered by running the thing, on 2026-08-26, after it
@@ -304,6 +342,7 @@ the one way this feature could leak something that matters.
 - **No gold set.** The same gap the practice log has: nothing hand-labelled to calibrate
   either the sub-category tagging or the confidence numbers against, so 0.6 is a placeholder
   like every other constant here.
-- **Time-in-stage is recorded but not reported.** The events carry `occurred_at`, so "how
-  long between the OA and hearing back" is answerable — and nothing answers it yet. It is
-  probably the most useful thing this data can say that the funnel does not.
+- **Time-in-stage is recorded but mostly not reported.** The events carry `occurred_at`,
+  so "how long between the OA and hearing back" is answerable. The rejections tracker
+  answers one slice of it — applying to the no (2026-09-09) — and nothing answers the rest
+  yet. It is probably the most useful thing this data can say that the funnel does not.

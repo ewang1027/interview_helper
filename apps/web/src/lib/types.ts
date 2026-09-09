@@ -524,6 +524,39 @@ export interface FunnelStep {
   conversion: number;
 }
 
+/** One rung of the rejections tracker: how many rejections came *after* this stage. */
+export interface RejectionStep {
+  stage: LadderStage;
+  label: string;
+  count: number;
+  /** Of the rejections, not of everything applied to. */
+  share: number;
+}
+
+export interface RecentRejection {
+  id: string;
+  company: string;
+  role: string;
+  category: JobCategory | null;
+  /** The rung it was rejected after — `furthest_stage`, as the funnel counts. */
+  furthest_stage: LadderStage;
+  furthest_stage_label: string;
+  applied_at: string;
+  /** The latest `rejected` event; null only if the projection disagrees with its log. */
+  rejected_at: string | null;
+  days_after_applying: number | null;
+}
+
+export interface Rejections {
+  total: number;
+  /** Of everything applied to. */
+  rate: number;
+  after_stage: RejectionStep[];
+  median_days_to_rejection: number | null;
+  /** Newest first, at most ten. */
+  recent: RecentRejection[];
+}
+
 export interface JobStats {
   total: number;
   open: number;
@@ -533,6 +566,7 @@ export interface JobStats {
   response_rate: number;
   needs_review: number;
   funnel: FunnelStep[];
+  rejections: Rejections;
   by_category: Partial<
     Record<
       JobCategory,

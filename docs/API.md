@@ -271,7 +271,7 @@ design.
 | `POST` | `/jobs` | Add one application by hand — no model call | ✅ built |
 | `GET` | `/jobs` | List, filterable by `category`, `stage` and `outcome` | ✅ built |
 | `GET` | `/jobs/catalog` | The stage ladder and the category taxonomy | ✅ built |
-| `GET` | `/jobs/stats` | The funnel, conversion rates and category breakdown | ✅ built |
+| `GET` | `/jobs/stats` | The funnel, conversion rates, category breakdown and the rejections tracker | ✅ built |
 | `POST` | `/jobs/recompute` | Replay every application's stage projection from its events | ✅ built |
 | `GET` | `/jobs/{id}` | The application and every stage it has been in | ✅ built |
 | `POST` | `/jobs/{id}/stage` | Move to a stage — appends an event, never overwrites | ✅ built |
@@ -294,6 +294,15 @@ not finish inside its round cap.
 `furthest_stage` / `outcome` are a projection over the event log — the same relationship
 `mastery` has to `concept_evidence`. `POST /jobs/recompute` rebuilds all three from the
 events, and is the only way to check that the board and the history still agree.
+
+**`GET /jobs/stats` carries a `rejections` block (2026-09-09).** `total` and `rate`, then
+`after_stage[]` — one row per rung of the ladder, counting the rejections that came *after*
+it, with `share` of the rejections rather than of everything applied to — a
+`median_days_to_rejection`, and the ten most `recent`, newest first, each with the rung it
+was rejected after and the days from applying. All of it is read off `furthest_stage` and
+the latest `rejected` event ([JOBS](JOBS.md), decision 5). One endpoint still: the tracker
+is another view of the same rows the funnel counts, and a second endpoint would be a second
+chance for the two to disagree.
 
 **An unknown stage answers `400`, not `422`.** `stage` is a `Literal` in the request model,
 so the body fails schema validation before the route's own check is reached — which is the

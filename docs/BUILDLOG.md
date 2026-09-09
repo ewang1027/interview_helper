@@ -24,11 +24,11 @@ detail behind it.
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **complete** | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | — *(closed 2026-08-25: a real session ran end to end on the Anthropic API — conversation, `run_code` against the sandbox, submission, grading, evidence. Bedrock is still gated on a use-case form; the provider switch is one env var)* |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within twelve sessions — five until `W_UNLOCKS` woke up, ten until the 2026-09-09 taxonomy expansion added edges into the concepts the corpus measures | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus and with the prerequisite graph |
-| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import and a concept picker that searches problem-name **aliases** (2026-09-09), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable and pages twenty rows at a time. 89 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
+| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import and a concept picker that searches problem-name **aliases** (2026-09-09), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 91 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
 | **6** AWS deploy | **partial** — step 1 of 5 | Dockerfiles for `api`, `executor` and `web`; `make up-stack` runs all of it behind a **Caddy front door** routing by path, the job the ALB does — so compose mirrors the target topology. Only the front door publishes a port. Sandbox isolation re-verified from inside the containerised launcher | steps 2–5: one service on Fargate by hand, Terraform, the rest of the stack, the portability gate — **all blocked on an authenticated AWS session**, not on code |
 | **7–8** Voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does. The import takes **NeetCode links** as well as LeetCode ones (2026-09-07). **Re-tagged 2026-09-09** against the expanded taxonomy: all 23 logged problems, eleven of them wrong before, by a script that corrects the evidence they wrote and rebuilds mastery | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
-| **10** Job applications | **built** | two tables, the **stage event log** and the projection over it, ten endpoints, a Sonnet 5 paste parser, an Opus 5 **web-search research pass**, and the `/jobs` page. **Run live 2026-08-26**: a messy five-row paste parsed correctly, six real web searches, an import down to 3 SQL statements from 240 | the gold set for calibrating the tagging; time-in-stage, which the events already record and nothing reports; a research trigger based on what a row is missing rather than how long the list is |
+| **10** Job applications | **built** | two tables, the **stage event log** and the projection over it, ten endpoints, a Sonnet 5 paste parser, an Opus 5 **web-search research pass**, and the `/jobs` page. **Run live 2026-08-26**: a messy five-row paste parsed correctly, six real web searches, an import down to 3 SQL statements from 240. A **rejections tracker** (2026-09-09): each no filed under the rung it came after, with the days it took | the gold set for calibrating the tagging; time-in-stage beyond applying-to-rejection, which the events already record and nothing reports; a research trigger based on what a row is missing rather than how long the list is |
 
 ~~One thing worth knowing before reading anything else as further along than it is: **no
 full session has run against a live model.**~~ **Closed 2026-08-25.** A full session ran on
@@ -6315,3 +6315,76 @@ Nothing regressed; the prologue grew, for the second time, for the reason the fo
 - **The alias lists are one person's first pass.** They were written from the NeetCode 150
   and LeetCode's tag pages, not measured against searches that failed; the next "I can't
   find the tag" is the data that improves them.
+
+## Wave — A rejection is filed under the rung it came after · 2026-09-09
+
+Asked for directly: *add a rejected tracker on my applications page as well.*
+
+The count already existed. `rejected` has been one of `GET /jobs/stats`'s numbers since the
+tracker landed, and the live board had ten of them against 119 open. A count is the least a
+tracker can say, though, and the thing worth knowing about a rejection is **when it came**:
+the board's ten split seven at `applied` and three after an online assessment, which is a
+sentence about the applications rather than about the interviews, and no number on the page
+said it.
+
+### What it reports
+
+A `rejections` block on the same endpoint — one more view of the rows the funnel counts,
+not a second endpoint that could count them differently — and everything in it is read off
+`furthest_stage`, for the reason decision 2 in [JOBS](JOBS.md) gives the funnel: an
+application rejected after an onsite was rejected *after an onsite*, and `current_stage` has
+forgotten that.
+
+- **`after_stage[]`** — for each rung, how many rejections came after it, with the share
+  **of the rejections** rather than of everything applied to. The question is "when do
+  they say no", and its denominator is the noes.
+- **`median_days_to_rejection`** — from `applied_at` to the rejection event. The first
+  piece of time-in-stage this tracker reports; the rest stays owed.
+- **`recent[]`** — the ten newest, each with the rung it got to and the days it took.
+
+The moment of a rejection is the **latest `rejected` event**, which is a decision rather
+than a default: a row moved to rejected, reopened when the recruiter wrote back, and
+rejected again dates from the second event and is still one rejection. A rejected row with
+no `rejected` event in its log — a projection disagreeing with the events it is derived
+from, which `POST /jobs/recompute` exists to catch — is dated by when it was last touched
+rather than dropped, so the count and the list cannot disagree with each other.
+
+### The page
+
+A `Rejected` headline stat carrying its share of everything applied to, the way the response
+rate carries its denominator. A card between the funnel and the import forms: bars per rung
+in the funnel's one hue — the share is what varies, and a red ramp would say "worse" about a
+number that only means "later" — with rungs above the last one used dropped and an empty
+rung *between* used ones kept, because that gap is the shape of the pipeline. The ten most
+recent beside them. And **Show all on the board**, which sets an outcome filter the board now
+carries beside the category one — All · Live · Rejected — and re-keys it, so the board opens
+fresh at twenty rows the way a category change does.
+
+Not a bar on the funnel, because `rejected` is off the ladder and a rung would put a way a
+pipeline ends among the places in it. Not a reason field, because most rejections arrive
+without one and an empty field invites an invented one.
+
+### Verified
+
+- `make test-db`: **219 passed**, 1 skipped. Two new against live Postgres: three
+  applications with one rejected after a final round and one straight from `applied` come
+  back filed under those rungs, newest first, with 28 and 0 days and a median of 14; and a
+  row rejected, reopened to a phone screen and rejected again is one rejection dated from
+  the later event. The empty-board test now pins the whole block at zero, `median` null.
+- **91 component tests**, up from 89, plus eslint and `tsc --noEmit` clean: the rung and the
+  date render, with the rungs above `final` dropped; *Show all on the board* reaches
+  `GET /jobs?outcome=rejected` and the `Rejected` filter reads pressed; and an empty board
+  says *Nothing rejected yet* beside *Nothing applied to yet*.
+- `make lint`, `make typecheck`, `make corpus-validate`, `make secret-scan`: clean.
+  `make check` still stops at `check-web` on this machine (corepack, unchanged), so the web
+  tools were run directly.
+- **Live, on the rebuilt stack**: `GET /jobs/stats` answers with the block — ten
+  rejections, seven after `applied` and three after the online assessment, dated — and the
+  page answers 200.
+
+### Not verified
+
+- **Nothing opened in a browser**, as for every route. The card's two-column layout and the
+  divider between the category and outcome filters are unreviewed visually.
+- **Only the newest ten are listed**; the board filter is the way to the rest, and nothing
+  measures whether that is the right cut.

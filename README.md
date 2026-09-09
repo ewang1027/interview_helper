@@ -235,7 +235,8 @@ owes.
       pasted list is parsed and tagged by one structured Sonnet 5 call; above ten rows a
       second Opus 5 pass **searches the web** for the postings and fills in what the list
       left out. The funnel counts `furthest_stage`, so a rejection after an onsite still
-      counts as an onsite reached. Web search is billed per search and does not appear in
+      counts as an onsite reached, and since 2026-09-09 a rejections tracker files each no
+      under the rung it came after, with the days it took. Web search is billed per search and does not appear in
       any token count, so the ledger grew a column for it. **Run live 2026-08-26**: a
       messy five-row paste parsed correctly for $0.0092, and the research pass made six
       real web searches for $0.2266 — which found that structured outputs reject the JSON

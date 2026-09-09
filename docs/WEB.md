@@ -75,7 +75,7 @@ maintain, for a service with exactly one browser client.
 | `/concepts/[id]` | One concept: ability over time, the evidence behind it, related items |
 | `/history` | Session history, filterable by mode and date |
 | `/corpus` | Browse the corpus. Statements of unseen items stay redacted |
-| `/jobs` | The job tracker — the application funnel, the category breakdown, paste-import, and the board (searchable, twenty rows at a time) |
+| `/jobs` | The job tracker — the application funnel, the category breakdown, the rejections tracker, paste-import, and the board (searchable, filterable by outcome, twenty rows at a time) |
 | `/practice` | The practice log — log a problem solved elsewhere, and what is due to re-solve |
 | `/practice/[id]` | One logged problem: confirm its concept, record a re-solve, read its evidence |
 | `/costs` | Token and dollar spend from the ledger |
@@ -165,6 +165,25 @@ refetch but not a filter change: moving a row's stage re-fetches the list, and c
 the board back to twenty there would scroll the row you were working on out of existence,
 so the component is keyed on the category filter and deliberately not on its data. All
 five behaviours are pinned by tests in `src/app/jobs/jobs.test.tsx`.
+
+### The rejections tracker
+
+Added 2026-09-09, asked for directly. A `Rejected` headline stat with its share of
+everything applied to, and a card that reads the funnel downward: **which rung each no came
+after** as one-hue bars — the share of rejections printed beside each, rungs above the last
+one used dropped, an empty rung *between* used ones kept because it is the shape of the
+pipeline — a median days-from-applying line, and the ten most recent rejections with the
+stage each got to and how long it took. All of it comes from `GET /jobs/stats`'s
+`rejections` block ([JOBS](JOBS.md), decision 5), so the card and the funnel cannot count
+differently.
+
+Two decisions worth stating. The bars share the funnel's hue rather than turning red: the
+share is what varies, and a red ramp would say "worse" about a number that only means
+"later". And the card links to the board rather than listing everything itself: *Show all
+on the board* sets an **outcome filter** the board now carries beside the category one —
+All · Live · Rejected — which re-keys the board so it opens fresh at twenty rows, exactly as
+a category change does. Three behaviours are pinned in `jobs.test.tsx`: the rung and the
+date, the empty state, and the filter reaching `GET /jobs?outcome=rejected`.
 
 ## The live session view
 

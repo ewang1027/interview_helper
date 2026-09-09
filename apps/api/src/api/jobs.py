@@ -40,6 +40,7 @@ import logging
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
+from statistics import median
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
@@ -1239,11 +1240,12 @@ def stats(db: Session, *, user_id: str) -> dict[str, Any]:
 
     untagged = sum(1 for row in rows if row.status == "pending_classification")
     responded = sum(1 for row in rows if RANK.get(row.furthest_stage, 0) > 0)
+    rejected = [row for row in rows if row.outcome == "rejected"]
     return {
         "total": total,
         "open": sum(1 for row in rows if row.outcome == "open"),
         "offers": sum(1 for row in rows if row.outcome == "offer"),
-        "rejected": sum(1 for row in rows if row.outcome == "rejected"),
+        "rejected": len(rejected),
         "responded": responded,
         "response_rate": (responded / total) if total else 0.0,
         "needs_review": untagged,
@@ -1252,4 +1254,93 @@ def stats(db: Session, *, user_id: str) -> dict[str, Any]:
         "by_stage": {
             stage: sum(1 for row in rows if row.current_stage == stage) for stage in STAGES
         },
+        "rejections": _rejections(db, rejected, total=total),
+    }
+
+
+def _aware(moment: datetime) -> datetime:
+    """A naive timestamp here is one a test built by hand; Postgres returns them aware."""
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
+
+
+def _rejections(db: Session, rejected: list[JobApplication], *, total: int) -> dict[str, Any]:
+    """Where the rejections came, and when — the half of the funnel that reads downward.
+
+    The funnel says how many reached each rung. This says, of the ones that ended in a
+    rejection, **which rung they were rejected after** — read off `furthest_stage`, for the
+    same reason the funnel is: an application rejected after an onsite was rejected *after
+    an onsite*, and a tracker that filed it under "rejected" and nothing else has thrown
+    away the only thing worth knowing about it. Ten rejections at `applied` and none later
+    is a problem with the applications; ten after a final round is a different problem.
+
+    The moment of rejection is the latest `rejected` event — a person can move a row to
+    rejected twice, and the later one is the one they meant. One query for every rejected
+    application's events rather than one per row, and the days from `applied_at` to that
+    event is the first piece of time-in-stage this tracker reports (docs/JOBS.md lists the
+    rest as owed).
+    """
+    rejected_at: dict[str, datetime] = {}
+    if rejected:
+        events = db.exec(
+            select(JobApplicationEvent).where(
+                col(JobApplicationEvent.application_id).in_([row.id for row in rejected]),
+                JobApplicationEvent.stage == "rejected",
+            )
+        ).all()
+        for event in events:
+            occurred = _aware(event.occurred_at)
+            if (
+                event.application_id not in rejected_at
+                or occurred > rejected_at[event.application_id]
+            ):
+                rejected_at[event.application_id] = occurred
+
+    after = {stage: 0 for stage in LADDER}
+    for row in rejected:
+        after[row.furthest_stage if row.furthest_stage in after else "applied"] += 1
+
+    def days_after_applying(row: JobApplication) -> int | None:
+        moment = rejected_at.get(row.id)
+        if moment is None:
+            return None
+        return max(0, (moment - _aware(row.applied_at)).days)
+
+    durations = [d for d in (days_after_applying(row) for row in rejected) if d is not None]
+    # Newest rejection first. A row whose events carry no `rejected` event — a projection
+    # that disagrees with its log, which `recompute` exists to catch — sorts by when it was
+    # last touched rather than being dropped, so the count and the list agree.
+    recent = sorted(
+        rejected,
+        key=lambda row: rejected_at.get(row.id) or _aware(row.updated_at),
+        reverse=True,
+    )[:10]
+    return {
+        "total": len(rejected),
+        "rate": (len(rejected) / total) if total else 0.0,
+        "after_stage": [
+            {
+                "stage": stage,
+                "label": STAGE_LABELS[stage],
+                "count": after[stage],
+                # Of the rejections, not of everything applied to: the question this
+                # answers is "when do they say no", and the denominator is the noes.
+                "share": (after[stage] / len(rejected)) if rejected else 0.0,
+            }
+            for stage in LADDER
+        ],
+        "median_days_to_rejection": float(median(durations)) if durations else None,
+        "recent": [
+            {
+                "id": row.id,
+                "company": row.company,
+                "role": row.role,
+                "category": row.category,
+                "furthest_stage": row.furthest_stage,
+                "furthest_stage_label": STAGE_LABELS.get(row.furthest_stage, row.furthest_stage),
+                "applied_at": row.applied_at,
+                "rejected_at": rejected_at.get(row.id),
+                "days_after_applying": days_after_applying(row),
+            }
+            for row in recent
+        ],
     }

@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Jobs from "./page";
@@ -71,6 +71,33 @@ const STATS = {
     quant: { total: 1, active: 0, offers: 0, responded: 1, subcategories: { quant_trading: 1 } },
   },
   by_stage: { applied: 1, oa: 1, final: 1, rejected: 1 },
+  rejections: {
+    total: 1,
+    rate: 0.25,
+    after_stage: [
+      { stage: "applied", label: "Applied", count: 0, share: 0 },
+      { stage: "oa", label: "Online assessment", count: 0, share: 0 },
+      { stage: "phone_screen", label: "Phone screen", count: 0, share: 0 },
+      { stage: "round_1", label: "First round", count: 0, share: 0 },
+      { stage: "round_2", label: "Second round", count: 0, share: 0 },
+      { stage: "final", label: "Final / onsite", count: 1, share: 1 },
+      { stage: "offer", label: "Offer", count: 0, share: 0 },
+    ],
+    median_days_to_rejection: 47,
+    recent: [
+      {
+        id: "j1",
+        company: "Aurora Labs",
+        role: "Backend Engineer",
+        category: "swe",
+        furthest_stage: "final",
+        furthest_stage_label: "Final / onsite",
+        applied_at: "2026-07-04T00:00:00Z",
+        rejected_at: "2026-08-20T00:00:00Z",
+        days_after_applying: 47,
+      },
+    ],
+  },
 };
 
 function application(over: Record<string, unknown> = {}) {
@@ -114,6 +141,41 @@ describe("applications", () => {
 
     expect(await screen.findByText("75%")).toBeInTheDocument();
     expect(await screen.findByText("3 of 4")).toBeInTheDocument();
+  });
+
+  it("files a rejection under the rung it came after, and dates it", async () => {
+    stubFetch(BASE);
+    renderPage(<Jobs />);
+
+    // The headline stat carries its denominator, like the response rate does.
+    expect(await screen.findByText("25% of applied")).toBeInTheDocument();
+
+    const byStage = await screen.findByLabelText("Rejections by stage reached");
+    // Rungs above the last used one are dropped, so the list is `applied` … `final`
+    // and stops before `offer`; the one rejection sits on the onsite rung.
+    expect(within(byStage).getAllByRole("listitem")).toHaveLength(6);
+    const onsite = within(byStage).getByText("Final / onsite").closest("li")!;
+    expect(within(onsite).getByText("100% of rejections")).toBeInTheDocument();
+    expect(screen.getByText("Median 47 days from applying to the no.")).toBeInTheDocument();
+
+    const recent = screen.getByLabelText("Recent rejections");
+    expect(within(recent).getByText("Aurora Labs")).toBeInTheDocument();
+    expect(within(recent).getByText(/after final \/ onsite · 47d in/)).toBeInTheDocument();
+  });
+
+  it("filters the board to the rejected ones from the tracker", async () => {
+    stubFetch(BASE);
+    renderPage(<Jobs />);
+
+    await userEvent.click(await screen.findByText("Show all on the board"));
+
+    await waitFor(() =>
+      expect(
+        vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith("/jobs?outcome=rejected")),
+      ).toBe(true),
+    );
+    expect(screen.getByText("Showing all on the board")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Rejected", pressed: true })).toBeInTheDocument();
   });
 
   it("keeps a rejected application in the rungs it reached", async () => {
@@ -378,12 +440,20 @@ describe("applications", () => {
         rejected: 0,
         funnel: STATS.funnel.map((row) => ({ ...row, reached: 0, share: 0, conversion: 0 })),
         by_category: {},
+        rejections: {
+          total: 0,
+          rate: 0,
+          after_stage: STATS.rejections.after_stage.map((row) => ({ ...row, count: 0, share: 0 })),
+          median_days_to_rejection: null,
+          recent: [],
+        },
       },
       "/api/v1/jobs": { applications: [], count: 0 },
     });
     renderPage(<Jobs />);
 
     expect(await screen.findByText("Nothing applied to yet")).toBeInTheDocument();
+    expect(await screen.findByText("Nothing rejected yet")).toBeInTheDocument();
     expect(await screen.findByText("No applications yet")).toBeInTheDocument();
   });
 });

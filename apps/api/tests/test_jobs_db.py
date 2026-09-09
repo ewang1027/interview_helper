@@ -372,6 +372,77 @@ def test_stats_on_an_empty_board_does_not_divide_by_zero(client):
     assert stats["total"] == 0
     assert stats["response_rate"] == 0.0
     assert all(row["conversion"] == 0.0 for row in stats["funnel"])
+    assert stats["rejections"] == {
+        "total": 0,
+        "rate": 0.0,
+        "after_stage": [
+            {"stage": row["stage"], "label": row["label"], "count": 0, "share": 0.0}
+            for row in stats["funnel"]
+        ],
+        "median_days_to_rejection": None,
+        "recent": [],
+    }
+
+
+def test_rejections_are_tracked_by_the_rung_they_came_after(client):
+    """Three applications: one rejected after a final round, one rejected straight from
+    `applied`, one still open. The tracker files each rejection under the rung it was
+    rejected *after* — `furthest_stage`, as the funnel counts — and lists the newest first,
+    with the days between applying and the rejection event."""
+    use_settings(jobs_research_threshold=10)
+    onsite = _one(client, company="Aurora Labs", role="Engineer", applied_at="2026-06-01T00:00:00Z")
+    cold = _one(client, company="Northwind Systems", role="Trader", subcategory="quant_trading")
+    _one(client, company="Cascade Analytics", role="Analyst")
+    for stage in ("oa", "round_1", "final"):
+        client.post(f"/api/v1/jobs/{onsite['id']}/stage", json={"stage": stage})
+    client.post(
+        f"/api/v1/jobs/{onsite['id']}/stage",
+        json={"stage": "rejected", "occurred_at": "2026-06-29T12:00:00Z"},
+    )
+    client.post(f"/api/v1/jobs/{cold['id']}/stage", json={"stage": "rejected"})
+
+    rejections = client.get("/api/v1/jobs/stats").json()["rejections"]
+    assert rejections["total"] == 2
+    assert rejections["rate"] == 2 / 3
+    after = {row["stage"]: row["count"] for row in rejections["after_stage"]}
+    assert after == {
+        "applied": 1,
+        "oa": 0,
+        "phone_screen": 0,
+        "round_1": 0,
+        "round_2": 0,
+        "final": 1,
+        "offer": 0,
+    }
+    shares = {row["stage"]: row["share"] for row in rejections["after_stage"]}
+    assert shares["final"] == 0.5
+
+    recent = rejections["recent"]
+    assert [row["company"] for row in recent] == ["Northwind Systems", "Aurora Labs"]
+    assert recent[1]["furthest_stage_label"] == "Final / onsite"
+    assert recent[1]["days_after_applying"] == 28
+    assert recent[0]["days_after_applying"] == 0
+    assert rejections["median_days_to_rejection"] == 14.0
+
+
+def test_a_second_rejection_event_is_the_one_that_counts(client):
+    """A row moved to rejected, reopened, and rejected again dates from the later event —
+    the one the person meant — and is still one rejection, not two."""
+    row = _one(client, applied_at="2026-06-01T00:00:00Z")
+    client.post(
+        f"/api/v1/jobs/{row['id']}/stage",
+        json={"stage": "rejected", "occurred_at": "2026-06-03T00:00:00Z"},
+    )
+    client.post(f"/api/v1/jobs/{row['id']}/stage", json={"stage": "phone_screen"})
+    client.post(
+        f"/api/v1/jobs/{row['id']}/stage",
+        json={"stage": "rejected", "occurred_at": "2026-06-11T00:00:00Z"},
+    )
+
+    rejections = client.get("/api/v1/jobs/stats").json()["rejections"]
+    assert rejections["total"] == 1
+    assert rejections["recent"][0]["days_after_applying"] == 10
+    assert rejections["recent"][0]["furthest_stage"] == "phone_screen"
 
 
 def test_the_catalog_is_served_rather_than_duplicated_in_the_client(client):
