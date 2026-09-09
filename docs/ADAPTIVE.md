@@ -183,10 +183,10 @@ A session is a **budget** (minutes) and a **mode**. The planner:
    plan a session with nothing in it, so an unserveable prerequisite is reported in the
    plan and the original concept is kept. It is still the common case: substitution needs
    an item whose *primary* concept is the prerequisite, and the corpus has sixteen
-   primaries across 159 concepts.
+   primaries across 186 concepts (159 until the 2026-09-09 expansion).
 
    **"As a primary" is the whole of it, and the plan now says so.** `concept_evidence` is
-   written for every concept an item *tags* — 53 of 159 receive evidence — while only the
+   written for every concept an item *tags* — 53 of 186 receive evidence — while only the
    16 that are some item's `primary_concept` can be served. The note used to read "no item
    measures it", which is false about a concept eight items measure and reads as a corpus
    gap rather than the policy it is.
@@ -231,7 +231,7 @@ threshold, not on a fixed session count.
 ## How this gets verified
 
 The Phase 4 gate is a simulated candidate with an injected weakness: a synthetic user
-who scores poorly on a chosen concept cluster and well elsewhere. Within ten sessions,
+who scores poorly on a chosen concept cluster and well elsewhere. Within twelve sessions,
 a majority of served items must target that cluster. **Built, and it needed strengthening
 before it meant anything.** The first version passed while proving nothing: for want of a
 tie-break the planner served that item in session one, before any evidence existed, so the
@@ -256,6 +256,17 @@ exploration prologue scales with how much unmeasured foundational corpus exists,
 window is expected to need raising again. The test therefore also asserts the weak item is
 the single **most-served** one, which is the half that does not depend on window
 arithmetic.
+
+**And it was raised again, to twelve, on 2026-09-09** — by the taxonomy rather than the
+corpus this time. The coding domain grew from 52 to 79 concepts
+([CONCEPTS](CONCEPTS.md#the-2026-09-09-coding-expansion)), and the new concepts' prerequisite
+edges point *into* concepts the corpus already measures: `two-pointers` and
+`edge-case-enumeration` each gained unlocks, so the sliding-window item that carries both
+earned a fourth exploration session before the drill began. Measured: sessions 1–3 the
+counting item, 4 the sliding-window item, 5–8 the weakness, 9 a rotation back to the
+counting item, 10–12 the weakness. Five of ten was one short of a majority; seven of
+twelve is not, and the most-served and weakest-rated assertions held throughout. Same
+mechanism, same conclusion: nothing regressed, the prologue grew.
 
 **The prior is an input to the replay, and re-rating an item used to break it.** `items.elo`
 drifts from real outcomes, and a re-seed deliberately leaves that drift alone. But a

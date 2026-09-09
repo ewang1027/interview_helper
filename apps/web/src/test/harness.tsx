@@ -116,8 +116,8 @@ export const fixtures = {
     servable: 1,
   },
   corpusStatus: {
-    concepts: 159,
-    concepts_by_domain: { coding: 52, quant: 51 },
+    concepts: 186,
+    concepts_by_domain: { coding: 79, quant: 51 },
     items: 48,
     archetypes: 16,
     instances: 32,

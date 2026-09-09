@@ -292,7 +292,7 @@ def test_an_unknown_concept_is_a_problem_json_404(created_sessions):
 
 def test_the_mastery_list_says_how_little_it_knows(created_sessions, user_id):
     """ "Four concepts, weakest first" reads very differently once you know the taxonomy
-    has 159 and the rest have never been measured."""
+    has 186 and the rest have never been measured."""
     client = client_for()
     run_session(client, created_sessions, only=(ITEM,))
 

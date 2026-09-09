@@ -46,8 +46,9 @@ transaction, and the next session is planned from it: concepts ranked by weaknes
 priority, then the item whose expected score lands closest to the band where an outcome
 teaches you something. The whole projection — item ratings included — rebuilds from
 evidence alone, and a simulated candidate with an injected weakness is being drilled on it
-within ten sessions — five until the corpus grew a foundational concept gating six others,
-which the priority formula correctly establishes first (see [ADAPTIVE](docs/ADAPTIVE.md)).
+within twelve sessions — five until the corpus grew a foundational concept gating six
+others, ten until the taxonomy grew edges into the concepts the corpus measures; the
+priority formula correctly establishes those first (see [ADAPTIVE](docs/ADAPTIVE.md)).
 
 Every graded artifact writes an immutable `concept_evidence` row — that part runs today.
 Mastery is *derived* from that evidence, never hand-written, so it can be recomputed from
@@ -94,7 +95,7 @@ buildlog disagree about what exists, the buildlog is right.**
 | [BUILDLOG](docs/BUILDLOG.md) | What is actually built, and what each wave cost to learn | all | Current |
 | [GLOSSARY](docs/GLOSSARY.md) | Project vocabulary in one place | all | Current |
 | [ARCHITECTURE](docs/ARCHITECTURE.md) | Services, trust boundaries, data model, model routing | all | Design, partly built |
-| [CONCEPTS](docs/CONCEPTS.md) | The 159-concept taxonomy and its rules | 0 | ✅ Built |
+| [CONCEPTS](docs/CONCEPTS.md) | The 186-concept taxonomy and its rules | 0 | ✅ Built |
 | [CORPUS](docs/CORPUS.md) | What a corpus item is, and what the validator does and does not catch | 0 → 1 | ✅ Contract built |
 | [RESEARCH](docs/RESEARCH.md) | How items get researched and authored | 1 | Spec |
 | [SECURITY](docs/SECURITY.md) | Threat model, sandbox isolation, the six escape tests, the answer parser | 2 | ✅ Isolation built |
@@ -204,7 +205,7 @@ owes.
       so cross-origin was never going to work), a typed client over all 25 endpoints, and
       the SSE reducer that treats `agent.message.done` as authoritative and reports a
       `seq` jump the server is structurally unable to see. The dashboard's heatmap covers
-      the whole 159-concept taxonomy; `/session/new` shows the plan before you commit to
+      the whole 186-concept taxonomy; `/session/new` shows the plan before you commit to
       it; the live view carries the transcript, the interviewer's tool calls and each
       hint's cost, with a workspace per mode. Gated by `make check-web` and a CI job —
       eslint, tsc, 86 component tests, production build. **Nothing has been opened in a
@@ -224,7 +225,11 @@ owes.
 - [x] **9 — Practice log** — *external problem tracking, classification behind a
       confidence gate, and the spaced re-solve queue, landed 2026-08-21. A logged solve
       writes real `concept_evidence` and moves the same mastery a graded submission does.
-      The classifier is uncalibrated — no gold set, and no real model has run it*
+      On 2026-09-09 the coding taxonomy grew from 52 to 79 concepts — intervals, sweep
+      line, Kadane, matrices, number theory and the rest of what LeetCode actually asks —
+      the picker searches problem-name aliases, and the 23 logged problems were re-tagged
+      by a script that corrects the evidence they wrote. The classifier is uncalibrated —
+      no gold set*
 - [x] **10 — Job applications** — *the tracker landed 2026-08-25: two tables, a stage
       **event log** with the board derived from it, ten endpoints and a `/jobs` page. A
       pasted list is parsed and tagged by one structured Sonnet 5 call; above ten rows a

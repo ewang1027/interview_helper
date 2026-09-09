@@ -33,7 +33,7 @@ def test_the_whole_taxonomy_comes_back_in_one_request():
     """The reason this exists: the dashboard was assembling 159 concepts from one weakness
     ranking per mode, four requests for static build-time content."""
     body = get("/concepts").json()
-    assert body["total"] == len(load_concepts()) == 159
+    assert body["total"] == len(load_concepts()) == 186
     assert {row["id"] for row in body["concepts"]} == {c.id for c in load_concepts()}
 
 

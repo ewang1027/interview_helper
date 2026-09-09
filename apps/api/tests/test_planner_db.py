@@ -115,15 +115,23 @@ def test_an_injected_weakness_gets_drilled(created_sessions):
     default is not a gate. So: the first session must *not* be the weak item, and by the
     end the engine must actually believe the candidate is weakest at that concept.
 
-    **The window was five sessions and is now ten**, because authoring
-    `hash-map-counting` woke up a term that had never been able to fire. It gates six
-    coding concepts, so its `unlocks` term is 0.086 against `monotonic-stack`'s 0.014, and
-    at cold start — where every weakness term sits at 0.199 because nothing is measured —
-    that difference decides the order. The planner spends sessions 1-3 establishing a
-    foundational concept that unlocks six others before it drills anything, which is
-    docs/ADAPTIVE.md's stated intent for the term rather than a regression. Measured:
-    sessions 4-7 all serve the weakness, session 8 rotates away on anti-repetition, and
-    9-10 return to it.
+    **The window was five sessions, then ten, and is now twelve.** Ten came from authoring
+    `hash-map-counting`, which woke up a term that had never been able to fire: it gates
+    six coding concepts, so its `unlocks` term is 0.086 against `monotonic-stack`'s 0.014,
+    and at cold start — where every weakness term sits at 0.199 because nothing is
+    measured — that difference decides the order. The planner spends sessions 1-3
+    establishing a foundational concept that unlocks six others before it drills anything,
+    which is docs/ADAPTIVE.md's stated intent for the term rather than a regression.
+    Measured then: sessions 4-7 all serve the weakness, session 8 rotates away on
+    anti-repetition, and 9-10 return to it.
+
+    Twelve came from the 2026-09-09 taxonomy expansion, which added 27 coding concepts and
+    with them prerequisite edges *into* the concepts the corpus already measures —
+    `two-pointers` and `edge-case-enumeration` each gained unlocks — so the sliding-window
+    item earned a fourth exploration session before the drill began. Measured: sessions
+    1-3 the counting item, 4 the sliding-window item, 5-8 the weakness, 9 rotates back to
+    the counting item, 10-12 the weakness. Five of ten was one short of a majority; seven
+    of twelve is not.
 
     Two consequences worth naming, because both will recur. A *majority* over a growing
     window is not a gate this engine can ever satisfy — `W_EXPOSURE` guarantees it rotates
@@ -136,7 +144,7 @@ def test_an_injected_weakness_gets_drilled(created_sessions):
     client = client_with(runner)
 
     served: list[str] = []
-    for _ in range(10):
+    for _ in range(12):
         session = start(client, created_sessions, budget=20)
         item_id = session["plan"]["items"][0]["item_id"]
         served.append(item_id)

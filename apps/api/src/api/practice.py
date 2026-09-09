@@ -131,7 +131,7 @@ def concept_ids() -> frozenset[str]:
 
 
 def taxonomy_prompt() -> str:
-    """The 159 concepts, one line each, above the cache breakpoint.
+    """The 186 concepts, one line each, above the cache breakpoint.
 
     docs/COST.md's cache shape: this block changes only when the corpus version bumps, and
     the per-problem details go in the message below it. `api.llm` marks the system block
@@ -469,7 +469,7 @@ def import_from_leetcode(
 
     Every import is **held** for confirmation rather than auto-accepted — see `log_problem`'s
     `hold`. What this removes is not the confirmation, it is having to search a
-    159-concept taxonomy for each problem: the suggestion arrives pre-selected and
+    186-concept taxonomy for each problem: the suggestion arrives pre-selected and
     `resolve_classification` is one call away.
 
     One bad slug never fails the batch. Somebody pasting fifty lines will have a typo in

@@ -22,12 +22,12 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("dashboard", () => {
   it("reports what it measured against the size of the taxonomy", async () => {
-    // "1 concept measured" reads very differently once you know there are 159, which is
+    // "1 concept measured" reads very differently once you know there are 186, which is
     // why the API returns `measured` alongside the rows at all.
     renderPage(<Dashboard />);
 
     expect(await screen.findByText("Concepts measured")).toBeInTheDocument();
-    expect(await screen.findByText("of 159 in the taxonomy")).toBeInTheDocument();
+    expect(await screen.findByText("of 186 in the taxonomy")).toBeInTheDocument();
   });
 
   it("draws the whole taxonomy, not only the measured part", async () => {

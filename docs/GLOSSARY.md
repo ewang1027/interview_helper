@@ -12,6 +12,11 @@ a graded artifact can produce evidence about. `sliding-window` is a concept; "ar
 not, because it names a data type rather than a competence. Ids are permanent because
 evidence is keyed on them. → [CONCEPTS](CONCEPTS.md)
 
+**Alias** — a search term carried on a concept (`tags` in `concepts.json`): the problem
+names and informal words a person reaches for when they cannot name the concept — *meeting
+rooms*, *kadane*, *bisect*. The practice log's picker searches them; nothing classifies on
+them. → [CONCEPTS](CONCEPTS.md#aliases)
+
 **Archetype** — a recurring interview *pattern*, attested by at least two independent
 sources. Carries no tests. It is a claim that this pattern is really asked, plus the
 evidence for the claim. → [CORPUS](CORPUS.md)

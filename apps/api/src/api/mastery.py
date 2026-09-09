@@ -325,7 +325,7 @@ def mastery_view(db: Session, user_id: str) -> dict[str, Any]:
     return {
         "concepts": [mastery_row_view(row) for row in rows],
         # Stated because "12 concepts, weakest first" reads very differently once you know
-        # the taxonomy has 159 and the rest have never been measured at all.
+        # the taxonomy has 186 and the rest have never been measured at all.
         "measured": len(rows),
         "calibrating": sum(1 for row in rows if is_calibrating(row.observations)),
     }

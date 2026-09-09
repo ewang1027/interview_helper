@@ -101,6 +101,171 @@ def test_memoization_survives_the_dp_blocker():
     assert problem("climbing-stairs", *tags).concept()[0] == "memoization"
 
 
+# --- The 2026-09-09 taxonomy expansion: tags that now name a concept ----------------------
+
+
+@pytest.mark.parametrize(
+    ("slug", "tags", "expected"),
+    [
+        (
+            "min-cost-to-connect-all-points",
+            ("array", "union-find", "graph", "minimum-spanning-tree"),
+            # Union-find is first in the table and this problem carries it, so MST loses to
+            # the structure it is built from. Pinned so the ordering is a decision, not an
+            # accident — Kruskal *is* union-find over sorted edges.
+            "union-find",
+        ),
+        (
+            "reconstruct-itinerary",
+            ("depth-first-search", "graph", "eulerian-circuit"),
+            "eulerian-path",
+        ),
+        (
+            "critical-connections-in-a-network",
+            ("depth-first-search", "graph", "biconnected-component"),
+            "bridges-articulation",
+        ),
+        (
+            "range-sum-query-mutable",
+            ("array", "design", "binary-indexed-tree", "segment-tree"),
+            "range-query-structures",
+        ),
+        (
+            "my-calendar-i",
+            ("array", "binary-search", "design", "segment-tree", "ordered-set"),
+            "ordered-set-queries",
+        ),
+        (
+            "the-skyline-problem",
+            (
+                "array",
+                "divide-and-conquer",
+                "binary-indexed-tree",
+                "segment-tree",
+                "line-sweep",
+                "heap-priority-queue",
+                "ordered-set",
+            ),
+            "ordered-set-queries",
+        ),
+        # The difference-array solution, which is the one the prefix-sum tag names.
+        (
+            "car-pooling",
+            ("array", "sorting", "heap-priority-queue", "simulation", "prefix-sum"),
+            "prefix-sums",
+        ),
+        (
+            "find-the-index-of-the-first-occurrence-in-a-string",
+            ("two-pointers", "string", "string-matching"),
+            "string-matching",
+        ),
+        (
+            "longest-happy-prefix",
+            ("string", "rolling-hash", "string-matching", "hash-function"),
+            "string-matching",
+        ),
+        (
+            "random-pick-with-weight",
+            ("math", "binary-search", "prefix-sum", "randomized"),
+            "reservoir-sampling",
+        ),
+        (
+            "linked-list-random-node",
+            ("linked-list", "math", "reservoir-sampling", "randomized"),
+            "reservoir-sampling",
+        ),
+        ("stone-game", ("array", "math", "dynamic-programming", "game-theory"), "minimax-games"),
+        ("nim-game", ("math", "brainteaser", "game-theory"), "minimax-games"),
+        (
+            "binary-search-tree-iterator",
+            ("stack", "tree", "design", "binary-search-tree", "binary-tree", "iterator"),
+            "iterator-design",
+        ),
+        ("peeking-iterator", ("array", "design", "iterator"), "iterator-design"),
+        ("print-in-order", ("concurrency",), "thread-safety-basics"),
+        ("maximum-gap", ("array", "sorting", "bucket-sort", "radix-sort"), "counting-sort-buckets"),
+        (
+            "kth-largest-element-in-an-array",
+            ("array", "divide-and-conquer", "sorting", "heap-priority-queue", "quickselect"),
+            "heap-top-k",
+        ),
+        (
+            "sort-list",
+            ("linked-list", "two-pointers", "divide-and-conquer", "sorting", "merge-sort"),
+            "two-pointers",
+        ),
+        (
+            "max-points-on-a-line",
+            ("array", "hash-table", "math", "geometry"),
+            "coordinate-geometry",
+        ),
+        ("count-primes", ("array", "math", "enumeration", "number-theory"), "integer-math"),
+        ("set-matrix-zeroes", ("array", "hash-table", "matrix"), "matrix-manipulation"),
+        ("rotate-image", ("array", "math", "matrix"), "matrix-manipulation"),
+        ("robot-bounded-in-circle", ("math", "string", "simulation"), "simulation"),
+        ("spiral-matrix", ("array", "matrix", "simulation"), "matrix-manipulation"),
+        (
+            "merge-k-sorted-lists",
+            ("linked-list", "divide-and-conquer", "heap-priority-queue", "merge-sort"),
+            "heap-top-k",
+        ),
+        ("power-of-two", ("math", "bit-manipulation", "recursion"), "bit-tricks"),
+        (
+            "fibonacci-number",
+            ("math", "dynamic-programming", "recursion", "memoization"),
+            "memoization",
+        ),
+    ],
+)
+def test_the_expanded_table_names_the_expanded_taxonomy(slug, tags, expected):
+    """Real tag sets, copied from the problems named. Several pin a *loss* — `sort-list`
+    to two-pointers, `the-skyline-problem` to the ordered set — because the point of a
+    first-match table is that the order is a decision, and a decision is a thing to pin."""
+    assert problem(slug, *tags).concept()[0] == expected
+
+
+def test_every_mapped_concept_exists():
+    """A table entry naming a concept the taxonomy lacks would fail at insert time, against
+    a foreign key, after somebody had already pasted fifty links."""
+    from corpus.loader import load_concepts
+
+    known = {c.id for c in load_concepts()}
+    missing = {concept for _, concept in leetcode.TAG_TO_CONCEPT if concept not in known}
+    assert not missing
+
+
+def test_a_game_tagged_dp_is_a_game():
+    """Unlike the alternative-solution co-tags the blocker exists for, a game problem is a
+    minimax problem however it is solved, so `game-theory` is let through."""
+    tags = ("array", "math", "dynamic-programming", "game-theory")
+    assert problem("predict-the-winner", *tags).concept()[0] == "minimax-games"
+
+
+def test_an_iterator_is_not_swallowed_by_design():
+    """`flatten-nested-list-iterator` carries `stack` and `tree` under `design`. Before
+    `iterator` sat above them in the table, `stack` matched first, was blocked, and the
+    problem suggested nothing — a specific tag lost to a blocked general one."""
+    tags = ("stack", "tree", "depth-first-search", "design", "queue", "iterator")
+    assert problem("flatten-nested-list-iterator", *tags).concept()[0] == "iterator-design"
+
+
+def test_a_data_stream_design_problem_still_waits():
+    """`kth-largest-element-in-a-stream` is a heap under `design`, and heaps are not let
+    through: `find-median-from-data-stream` carries `two-pointers` above its heap tag and
+    would come out as a two-pointer problem."""
+    tags = (
+        "tree",
+        "design",
+        "binary-search-tree",
+        "heap-priority-queue",
+        "binary-tree",
+        "data-stream",
+    )
+    concept, why = problem("kth-largest-element-in-a-stream", *tags).concept()
+    assert concept is None
+    assert "design" in why
+
+
 @pytest.mark.parametrize(
     "tags",
     [

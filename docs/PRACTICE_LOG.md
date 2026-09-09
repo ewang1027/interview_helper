@@ -23,6 +23,11 @@
 > LeetCode problems they name — `source_site` gained a `neetcode` value, and dedupe moved
 > from the URL to the LeetCode slug so one problem is one row whichever site you worked it
 > on. Nothing is fetched from neetcode.io; the mapping is a checked-in table.
+> **Re-tagged 2026-09-09:** the coding taxonomy grew from 52 to 79 concepts
+> ([CONCEPTS](CONCEPTS.md#the-2026-09-09-coding-expansion)), the picker searches
+> problem-name aliases, and all 23 logged problems were re-tagged against it by
+> `scripts/retag_practice_problems.py` — the one sanctioned way to correct a tag whose
+> evidence is already written, described [below](#correcting-a-tag-after-its-evidence-is-written).
 > Related: [ARCHITECTURE](ARCHITECTURE.md#data-model) ·
 > [ADAPTIVE](ADAPTIVE.md) (the evidence/scheduling machinery this reuses) ·
 > [CORPUS](CORPUS.md) (why this is manual-entry-only) ·
@@ -35,7 +40,7 @@ Real practice happens outside this app — LeetCode, Codeforces, wherever. Witho
 feature that practice is invisible to the adaptive engine: you could be strong on a
 concept from a hundred outside solves and the planner would still treat you as
 untested on it. The practice log closes that loop by letting you tell the system what
-you solved, classifying it against the same 159-concept taxonomy the interview corpus
+you solved, classifying it against the same 186-concept taxonomy the interview corpus
 uses, and feeding the result into the same `concept_evidence`/`mastery` machinery
 [ADAPTIVE](ADAPTIVE.md) already defines — so outside practice moves the same needle
 in-app sessions do, instead of living as a disconnected log.
@@ -73,7 +78,7 @@ Two things this deliberately does *not* buy with the new access:
   its tags name pre-selected, and waits. `resolve_classification` refuses anything already
   resolved — the evidence is written and evidence is immutable — so a wrong auto-accept
   could never be corrected, while a wrong suggestion costs a click. The import removes
-  searching 159 concepts, not the confirmation.
+  searching 186 concepts, not the confirmation.
 - **No credential.** Recent solves come from a *public* profile and problem metadata needs
   no session at all. A full solve history would need a `LEETCODE_SESSION` cookie; that is
   a live credential on a machine whose repo is public, and pasting links reaches the same
@@ -202,14 +207,14 @@ Structured output:
 
 ```jsonc
 {
-  "primary_concept_id": "string, must be one of the 159 ids in concepts.json",
+  "primary_concept_id": "string, must be one of the 186 ids in concepts.json",
   "secondary_concept_ids": ["string", "..."],  // 0-4
   "confidence": 0.0,                            // 0-1
   "reasoning": "string, short paraphrase — never problem text"
 }
 ```
 
-Prompt is cache-shaped per [COST](COST.md)'s convention: the frozen 159-concept
+Prompt is cache-shaped per [COST](COST.md)'s convention: the frozen 186-concept
 taxonomy sits above the `cache_control` breakpoint (only changes when the corpus
 version bumps); the volatile per-problem `title`/`url`/`notes` sit below.
 
@@ -274,13 +279,42 @@ pending_classification ──(confirm/correct, or auto-accept ≥0.75)──▶ 
 | `GET` | `/practice/review-queue` | `status="active"` and `due_at <= now`, most-overdue first. |
 | `POST` | `/practice/problems/{id}/reviews` | Record a re-solve attempt: `{is_success, notes?, attempted_at?}`. Applies the interval rule above. `409` if `status` is not `"active"`. |
 
+## Correcting a tag after its evidence is written
+
+`PATCH .../classification` refuses a problem that is already `active`, and the refusal is
+right: its evidence is written, and a casual edit that left the evidence pointing at the
+old concept would make the row and the problem disagree. But a wrong tag confirmed on the
+day it was logged is still a wrong tag — on 2026-09-09 eleven of 23 were, including
+*Invert Binary Tree* filed as `graph-bfs` — and its evidence keeps moving a concept the
+problem never exercised.
+
+The correction is `scripts/retag_practice_problems.py`, run from a shell with a mapping
+file, and it is a script rather than an endpoint on purpose: it runs against a database you
+have just backed up (`make backup`), with `--dry-run` first, and its output names every row
+it touches. Per problem:
+
+- **Still `pending_classification`** — resolved through `resolve_classification`, which
+  writes the evidence that was waiting. No exception to anything.
+- **Already resolved** — the problem's primary and secondaries are set, and every evidence
+  row that carried the *old primary* is re-pointed to the new one. Score, confidence and
+  timestamp stay: the solve happened, at that time, with that certainty; only the concept
+  it was credited to was wrong. Rows on a secondary the new tags drop are left where they
+  are and reported. New secondaries apply to the *next* solve — nothing is written for a
+  past one it did not write at the time.
+
+Then `mastery` is rebuilt from the corrected log, which is what a projection is for. This
+is the one place in the project that updates a `concept_evidence` row, and the rule it
+lives under is the one [CONCEPTS](CONCEPTS.md#stability-rules) already states: what
+happens to existing evidence is decided explicitly, in the same commit, with the mapping
+checked in beside the script (`scripts/retags/`).
+
 ## What this deliberately does not do
 
 - **No scraping, no URL fetch of problem content** — see above. Metadata import
   (`title`, `difficulty`, topic tags) landed 2026-08-24 and is inside this rule, not an
   exception to it: the problem page is still never fetched.
 - **No auto-accepted classification from an import.** A tag naming a family this taxonomy
-  splits several ways suggests nothing at all — `dynamic-programming` covers five concepts
+  splits several ways suggests nothing at all — `dynamic-programming` covers eight concepts
   here and `design` covers three. LeetCode co-tags DP problems with the alternative
   solutions people post, and trusting that once imported `coin-change` as a graph problem.
 - **No LeetCode credential.** Public metadata only.
@@ -298,7 +332,7 @@ pending_classification ──(confirm/correct, or auto-accept ≥0.75)──▶ 
 
 ## Open questions / risks
 
-- Haiku 4.5's classification accuracy against 159 concepts is uncalibrated. Before
+- Haiku 4.5's classification accuracy against 186 concepts is uncalibrated. Before
   trusting auto-accept at the 0.75 threshold, build a small hand-labeled gold set —
   same spirit as [GRADING](GRADING.md)'s calibration harness for LLM graders.
 - The growth factor (2.5×), initial interval (3 days), and lapse shrink (0.5×) are

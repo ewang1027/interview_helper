@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-09-07
+## Where things stand — 2026-09-09
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -19,15 +19,15 @@ detail behind it.
 
 | Phase | State | What exists | What it still owes |
 |---|---|---|---|
-| **0** Foundations | **complete** | workspace, 159-concept taxonomy, corpus schema + validator, CI | — |
-| **1** Corpus v1 | **partial** — thin slice | 48 items — 4 archetypes **and 8 instances** in every one of the four domains. The fourth archetype in each measures a **prerequisite** of a concept already served, which is what the planner's gate needs | bulk authoring toward ~400/~150, and archetypes for the other 143 concepts nothing measures as a primary |
+| **0** Foundations | **complete** | workspace, the **186-concept taxonomy** (159 until the coding domain grew by 27 on 2026-09-09), corpus schema + validator, CI | — |
+| **1** Corpus v1 | **partial** — thin slice | 48 items — 4 archetypes **and 8 instances** in every one of the four domains. The fourth archetype in each measures a **prerequisite** of a concept already served, which is what the planner's gate needs | bulk authoring toward ~400/~150, and archetypes for the other 170 concepts nothing measures as a primary |
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **complete** | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | — *(closed 2026-08-25: a real session ran end to end on the Anthropic API — conversation, `run_code` against the sandbox, submission, grading, evidence. Bedrock is still gated on a use-case form; the provider switch is one env var)* |
-| **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within ten sessions — five until `W_UNLOCKS` woke up | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus |
-| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, `/login`. Monaco served locally rather than from a CDN. The applications board is searchable and pages twenty rows at a time. 87 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
+| **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within twelve sessions — five until `W_UNLOCKS` woke up, ten until the 2026-09-09 taxonomy expansion added edges into the concepts the corpus measures | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus and with the prerequisite graph |
+| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import and a concept picker that searches problem-name **aliases** (2026-09-09), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable and pages twenty rows at a time. 89 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
 | **6** AWS deploy | **partial** — step 1 of 5 | Dockerfiles for `api`, `executor` and `web`; `make up-stack` runs all of it behind a **Caddy front door** routing by path, the job the ALB does — so compose mirrors the target topology. Only the front door publishes a port. Sandbox isolation re-verified from inside the containerised launcher | steps 2–5: one service on Fargate by hand, Terraform, the rest of the stack, the portability gate — **all blocked on an authenticated AWS session**, not on code |
 | **7–8** Voice, hardening | **not started** | — | — |
-| **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does. The import takes **NeetCode links** as well as LeetCode ones (2026-09-07) | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
+| **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does. The import takes **NeetCode links** as well as LeetCode ones (2026-09-07). **Re-tagged 2026-09-09** against the expanded taxonomy: all 23 logged problems, eleven of them wrong before, by a script that corrects the evidence they wrote and rebuilds mastery | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
 | **10** Job applications | **built** | two tables, the **stage event log** and the projection over it, ten endpoints, a Sonnet 5 paste parser, an Opus 5 **web-search research pass**, and the `/jobs` page. **Run live 2026-08-26**: a messy five-row paste parsed correctly, six real web searches, an import down to 3 SQL statements from 240 | the gold set for calibrating the tagging; time-in-stage, which the events already record and nothing reports; a research trigger based on what a row is missing rather than how long the list is |
 
 ~~One thing worth knowing before reading anything else as further along than it is: **no
@@ -6173,3 +6173,145 @@ path segment after the slug**, which is what the site's address bar actually hol
 you are solving a problem — it appends `/question`. That URL and the `/solution` form are
 parametrised cases now. The regex was right by construction, which is exactly the kind of
 correctness that stops being true on the next edit if nothing pins it.
+
+## Wave — The taxonomy did not have a word for meeting rooms · 2026-09-09
+
+Asked for directly: *I need a more comprehensive list of concepts tested for the practice
+LeetCode portion. Sometimes I can't find the correct tag for a problem — a lot of the
+meeting room / interval problems are not under any category. Go through what's recorded
+now, fix their tags, and add new appropriate tags for any problem type.*
+
+Checked against the log before believing it, and it was true in two different ways.
+
+### What the log actually said
+
+Twenty-three problems, twenty-two with evidence already written. Eleven were tagged
+wrongly on inspection, and the wrong ones were not random — they were what a person picks
+when the right concept is absent or unfindable:
+
+```
+Meeting Rooms                    prefix-sums           -> interval-merge
+Merge Intervals                  prefix-sums           -> interval-merge
+Meeting Rooms II                 two-pointers          -> interval-overlap-count
+Non-overlapping Intervals        (pending, untagged)   -> interval-scheduling
+Invert Binary Tree               graph-bfs             -> tree-traversal
+Missing Number                   binary-search-index   -> bit-tricks
+Group Anagrams                   hash-map-counting     -> custom-hash-keys
+Contains Duplicate               hash-map-counting     -> hash-set-dedup
+Move Zeroes                      two-pointers          -> in-place-mutation
+Roman to Integer                 hash-map-counting     -> string-parsing
+Longest Common Prefix            trie                  -> string-parsing
+Best Time to Buy and Sell Stock  sliding-window        -> kadane-running-best
+```
+
+Three of those came from the LeetCode tag table doing what it was told (`invert-binary-tree`
+carries `breadth-first-search`; `missing-number` carries `binary-search`; `longest-common-prefix`
+carries `trie`), and the human confirmed the suggestion each time. The interval ones were
+picked by hand, and `prefix-sums` for *Merge Intervals* is the tell: `interval-scheduling`
+existed the whole time, but it was named *Interval problems*, described merging and
+counting and scheduling in one sentence, and a search for "meeting" found nothing. A
+taxonomy phrased as competences is the right thing for a grader to read and the wrong thing
+to search when what you know is the problem you just solved.
+
+### What was added
+
+**27 coding concepts** (52 → 79; 159 → 186 overall), listed with their reasons in
+[CONCEPTS](CONCEPTS.md#the-2026-09-09-coding-expansion). The intervals became three:
+`interval-merge`, `interval-overlap-count` (sweep line, min-heap of end times) and
+`interval-scheduling` narrowed to the greedy-by-end-time selection. The rest is what the
+NeetCode 150 and LeetCode's own tag set ask for and the 52 had no home for — Kadane,
+constant-space index tricks, matrices, counting sort, palindromes, KMP/rolling hash,
+number theory, geometry, sampling, tree construction, Fenwick/segment trees, k-way merge,
+heap-driven scheduling, sorted containers, bipartite checks, state-space BFS, MST, Eulerian
+paths, Bellman–Ford, bridges, state-machine DP, minimax, divide and conquer, frontier
+greedy, simulation. Every id is new; no existing id changed, so nothing was orphaned.
+
+**Aliases.** Every coding concept now carries `tags` — the problem names and informal words
+a person reaches for — and the picker searches them, showing the alias it matched beside the
+name. "meeting rooms" finds `interval-merge` and `interval-overlap-count`; "kadane" finds the
+concept whose name is *Single-pass running best*. Search metadata only: nothing classifies
+on an alias.
+
+**The tag table grew with the taxonomy.** Thirty more LeetCode topic tags name a
+concept (24 → 54) (`line-sweep`, `minimum-spanning-tree`, `segment-tree`, `game-theory`, `iterator`,
+`concurrency`, `matrix`…), and two ordering decisions are pinned by tests because a
+first-match table is a list of decisions: `iterator` sits above `stack` and `tree` so an
+iterator problem is not blocked by its `design` tag, and `heap-priority-queue` moved above
+`linked-list` so *Merge k Sorted Lists* is a heap problem. Several cases pin a *loss* on
+purpose — *Sort List* to two-pointers, *Car Pooling* to prefix sums — so a reordering is a
+visible change rather than a silent one.
+
+### The decision: what happens to evidence that was wrong
+
+`PATCH .../classification` refuses a resolved problem, and the refusal stays. But eleven
+rows of immutable evidence were crediting concepts the problems never exercised — `graph-bfs`
+had a mastery row built entirely on *Invert Binary Tree*. [CONCEPTS](CONCEPTS.md#stability-rules)
+already said what to do: splitting a concept is a migration, and what happens to existing
+evidence is decided in the same commit.
+
+`scripts/retag_practice_problems.py` is that decision. Run once, after `make backup`, dry
+run first: it re-points each evidence row that carried the old primary to the new one and
+leaves score, confidence and timestamp alone — the solve happened, at that time, with that
+certainty; only the credited concept was wrong — resolves anything still pending through
+the ordinary path, and rebuilds `mastery`. New secondaries apply to the next solve; nothing
+is invented for a past one. The mapping is checked in beside it
+(`scripts/retags/2026-09-09-taxonomy-expansion.json`), so a restore from an older dump can
+be brought forward by running it again.
+
+```
+resolved 1 pending problem(s), re-pointed 11 evidence row(s);
+mastery rebuilt from 26 rows over 18 concepts
+```
+
+`graph-bfs` no longer has a mastery row. `interval-merge` has three observations, from the
+two merge problems and the secondary on *Non-overlapping Intervals*.
+
+### The planner gate moved to twelve sessions
+
+`test_an_injected_weakness_gets_drilled` failed on the first `make test-db`, five of ten
+rather than a majority. Its own docstring predicted this: the exploration prologue scales
+with unmeasured foundational corpus. This time the corpus did not change — the taxonomy
+did, and the new concepts' prerequisite edges point *into* concepts the corpus already
+measures. `two-pointers` gained `palindromes`; `edge-case-enumeration` gained
+`matrix-manipulation` and `simulation`; the sliding-window item carries both and earned a
+fourth exploration session. Measured over twelve: sessions 1–3 the counting item, 4 the
+sliding-window item, 5–8 the weakness, 9 a rotation, 10–12 the weakness — seven of twelve,
+most-served and weakest-rated both holding. The window is twelve in the test, in
+[ADAPTIVE](ADAPTIVE.md#how-this-gets-verified), in the README and in the phase table above.
+Nothing regressed; the prologue grew, for the second time, for the reason the formula says.
+
+### Verified
+
+- `make corpus-validate`: **186 concepts**, DAG valid, 0 errors, 0 warnings. A check in the
+  rewrite proved the other three domains came out byte-identical and every existing coding
+  concept changed only by gaining `tags`, except `interval-scheduling`'s name, description
+  and one prerequisite.
+- **73 offline tests** on the tag table (up from 41), 28 of them real tag sets copied from
+  the problems named, plus one that fails if any table entry names a concept the taxonomy
+  lacks — the failure otherwise arrives as a foreign-key error after fifty links are pasted.
+- `make test-db`: **217 passed**, 1 skipped, after the window moved — the count-pinning
+  test against `GET /concepts` now asserts 186.
+- **89 component tests**, up from 87: the picker finds a concept by a problem-name alias
+  and shows the alias, and ranks a name match above an alias match. eslint and
+  `tsc --noEmit` clean. The dashboard test's "of 186 in the taxonomy" follows the fixture.
+- `make lint`, `make typecheck`, `make secret-scan`: clean. `make check` still stops at
+  `check-web` on this machine — corepack invokes pnpm 12 against a repo pinned to 11.24.0,
+  the 2026-09-07 finding, unchanged and not fixed here — so the three web tools were run
+  directly out of `apps/web/node_modules/.bin`, which is what the target does.
+- **Live, on the rebuilt stack** (`make up-stack`, the 2026-09-07 lesson applied before
+  anyone reported it): `GET /concepts` answers 186 with the aliases on each row; the
+  practice list shows the corrected tags; `GET /mastery` measures 18 concepts, the three
+  interval ones among them.
+- `make seed` loaded the 27 new concepts and 213 edges into the live database idempotently
+  before the retag, which refuses to run against a database that lacks a concept it names.
+
+### Not verified
+
+- **The classifier has not been run against the new taxonomy.** The prompt lists 186
+  concepts now, and the 0.75 gate is as uncalibrated at 186 as it was at 159. The
+  hand-labelled gold set is still owed, and it is more owed than it was.
+- **Nothing opened in a browser.** The alias shown beside a picker row is unreviewed
+  visually, like everything else in Phase 5's standing caveat.
+- **The alias lists are one person's first pass.** They were written from the NeetCode 150
+  and LeetCode's tag pages, not measured against searches that failed; the next "I can't
+  find the tag" is the data that improves them.

@@ -23,7 +23,7 @@ import { api, idempotencyKey } from "@/lib/api";
  * **Everything lands awaiting confirmation, and that is deliberate.** A resolved
  * classification cannot be re-tagged — its evidence is written, and evidence is
  * immutable — so a wrong auto-accept would be permanent. What the import removes is
- * searching 159 concepts per problem, not the confirmation.
+ * searching 186 concepts per problem, not the confirmation.
  */
 export function LeetCodeImport({ onImported }: { onImported: () => void }) {
   const [pasted, setPasted] = useState("");

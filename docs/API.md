@@ -250,7 +250,7 @@ growth curve with no ceiling, which is the kind of thing this repo prefers writt
 | `POST` | `/mastery/recompute` | Rebuild the projection from `concept_evidence` | ✅ built |
 
 `GET /mastery` reports `measured` and `calibrating` alongside the rows, because "four
-concepts, weakest first" reads very differently once you know the taxonomy has 159 and the
+concepts, weakest first" reads very differently once you know the taxonomy has 186 and the
 rest have never been measured at all.
 
 `GET /mastery/{concept_id}` returning the underlying evidence is the feature that makes
@@ -343,11 +343,11 @@ topic tags name a concept in this taxonomy in most cases (`sliding-window`, `uni
 `pending_classification`, not `active`. The reason is `PATCH .../classification` refusing
 anything already resolved: the evidence is written and evidence is immutable, so an
 auto-accepted tag that turns out wrong could never be corrected. A suggestion costs one
-confirmation; a wrong auto-accept is permanent. What the import removes is searching 159
+confirmation; a wrong auto-accept is permanent. What the import removes is searching 186
 concepts per problem, not the confirmation itself.
 
 **A tag naming a family this taxonomy splits several ways suggests nothing.**
-`dynamic-programming` covers five concepts here and `design` covers three, and LeetCode
+`dynamic-programming` covers eight concepts here and `design` covers three, and LeetCode
 routinely co-tags a DP problem with the alternative solutions people post — measured:
 `coin-change` carries `breadth-first-search`, and an earlier version of the table imported
 it as a graph problem. Those problems arrive unsuggested and wait for a human, which is the

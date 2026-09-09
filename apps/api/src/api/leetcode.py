@@ -21,7 +21,7 @@ matters because the model classifier cannot run here and every logged problem ot
 lands `pending_classification` for a human to tag by hand.
 
 **An ambiguous tag proposes nothing.** `concept_evidence` is immutable, so a wrong tag is a
-permanent wrong fact about someone's mastery — and `dynamic-programming` covers five
+permanent wrong fact about someone's mastery — and `dynamic-programming` covers eight
 concepts in this taxonomy. Broad tags are deliberately absent from the table below, and a
 problem carrying only those lands `pending_classification` exactly as it does today. The
 gate this feature must not weaken is the one that says a guess does not count.
@@ -79,8 +79,11 @@ TAG_CONFIDENCE = 0.9
 # Tags absent on purpose, because each covers more than one concept here and guessing
 # writes immutable evidence against the wrong one:
 #   dynamic-programming  -> dp-1d / dp-2d-grid / dp-knapsack / dp-subsequences / dp-intervals
-#   graph                -> graph-bfs / graph-dfs / topological-sort / union-find
-#   array, string, math, simulation, sorting, counting, database, geometry, number-theory
+#                           / dp-state-machine / tree-dp / kadane-running-best
+#   graph                -> graph-bfs / graph-dfs / topological-sort / union-find / ...
+#   math                 -> integer-math / bit-tricks / coordinate-geometry / minimax-games
+#   sorting              -> comparison-sort / counting-sort-buckets / interval-merge / ...
+#   array, string, simulation-as-a-family, counting, database, enumeration, interactive
 TAG_TO_CONCEPT: tuple[tuple[str, str], ...] = (
     # Unmistakable: the tag names one technique and this taxonomy has exactly one for it.
     ("union-find", "union-find"),
@@ -88,7 +91,29 @@ TAG_TO_CONCEPT: tuple[tuple[str, str], ...] = (
     ("trie", "trie"),
     ("monotonic-stack", "monotonic-stack"),
     ("monotonic-queue", "deque-window"),
+    # `iterator` sits this high because every iterator problem is also tagged `stack`,
+    # `tree` or `binary-search-tree`, and any of those matching first would be blocked by
+    # `design` and suggest nothing.
+    ("iterator", "iterator-design"),
+    ("minimum-spanning-tree", "minimum-spanning-tree"),
+    ("eulerian-circuit", "eulerian-path"),
+    ("biconnected-component", "bridges-articulation"),
+    ("strongly-connected-component", "bridges-articulation"),
     ("shortest-path", "shortest-path-weighted"),
+    # Ordered set before the range structures: `my-calendar-i` carries both, and it is a
+    # sorted-container problem that a segment tree also happens to solve.
+    ("ordered-set", "ordered-set-queries"),
+    ("segment-tree", "range-query-structures"),
+    ("binary-indexed-tree", "range-query-structures"),
+    ("line-sweep", "interval-overlap-count"),
+    ("rolling-hash", "string-matching"),
+    ("string-matching", "string-matching"),
+    ("suffix-array", "string-matching"),
+    ("hash-function", "string-matching"),
+    ("reservoir-sampling", "reservoir-sampling"),
+    ("rejection-sampling", "reservoir-sampling"),
+    ("randomized", "reservoir-sampling"),
+    ("game-theory", "minimax-games"),
     ("bitmask", "bitmask-enumeration"),
     ("memoization", "memoization"),
     ("sliding-window", "sliding-window"),
@@ -100,6 +125,8 @@ TAG_TO_CONCEPT: tuple[tuple[str, str], ...] = (
     # called it a graph problem — measured, and the reason this line sits here.
     ("binary-search-tree", "bst-invariants"),
     ("binary-search", "binary-search-index"),
+    # Heap before linked list, so `merge-k-sorted-lists` is a heap problem rather than a
+    # pointer-rewiring one. Nothing else carries both.
     ("heap-priority-queue", "heap-top-k"),
     ("linked-list", "linked-list-manipulation"),
     ("breadth-first-search", "graph-bfs"),
@@ -107,10 +134,25 @@ TAG_TO_CONCEPT: tuple[tuple[str, str], ...] = (
     ("bit-manipulation", "bit-tricks"),
     ("greedy", "greedy-exchange"),
     ("stack", "stack-simulation"),
+    ("concurrency", "thread-safety-basics"),
+    ("counting-sort", "counting-sort-buckets"),
+    ("bucket-sort", "counting-sort-buckets"),
+    ("radix-sort", "counting-sort-buckets"),
+    ("quickselect", "divide-and-conquer"),
+    ("merge-sort", "divide-and-conquer"),
+    ("divide-and-conquer", "divide-and-conquer"),
+    ("geometry", "coordinate-geometry"),
+    ("number-theory", "integer-math"),
+    ("combinatorics", "integer-math"),
+    # `matrix` above `hash-table`: `set-matrix-zeroes` carries both and is a grid problem.
+    # Every grid *search* is also tagged BFS or DFS, which match first.
+    ("matrix", "matrix-manipulation"),
     # Weaker, and last for that reason: these fire only when nothing above matched.
     ("binary-tree", "tree-traversal"),
     ("tree", "tree-traversal"),
     ("hash-table", "hash-map-counting"),
+    ("simulation", "simulation"),
+    ("recursion", "recursion-basics"),
 )
 
 # A tag that names a *family* this taxonomy splits several ways. When one is present, only
@@ -123,10 +165,23 @@ TAG_TO_CONCEPT: tuple[tuple[str, str], ...] = (
 # linked-list manipulation. DP problems are routinely co-tagged with the alternative
 # solutions people post, which is exactly the signal that must not be trusted.
 FAMILY_TAGS: dict[str, frozenset[str]] = {
-    # dp-1d · dp-2d-grid · dp-knapsack · dp-subsequences · dp-intervals
-    "dynamic-programming": frozenset({"memoization"}),
-    # oop-class-design · lru-cache-design · iterator-design
-    "design": frozenset({"trie", "monotonic-queue"}),
+    # dp-1d · dp-2d-grid · dp-knapsack · dp-subsequences · dp-intervals · dp-state-machine
+    # · tree-dp · kadane-running-best. `game-theory` is allowed through because a game
+    # problem tagged DP is a minimax problem whichever way it is solved.
+    "dynamic-programming": frozenset({"memoization", "game-theory"}),
+    # oop-class-design · lru-cache-design · iterator-design. The structures let through are
+    # the ones a `design` problem is *about* rather than merely built from: a trie, a
+    # monotonic queue, an iterator, a sorted container, a range-query tree.
+    "design": frozenset(
+        {
+            "trie",
+            "monotonic-queue",
+            "iterator",
+            "ordered-set",
+            "segment-tree",
+            "binary-indexed-tree",
+        }
+    ),
 }
 
 

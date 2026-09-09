@@ -102,13 +102,16 @@ below 0.75 confidence writes no evidence, and neither does one whose provider wa
 unreachable; the problem is recorded, listed, kept out of the review queue and feeds
 nothing until a human confirms the tag ([PRACTICE_LOG](PRACTICE_LOG.md)). Since no model
 provider is reachable yet, that is *every* entry today — so confirming a tag is the common
-path, not the exception, and it gets a searchable picker over the whole 159-concept
-taxonomy rather than a 159-option `<select>`.
+path, not the exception, and it gets a searchable picker over the whole 186-concept
+taxonomy rather than a 186-option `<select>`. Since 2026-09-09 the picker searches each
+concept's **aliases** as well as its name and id — the problem names a person actually has
+in mind, *meeting rooms*, *group anagrams* — and shows the alias it matched beside the
+name, so the reason a concept came up is visible. A name match ranks above an alias match.
 
 **Importing solved problems** ([API](API.md#practice-log)) is on the same page: paste links
 or slugs, or give a public LeetCode username. Imports arrive with a concept suggested from
 LeetCode's own topic tags and a **Confirm all** action beside them, because fifty imports
-otherwise means fifty searches through a 159-concept list. It confirms only what the tags
+otherwise means fifty searches through a 186-concept list. It confirms only what the tags
 actually named; anything held back stays held back.
 
 **NeetCode links are accepted there too** (2026-09-07), and a row that came from one is
@@ -236,7 +239,7 @@ prints them.
 **The taxonomy is assembled from four weakness rankings, one per mode.** There is no
 `GET /concepts`, and `GET /mastery` returns only *measured* concepts, without a name or a
 domain on the row. The weakness ranking carries both and ranks the whole taxonomy — and
-while its `limit` caps at 100 against 159 concepts, the largest single domain is 52, so
+while its `limit` caps at 100 against 186 concepts, the largest single domain is 79, so
 splitting by mode is what makes the heatmap complete rather than merely convenient. A
 `GET /concepts` endpoint would replace this, and `/concepts` below needs one anyway to
 draw the DAG.

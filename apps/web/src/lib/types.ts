@@ -228,7 +228,7 @@ export interface MasteryRow {
 
 export interface MasteryView {
   concepts: MasteryRow[];
-  /** How many concepts have ever been measured — against a taxonomy of 159. */
+  /** How many concepts have ever been measured — against a taxonomy of 186. */
   measured: number;
   calibrating: number;
 }

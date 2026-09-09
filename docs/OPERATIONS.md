@@ -16,7 +16,7 @@ Worth being precise, because it determines what backup effort is justified:
 
 | Data | Replaceable? | Consequence of loss |
 |---|---|---|
-| `concept_evidence` | **No** | Months of graded history. Mastery is derived from it, so losing it resets the entire adaptive engine |
+| `concept_evidence` | **No** | Months of graded history. Mastery is derived from it, so losing it resets the entire adaptive engine. Never edited, with one exception: `scripts/retag_practice_problems.py` re-points a practice-log row's concept when its tag was wrong — after `make backup`, with `--dry-run` first ([PRACTICE_LOG](PRACTICE_LOG.md#correcting-a-tag-after-its-evidence-is-written)) |
 | `sessions`, `turns`, `artifacts` | No | Your transcripts. Also the input if a grader is ever re-run |
 | `mastery` | **Yes** — derived | Rebuild with `POST /mastery/recompute` |
 | Corpus | Yes — in git | Re-seed from `packages/corpus/` |
