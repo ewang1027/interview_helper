@@ -320,6 +320,7 @@ does carry a `422` for the same value arriving from an import.
 | `POST` | `/practice/import/leetcode` | Import by slug/URL — LeetCode or NeetCode — or a public profile's recent solves | ✅ built |
 | `GET` | `/practice/problems` | List, cursor-paginated, filterable by `concept_id` and `status` | ✅ built |
 | `GET` | `/practice/problems/{id}` | Detail, solve history, and the evidence those solves produced | ✅ built |
+| `PATCH` | `/practice/problems/{id}` | Edit what is yours: `labels`, `notes`, `difficulty_label` — never the tag or the schedule | ✅ built |
 | `PATCH` | `/practice/problems/{id}/classification` | Confirm or correct the tag; writes the held evidence | ✅ built |
 | `POST` | `/practice/problems/{id}/reviews` | Record a re-solve; `409` unless the problem is `active` | ✅ built |
 | `GET` | `/practice/review-queue` | What is due, most overdue first | ✅ built |
@@ -361,6 +362,15 @@ routinely co-tags a DP problem with the alternative solutions people post — me
 `coin-change` carries `breadth-first-search`, and an earlier version of the table imported
 it as a graph problem. Those problems arrive unsuggested and wait for a human, which is the
 same state a low-confidence model classification produces.
+
+**`PATCH /practice/problems/{id}` edits metadata and nothing else (2026-09-10).** It takes
+`labels` (up to twenty, forty characters each, deduplicated without regard to case), `notes`
+and `difficulty_label`; a field left out is left alone and one sent as `null` is cleared.
+Any other field is a `400`, which is what keeps it from being a way around the
+classification route's `409`. Every row now also carries `labels`, `primary_concept_name`,
+`topic` (the family the concept is filed under — [CONCEPTS](CONCEPTS.md#topics)) and
+`lists` (NeetCode's, keyed on the LeetCode slug), so the page can file and filter without
+a request per row.
 
 **A bad slug never fails the batch.** Someone pasting fifty lines has a typo in one of
 them; the response reports `imported` and `skipped` separately, each skip with its reason.

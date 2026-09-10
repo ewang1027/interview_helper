@@ -36,6 +36,7 @@ import type {
   Plan,
   Principal,
   ProblemDetail,
+  PracticeProblem,
   ProblemList,
   Report,
   ReviewQueue,
@@ -228,10 +229,40 @@ export const api = {
     if (params.status) query.set("status", params.status);
     if (params.conceptId) query.set("concept_id", params.conceptId);
     if (params.cursor) query.set("cursor", params.cursor);
-    query.set("limit", "50");
+    // The API's ceiling. The page follows `next_cursor` until the log is exhausted, so
+    // the fewest round trips is the right page size.
+    query.set("limit", "100");
     return request<ProblemList>(`/practice/problems?${query}`);
   },
+  /**
+   * The whole log, in as many pages as it takes. Filtering, sorting and grouping happen in
+   * the browser for the reason the applications board gives: a personal log is a few
+   * hundred rows, and a search box that costs no request cannot go stale against the list
+   * it filters. When the log outgrows this, the filters belong in SQL.
+   */
+  allProblems: async (params: { status?: string } = {}) => {
+    const problems: PracticeProblem[] = [];
+    let cursor: string | undefined;
+    // A bound rather than `while (true)`: a server that answered the same cursor forever
+    // would otherwise hang the page.
+    for (let page = 0; page < 50; page += 1) {
+      const body = await api.listProblems({ ...params, cursor });
+      problems.push(...body.problems);
+      if (!body.next_cursor) break;
+      cursor = body.next_cursor;
+    }
+    return problems;
+  },
   problem: (id: string) => request<ProblemDetail>(`/practice/problems/${id}`),
+  /** Labels, notes, difficulty — the metadata that is yours. Never the classification. */
+  updateProblem: (
+    id: string,
+    body: { labels?: string[] | null; notes?: string | null; difficulty_label?: string | null },
+  ) =>
+    request<ProblemDetail>(`/practice/problems/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   importLeetCode: (body: { slugs?: string[]; username?: string }, key: string) =>
     post<ImportResult>("/practice/import/leetcode", body, key),
   /** Confirming or correcting the tag is what writes the held evidence. */

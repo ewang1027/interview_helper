@@ -130,6 +130,11 @@ def concept_ids() -> frozenset[str]:
     return frozenset(concept.id for concept in _concepts())
 
 
+@lru_cache
+def _concept_index() -> dict[str, Any]:
+    return {concept.id: concept for concept in _concepts()}
+
+
 def taxonomy_prompt() -> str:
     """The 186 concepts, one line each, above the cache breakpoint.
 
@@ -657,7 +662,14 @@ def record_review(
 
 
 def as_view(problem: PracticeProblem) -> dict[str, Any]:
-    """One problem, as the API returns it."""
+    """One problem, as the API returns it.
+
+    Three derived fields ride along so the page can file and filter without a second
+    request per row: the primary concept's **name** and **topic** (the family it is filed
+    under — docs/CONCEPTS.md), and which NeetCode **lists** the problem is on, keyed on the
+    LeetCode slug so a problem logged from either site is known to be on the 150.
+    """
+    concept = _concept_index().get(problem.primary_concept_id or "")
     return {
         "id": problem.id,
         "title": problem.title,
@@ -665,7 +677,11 @@ def as_view(problem: PracticeProblem) -> dict[str, Any]:
         "source_site": problem.source_site,
         "notes": problem.notes,
         "difficulty_label": problem.difficulty_label,
+        "labels": list(problem.labels),
         "primary_concept_id": problem.primary_concept_id,
+        "primary_concept_name": concept.name if concept is not None else None,
+        "topic": concept.topic if concept is not None else None,
+        "lists": list(neetcode.lists_for(same_problem_key(problem.url))),
         "secondary_concept_ids": list(problem.secondary_concept_ids),
         "classification": {
             "confidence": problem.classification_confidence,
@@ -679,6 +695,51 @@ def as_view(problem: PracticeProblem) -> dict[str, Any]:
         "graduated_at": problem.graduated_at,
         "created_at": problem.created_at,
     }
+
+
+# Sent unset, a field is left alone; sent as null, it is cleared. The route passes the set
+# of fields the body actually carried so the two are distinguishable here.
+def update_problem(
+    db: Session,
+    problem_id: str,
+    *,
+    labels: Sequence[str] | None,
+    notes: str | None,
+    difficulty_label: str | None,
+    fields: set[str],
+) -> PracticeProblem:
+    """Edit the metadata that is yours on a problem. Never its classification or schedule."""
+    problem = db.get(PracticeProblem, problem_id)
+    if problem is None:
+        raise not_found("practice problem", problem_id)
+    if "labels" in fields:
+        problem.labels = normalise_labels(labels or ())
+    if "notes" in fields:
+        problem.notes = notes.strip() or None if notes is not None else None
+    if "difficulty_label" in fields:
+        problem.difficulty_label = (
+            difficulty_label.strip() or None if difficulty_label is not None else None
+        )
+    problem.updated_at = datetime.now(UTC)
+    db.add(problem)
+    db.commit()
+    db.refresh(problem)
+    return problem
+
+
+def normalise_labels(labels: Sequence[str]) -> list[str]:
+    """Trimmed, whitespace-collapsed, and deduplicated without regard to case.
+
+    The first spelling wins — `Blind 75` typed once and `blind 75` typed later is one
+    label, kept as `Blind 75` — because a filter chip per capitalisation is the failure a
+    label field invites, and the person typing the second one meant the first.
+    """
+    seen: dict[str, str] = {}
+    for raw in labels:
+        cleaned = " ".join(raw.split())
+        if cleaned and cleaned.casefold() not in seen:
+            seen[cleaned.casefold()] = cleaned
+    return list(seen.values())
 
 
 def list_problems(

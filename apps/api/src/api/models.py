@@ -379,6 +379,11 @@ class PracticeProblem(SQLModel, table=True):
     difficulty_label: str | None = None
     primary_concept_id: str | None = Field(default=None, foreign_key="concepts.id")
     secondary_concept_ids: list[str] = Field(default_factory=list, sa_column=Column(JSONB))
+    # Your own categories — "blind 75", "redo", a company — free text, never read by
+    # anything that writes evidence. The concept is the axis mastery is keyed on; this is
+    # the axis a person files by, and the two are kept apart on purpose (migration
+    # e5b2c9d17a44).
+    labels: list[str] = Field(default_factory=list, sa_column=Column(JSONB, nullable=False))
     classification_confidence: float | None = None
     classification_model: str | None = None
     status: str = "pending_classification"

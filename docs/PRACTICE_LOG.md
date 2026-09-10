@@ -28,6 +28,10 @@
 > problem-name aliases, and all 23 logged problems were re-tagged against it by
 > `scripts/retag_practice_problems.py` — the one sanctioned way to correct a tag whose
 > evidence is already written, described [below](#correcting-a-tag-after-its-evidence-is-written).
+> **Filed 2026-09-10:** every row carries the **topic** its concept is filed under and the
+> NeetCode **lists** it is on, and takes **labels** of your own (`PATCH /practice/problems/{id}`);
+> the page loads the whole log and searches, filters, sorts and groups it in the browser —
+> see [Filing](#filing-topics-labels-and-the-filters).
 > Related: [ARCHITECTURE](ARCHITECTURE.md#data-model) ·
 > [ADAPTIVE](ADAPTIVE.md) (the evidence/scheduling machinery this reuses) ·
 > [CORPUS](CORPUS.md) (why this is manual-entry-only) ·
@@ -134,6 +138,7 @@ existing `concept_evidence` table
 | `url` | text | Pointer only, never fetched |
 | `source_site` | enum(`leetcode`,`neetcode`,`codeforces`,`other`) | Where you worked it, not what it is — a `neetcode` row is a LeetCode problem (2026-09-07) |
 | `notes` | text, nullable | User's own notes — never problem text |
+| `labels` | JSONB text[], default `[]` | Your own categories — "Blind 75", "redo", a company. Free text, deduplicated without regard to case, never read by anything that writes evidence (migration `e5b2c9d17a44`, 2026-09-10) |
 | `difficulty_label` | text, nullable | Raw external label ("Medium", CF rating "1700") — a different currency from corpus `Difficulty.elo`; never conflated with it |
 | `primary_concept_id` | text, FK → `concepts.id` | Mirrors corpus `Item.primary_concept` |
 | `secondary_concept_ids` | text[] | Mirrors corpus `Item.concepts` |
@@ -278,6 +283,38 @@ pending_classification ──(confirm/correct, or auto-accept ≥0.75)──▶ 
 | `PATCH` | `/practice/problems/{id}/classification` | Confirm or correct the classification. Triggers the deferred evidence write; flips `pending_classification → active`. `422` on an unknown concept id. |
 | `GET` | `/practice/review-queue` | `status="active"` and `due_at <= now`, most-overdue first. |
 | `POST` | `/practice/problems/{id}/reviews` | Record a re-solve attempt: `{is_success, notes?, attempted_at?}`. Applies the interval rule above. `409` if `status` is not `"active"`. |
+
+## Filing: topics, labels, and the filters
+
+Asked for directly (2026-09-10): *optimise the practice page with some quality-of-life
+changes — let me categorise my problems and filter on certain parameters.* Two axes of
+category came out of it, and keeping them apart is the design:
+
+- **Topic is derived.** Every `coding` concept in the taxonomy carries a `topic` — the
+  family it is filed under: *Arrays & Hashing*, *Intervals*, *1-D Dynamic Programming*,
+  twenty-one in all, a controlled vocabulary the validator enforces
+  ([CONCEPTS](CONCEPTS.md#topics)). A row's topic is its primary concept's, so it exists the
+  moment a problem is tagged and cannot disagree with the tag. It is grouping metadata:
+  nothing classifies on it.
+- **Labels are yours.** A JSONB list of free text per problem, edited on the row, sent
+  whole to `PATCH /practice/problems/{id}` along with `notes` and `difficulty_label` — the
+  three fields that are the person's to change after logging. Never the classification,
+  never the schedule: the route takes those three and refuses everything else, so a
+  metadata edit is not a back door around the immutability the classification route
+  enforces. Labels are trimmed and deduplicated without regard to case, first spelling
+  kept, because a filter chip per capitalisation is the failure a label field invites.
+
+Two more derived fields ride on every row so the page can file without a second request:
+the primary concept's **name** (the row reads *Merging and inserting intervals*, not
+`interval-merge`) and the NeetCode **lists** the problem is on — keyed on the LeetCode
+slug, so a problem logged from leetcode.com is still known to be on the 150.
+
+**The filters run in the browser, over the whole log.** The page follows `next_cursor` to
+the end and then searches, filters (status, topic, difficulty, source, list, label, due),
+sorts and groups locally — the applications board's scale decision applied again
+([WEB](WEB.md#the-practice-log)). `GET /practice/problems` is unchanged: `concept_id` and
+`status` in SQL, everything else client-side, and the day the log outgrows a few hundred
+rows the filters belong in SQL and the component keeps its shape.
 
 ## Correcting a tag after its evidence is written
 

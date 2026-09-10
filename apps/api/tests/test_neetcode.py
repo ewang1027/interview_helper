@@ -109,3 +109,11 @@ def test_the_url_points_back_at_neetcode():
 
 def test_the_catalogue_records_when_it_was_taken():
     assert neetcode.extracted_at()
+
+
+def test_a_problem_is_on_its_lists_whichever_site_it_was_logged_from():
+    """`lists_for` keys on the LeetCode slug: the list is a fact about the problem, not
+    about which site's link was pasted."""
+    assert neetcode.lists_for("contains-duplicate") == ("blind75", "neetcode150", "neetcode250")
+    assert neetcode.lists_for("3sum-smaller") == ()
+    assert neetcode.lists_for("not-a-problem-anyone-knows") == ()

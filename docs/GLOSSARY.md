@@ -91,6 +91,16 @@ link cannot be translated by string surgery; the catalogue is how a NeetCode lin
 import, and the LeetCode slug it yields is the identity two rows for one problem share. →
 [PRACTICE_LOG](PRACTICE_LOG.md#a-neetcode-link-names-a-leetcode-problem-2026-09-07)
 
+**Topic** — the family a `coding` concept is filed under (*Intervals*, *Trees*, twenty-one
+in all): a controlled vocabulary on the concept, for grouping and filtering the practice
+log. A problem's topic is its primary concept's. Nothing classifies on it.
+→ [CONCEPTS](CONCEPTS.md#topics)
+
+**Label (practice log)** — a free-text category of your own on a practice problem —
+"Blind 75", "redo", a company — edited on the row and never read by anything that writes
+evidence. The other axis of category, kept apart from the concept on purpose.
+→ [PRACTICE_LOG](PRACTICE_LOG.md#filing-topics-labels-and-the-filters)
+
 **Review queue (practice log)** — practice problems that are `active` and past their
 `due_at`, ranked most-overdue first — the problem-level analog of the planner's
 weakness ranking. → [PRACTICE_LOG](PRACTICE_LOG.md#rest-endpoints-and-state-machine)

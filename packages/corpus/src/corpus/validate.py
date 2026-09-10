@@ -228,6 +228,11 @@ def check_concept_graph(concepts: list[dict[str, Any]]) -> list[Finding]:
         by_id[cid] = c
 
     for cid, c in by_id.items():
+        # A coding concept without a topic is a concept the practice log cannot file, and
+        # the page would show it under "Other" — a category that says nothing. The schema
+        # cannot express "required when domain is coding", so it is checked here.
+        if c.get("domain") == "coding" and not c.get("topic"):
+            findings.append(Finding("error", f"concept {cid}", "coding concept has no topic"))
         for pre in c.get("prereqs", []):
             if pre not in by_id:
                 findings.append(

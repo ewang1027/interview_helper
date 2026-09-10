@@ -116,6 +116,7 @@ describe("toHeatmapConcepts", () => {
     description: "Maintain a contiguous window…",
     band: "core",
     tags: [],
+    topic: "Sliding Window",
     prereqs: ["two-pointers"],
     unlocks: [],
     servable: true,

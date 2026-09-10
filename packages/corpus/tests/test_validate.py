@@ -67,6 +67,15 @@ def test_detects_cycle() -> None:
     assert any("cycle" in m for m in _errors(check_concept_graph(concepts)))
 
 
+def test_a_coding_concept_without_a_topic_is_an_error() -> None:
+    """The practice log files problems by their concept's topic, and an unfiled concept
+    would land under a bucket that says nothing."""
+    c = {"id": "a", "domain": "coding", "name": "A", "description": "x" * 30, "prereqs": []}
+    assert any("no topic" in f.message for f in check_concept_graph([c]))
+    quant = {**c, "domain": "quant"}
+    assert not any("no topic" in f.message for f in check_concept_graph([quant]))
+
+
 def test_detects_dangling_prereq() -> None:
     concepts = [
         {"id": "a", "domain": "coding", "name": "A", "description": "x" * 30, "prereqs": ["ghost"]},
@@ -125,6 +134,7 @@ _CONCEPTS = [
     {
         "id": "hash-set-dedup",
         "domain": "coding",
+        "topic": "Arrays & Hashing",
         "name": "Hash set membership",
         "description": "d" * 30,
         "prereqs": [],

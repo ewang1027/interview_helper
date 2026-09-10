@@ -319,6 +319,76 @@ def test_a_filtered_page_that_matches_nothing_still_says_where_to_continue(logge
     assert wanted["id"] in seen
 
 
+# --- Filing: labels, topic, lists -----------------------------------------------------------
+
+
+def test_a_row_says_what_it_is_filed_under(logged):
+    """The page files and filters without a second request per row: the concept's name and
+    its topic ride along, and so do the NeetCode lists the problem is on — keyed on the
+    LeetCode slug, so a problem logged from leetcode.com is still known to be on the 150."""
+    client = client_with(classifier(primary="interval-merge", secondaries=[]))
+    row = log(
+        client,
+        logged,
+        title="Merge Intervals",
+        url="https://leetcode.com/problems/merge-intervals/",
+    )
+    assert row["primary_concept_name"] == "Merging and inserting intervals"
+    assert row["topic"] == "Intervals"
+    assert row["lists"] == ["blind75", "neetcode150", "neetcode250"]
+    assert row["labels"] == []
+
+    untagged = log(
+        client_with(DeadProvider()), logged, title="Problem C", url="https://example.invalid/c"
+    )
+    assert untagged["topic"] is None
+    assert untagged["primary_concept_name"] is None
+    assert untagged["lists"] == []
+
+
+def test_labels_are_yours_to_edit_and_are_deduplicated_without_regard_to_case(logged):
+    client = client_with(classifier(primary=PRIMARY, secondaries=[]))
+    row = log(client, logged)
+
+    edited = client.patch(
+        f"/api/v1/practice/problems/{row['id']}",
+        json={"labels": ["Blind 75", " blind 75 ", "redo", "", "Jane  Street"]},
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["labels"] == ["Blind 75", "redo", "Jane Street"]
+
+    # A field left out is left alone; `null` clears.
+    edited = client.patch(
+        f"/api/v1/practice/problems/{row['id']}", json={"notes": "took two tries"}
+    )
+    assert edited.json()["labels"] == ["Blind 75", "redo", "Jane Street"]
+    assert edited.json()["notes"] == "took two tries"
+    edited = client.patch(f"/api/v1/practice/problems/{row['id']}", json={"labels": None})
+    assert edited.json()["labels"] == []
+    assert edited.json()["notes"] == "took two tries"
+
+
+def test_a_metadata_edit_cannot_reach_the_classification_or_the_schedule(logged):
+    """The route takes the three fields that are yours and refuses everything else, so it
+    is not a back door around the immutability the classification route enforces."""
+    client = client_with(classifier(primary=PRIMARY, secondaries=[]))
+    row = log(client, logged)
+    refused = client.patch(
+        f"/api/v1/practice/problems/{row['id']}", json={"primary_concept_id": "trie"}
+    )
+    assert refused.status_code == 400, refused.text
+    refused = client.patch(f"/api/v1/practice/problems/{row['id']}", json={"due_at": None})
+    assert refused.status_code == 400
+    too_many = client.patch(
+        f"/api/v1/practice/problems/{row['id']}", json={"labels": [f"l{i}" for i in range(21)]}
+    )
+    assert too_many.status_code == 400
+    missing = client.patch(
+        "/api/v1/practice/problems/01ARZ3NDEKTSV4RRFFQ69G5FAV", json={"labels": []}
+    )
+    assert missing.status_code == 404
+
+
 # --- The shared engine ----------------------------------------------------------------------
 
 

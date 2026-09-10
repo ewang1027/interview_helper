@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-09-09
+## Where things stand — 2026-09-10
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -19,15 +19,15 @@ detail behind it.
 
 | Phase | State | What exists | What it still owes |
 |---|---|---|---|
-| **0** Foundations | **complete** | workspace, the **186-concept taxonomy** (159 until the coding domain grew by 27 on 2026-09-09), corpus schema + validator, CI | — |
+| **0** Foundations | **complete** | workspace, the **186-concept taxonomy** (159 until the coding domain grew by 27 on 2026-09-09; every coding concept filed under one of 21 **topics** since 2026-09-10), corpus schema + validator, CI | — |
 | **1** Corpus v1 | **partial** — thin slice | 48 items — 4 archetypes **and 8 instances** in every one of the four domains. The fourth archetype in each measures a **prerequisite** of a concept already served, which is what the planner's gate needs | bulk authoring toward ~400/~150, and archetypes for the other 170 concepts nothing measures as a primary |
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **complete** | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | — *(closed 2026-08-25: a real session ran end to end on the Anthropic API — conversation, `run_code` against the sandbox, submission, grading, evidence. Bedrock is still gated on a use-case form; the provider switch is one env var)* |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within twelve sessions — five until `W_UNLOCKS` woke up, ten until the 2026-09-09 taxonomy expansion added edges into the concepts the corpus measures | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus and with the prerequisite graph |
-| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import and a concept picker that searches problem-name **aliases** (2026-09-09), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 91 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
+| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, a concept picker that searches problem-name **aliases** (2026-09-09), and a log that is loaded whole and **searched, filtered, sorted and grouped in the browser** — by topic, difficulty, source, list, label and due state — with labels edited on the row (2026-09-10), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 95 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
 | **6** AWS deploy | **partial** — step 1 of 5 | Dockerfiles for `api`, `executor` and `web`; `make up-stack` runs all of it behind a **Caddy front door** routing by path, the job the ALB does — so compose mirrors the target topology. Only the front door publishes a port. Sandbox isolation re-verified from inside the containerised launcher | steps 2–5: one service on Fargate by hand, Terraform, the rest of the stack, the portability gate — **all blocked on an authenticated AWS session**, not on code |
 | **7–8** Voice, hardening | **not started** | — | — |
-| **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does. The import takes **NeetCode links** as well as LeetCode ones (2026-09-07). **Re-tagged 2026-09-09** against the expanded taxonomy: all 23 logged problems, eleven of them wrong before, by a script that corrects the evidence they wrote and rebuilds mastery | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
+| **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does. The import takes **NeetCode links** as well as LeetCode ones (2026-09-07). **Re-tagged 2026-09-09** against the expanded taxonomy: all 23 logged problems, eleven of them wrong before, by a script that corrects the evidence they wrote and rebuilds mastery. **Filed 2026-09-10**: every coding concept carries a topic, rows carry it with the concept's name and the NeetCode lists, and problems take **labels** of your own through `PATCH /practice/problems/{id}` | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
 | **10** Job applications | **built** | two tables, the **stage event log** and the projection over it, ten endpoints, a Sonnet 5 paste parser, an Opus 5 **web-search research pass**, and the `/jobs` page. **Run live 2026-08-26**: a messy five-row paste parsed correctly, six real web searches, an import down to 3 SQL statements from 240. A **rejections tracker** (2026-09-09): each no filed under the rung it came after, with the days it took | the gold set for calibrating the tagging; time-in-stage beyond applying-to-rejection, which the events already record and nothing reports; a research trigger based on what a row is missing rather than how long the list is |
 
 ~~One thing worth knowing before reading anything else as further along than it is: **no
@@ -6388,3 +6388,85 @@ without one and an empty field invites an invented one.
   divider between the category and outcome filters are unreviewed visually.
 - **Only the newest ten are listed**; the board filter is the way to the rest, and nothing
   measures whether that is the right cut.
+
+## Wave — Two axes of category, kept apart · 2026-09-10
+
+Asked for directly: *optimise my practice page with some quality-of-life changes — allow me
+to categorise my problems and filter based on certain parameters.*
+
+The page had one filter (status), showed a raw concept id per row, and listed the first
+fifty problems with a note that more might exist. "Categorise" could have meant one thing
+or two, and it turned out to mean two that must not be confused.
+
+### Topic is derived; labels are yours
+
+**Topic.** Every `coding` concept now carries a `topic` — the family it is filed under,
+from a vocabulary of twenty-one the schema enumerates, `corpus.models.Topic` types and the
+validator requires ([CONCEPTS](CONCEPTS.md#topics)). *Arrays & Hashing*, *Intervals*, *1-D
+Dynamic Programming*: the grouping the NeetCode roadmap uses, which is the one a person
+studying from it already thinks in. A problem's topic is its primary concept's, so it
+exists the moment the problem is tagged and cannot disagree with the tag. The 2026-09-07
+rule is untouched: those families are exactly what the taxonomy splits several ways, so
+nothing classifies on a topic, and no topic reaches the classifier's prompt.
+
+**Labels.** A JSONB list of free text on `practice_problems` (migration `e5b2c9d17a44`),
+edited on the row, never read by anything that writes evidence. "Blind 75", "redo", a
+company — none of those is a concept, and putting them in the taxonomy would have meant a
+validator run to add a category. `PATCH /practice/problems/{id}` takes labels, notes and the
+difficulty label and refuses every other field, so a metadata edit is not a way around the
+classification route's `409`. Labels are deduplicated without regard to case, first
+spelling kept: *Blind 75* and *blind 75* are one chip, not two.
+
+Two more fields ride on every row so the page can file without a request per row: the
+primary concept's **name** — *Merging and inserting intervals*, not `interval-merge` — and
+the NeetCode **lists** the problem is on, keyed on the LeetCode slug so a problem logged from
+leetcode.com is still known to be on the 150. Measured on the live log: 31 rows (eight
+logged since the re-tag the day before), 21 on the NeetCode 150, filed under eleven topics.
+
+### The filters run over the whole log
+
+The list endpoint pages at a hundred and the page now follows `next_cursor` to the end
+before rendering anything — the applications board's scale decision, made for the same
+reason: a personal log is a few hundred rows, a search box that costs no request cannot go
+stale against what it filters, and "Logged" is finally the log rather than a page of it.
+Then: a search across title, concept, topic, label and notes; filters for status, topic,
+difficulty (Easy/Medium/Hard read out of whatever the site said), source, list, label and
+due state; six sorts; a group-by that sections the list under topic, difficulty, label or
+status with a count on each. Every option is built from the log itself, with a count, so no
+control names a topic or a label nothing carries. Paging is the board's; a grouped view
+shows every match, because a section cut off mid-way misreports every group after it.
+
+Not persisted to the URL, and not a saved-view feature: the filters reset with the page,
+which is the simplest thing that is not wrong, and the first "I keep re-applying the same
+three" is the data that would justify more.
+
+### Verified
+
+- `make corpus-validate`: 186 concepts, every coding one topiced, 0 errors. A new validator
+  check refuses a coding concept without a topic, with a test either way.
+- **222 DB-backed tests** (three new): a row carries its concept's name, its topic and its
+  lists, and an untagged one carries none; labels are edited, deduplicated case-blind, left
+  alone when omitted and cleared by `null`; and the edit route answers `400` to a concept
+  id or a due date and `404` to a problem that is not there.
+- **405 offline tests**: `lists_for` keys on the LeetCode slug; the route-surface pin in
+  `test_api_health` gained the new `PATCH`.
+- **95 component tests** (four new), eslint and `tsc --noEmit` clean: filtering and
+  grouping by topic, search across title/concept/label with the empty-match state keeping
+  its controls, adding and removing a label on the row with the whole list on the wire, and
+  the log loading across two cursor pages so the count is the log's.
+- `make lint`, `make typecheck`, `make secret-scan`: clean. `make check` still stops at
+  `check-web` on this machine (corepack), so the web tools were run directly.
+- **Live**: the migration ran against the real database (`labels jsonb default '[]'`,
+  alembic at `e5b2c9d17a44`), the stack was rebuilt, and `GET /practice/problems` answers
+  with topics, names, lists and empty label lists on all 31 rows; `GET /concepts` carries
+  `topic` on coding rows and `null` elsewhere.
+
+### Not verified
+
+- **Nothing opened in a browser.** Eight controls in one row is the densest thing the app
+  has, and how it wraps on a narrow screen is unreviewed, like everything visual here.
+- **No label has been set by the person.** The route and the row editor are tested; what
+  labels a real season of practice wants is not known yet.
+- **Difficulty is read out of a free-text label**, so a Codeforces rating files under
+  *Other* with its number shown. Right for now, and worth a real column if ratings ever
+  need sorting.

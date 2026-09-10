@@ -87,6 +87,24 @@ They exist because a taxonomy phrased as competences (*"Sort by the right endpoi
 sweep"*) is the right thing for a grader to read and the wrong thing to search when what
 you know is that you just did *Meeting Rooms II*.
 
+## Topics
+
+Every `coding` concept carries a `topic` (2026-09-10): the family it is filed under, from a
+controlled vocabulary of twenty-one — *Interview craft*, *Arrays & Hashing*, *Two
+Pointers*, *Sliding Window*, *Stack*, *Binary Search*, *Linked List*, *Trees*, *Tries*,
+*Heap / Priority Queue*, *Backtracking*, *Graphs*, *Advanced Graphs*, *1-D Dynamic
+Programming*, *2-D Dynamic Programming*, *Greedy*, *Intervals*, *Math & Geometry*, *Bit
+Manipulation*, *Strings*, *Design*. The schema holds the enum, `corpus.models.Topic` is
+the same list as a type, and the validator refuses a coding concept without one — the
+practice log files problems by it, and an unfiled concept would land under a bucket that
+says nothing.
+
+It is the grouping the NeetCode roadmap and most interview prep use, and it is *only* a
+grouping. The 2026-09-07 rule stands: those families are exactly what this taxonomy splits
+several ways, so nothing classifies on a topic and no topic ever appears in the
+classifier's prompt. A concept is filed under one topic; the concept is still the unit of
+mastery. The other three domains carry none, because nothing files them.
+
 ## The 2026-09-09 coding expansion
 
 Asked for directly: *sometimes I can't find the correct tag for a problem — a lot of the

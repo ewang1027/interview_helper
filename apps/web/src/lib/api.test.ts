@@ -152,7 +152,7 @@ describe("query building", () => {
     const url = (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.at(-1)![0] as string;
     expect(url).toContain("status=pending_classification");
     expect(url).toContain("concept_id=trie");
-    expect(url).toContain("limit=50");
+    expect(url).toContain("limit=100");
   });
 
   it("omits the session id from the budget route when there is none", async () => {

@@ -5,12 +5,13 @@ import Link from "next/link";
 import { useState } from "react";
 import { ApiErrorNotice } from "@/components/api-error";
 import { LeetCodeImport } from "@/components/leetcode-import";
+import { PracticeLog } from "@/components/practice-log";
 import { Badge, Button, Card, CardBody, CardHeader, Empty, Skeleton, Stat } from "@/components/ui/primitives";
 import { api, idempotencyKey } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { relativeDue, when } from "@/lib/format";
+import { relativeDue } from "@/lib/format";
 import { keys } from "@/lib/queries";
-import type { PracticeProblem, ProblemStatus, SourceSite } from "@/lib/types";
+import type { PracticeProblem, SourceSite } from "@/lib/types";
 
 /**
  * The practice log: problems solved elsewhere, and when to solve them again.
@@ -26,24 +27,21 @@ import type { PracticeProblem, ProblemStatus, SourceSite } from "@/lib/types";
  * `concept_evidence` is immutable, so that gate is what stops a guess becoming a
  * permanent fact about your mastery. It is also the common case here today,
  * because no model provider is reachable yet.
+ *
+ * The log itself is loaded whole (`api.allProblems` follows the cursor to the
+ * end) and filed, filtered, sorted and grouped in the browser — see
+ * `PracticeLog` for why that is a scale decision rather than a shortcut. It is
+ * also what makes the headline counts true: "Logged" is the log, not a page.
  */
 
 const SITES: SourceSite[] = ["leetcode", "neetcode", "codeforces", "other"];
 
-const FILTERS: { label: string; value: ProblemStatus | undefined }[] = [
-  { label: "All", value: undefined },
-  { label: "Needs a tag", value: "pending_classification" },
-  { label: "Active", value: "active" },
-  { label: "Retired", value: "retired" },
-];
-
 export default function Practice() {
   const queryClient = useQueryClient();
-  const [status, setStatus] = useState<ProblemStatus | undefined>(undefined);
 
   const problems = useQuery({
-    queryKey: ["practice-problems", status ?? "all"],
-    queryFn: () => api.listProblems({ status }),
+    queryKey: ["practice-problems"],
+    queryFn: () => api.allProblems(),
   });
   const queue = useQuery({ queryKey: keys.reviewQueue, queryFn: api.reviewQueue });
 
@@ -52,7 +50,7 @@ export default function Practice() {
     queryClient.invalidateQueries({ queryKey: keys.reviewQueue });
   };
 
-  const rows = problems.data?.problems ?? [];
+  const rows = problems.data ?? [];
   const pending = rows.filter((row) => row.status === "pending_classification").length;
 
   return (
@@ -130,51 +128,12 @@ export default function Practice() {
 
       <ConfirmSuggested rows={rows} onDone={refresh} />
 
-      <Card>
-        <CardHeader
-          title="Everything logged"
-          action={
-            <div className="flex gap-1">
-              {FILTERS.map((filter) => (
-                <button
-                  key={filter.label}
-                  type="button"
-                  onClick={() => setStatus(filter.value)}
-                  aria-pressed={status === filter.value}
-                  className={cn(
-                    "rounded px-2 py-1 text-xs transition-colors",
-                    status === filter.value
-                      ? "bg-accent text-accent-ink"
-                      : "text-ink-secondary hover:bg-sunken",
-                  )}
-                >
-                  {filter.label}
-                </button>
-              ))}
-            </div>
-          }
-        />
-        <CardBody>
-          {problems.error ? <ApiErrorNotice error={problems.error} /> : null}
-          {problems.isLoading ? (
-            <Skeleton className="h-32" />
-          ) : rows.length === 0 ? (
-            <Empty title="Nothing logged yet" detail="Add the first one on the left." />
-          ) : (
-            <ul className="divide-hairline divide-y">
-              {rows.map((problem) => (
-                <ProblemRow key={problem.id} problem={problem} />
-              ))}
-            </ul>
-          )}
-          {problems.data?.next_cursor ? (
-            <p className="text-ink-muted mt-3 text-xs">
-              More beyond this page. A filtered page can come back short — the cursor tracks
-              the scan, not the matches.
-            </p>
-          ) : null}
-        </CardBody>
-      </Card>
+      <PracticeLog
+        rows={rows}
+        isLoading={problems.isLoading}
+        error={problems.error}
+        onChanged={refresh}
+      />
     </div>
   );
 }
@@ -230,37 +189,6 @@ function ConfirmSuggested({
         </Button>
       </CardBody>
     </Card>
-  );
-}
-
-function ProblemRow({ problem }: { problem: PracticeProblem }) {
-  const needsTag = problem.status === "pending_classification";
-
-  return (
-    <li className="flex flex-wrap items-baseline gap-2 py-2">
-      <Link
-        href={`/practice/${problem.id}`}
-        className="text-ink min-w-0 flex-1 truncate text-sm hover:underline"
-      >
-        {problem.title}
-      </Link>
-      <span className="text-ink-muted text-xs">{problem.source_site}</span>
-      {problem.primary_concept_id ? (
-        <span className="text-ink-secondary font-mono text-xs">
-          {problem.primary_concept_id}
-        </span>
-      ) : null}
-      {needsTag ? (
-        <Badge tone={problem.primary_concept_id ? "serious" : "warning"}>
-          {problem.primary_concept_id ? "suggested — confirm it" : "needs a tag"}
-        </Badge>
-      ) : problem.status === "retired" ? (
-        <Badge tone="good">retired</Badge>
-      ) : (
-        <Badge>{relativeDue(problem.due_at)}</Badge>
-      )}
-      <span className="text-ink-muted text-xs">{when(problem.created_at)}</span>
-    </li>
   );
 }
 

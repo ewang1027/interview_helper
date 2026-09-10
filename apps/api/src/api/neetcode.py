@@ -134,3 +134,22 @@ def _clean(candidate: str) -> str | None:
 def lookup(slug: str) -> NeetCodeProblem | None:
     """The catalogue row for a NeetCode slug, or `None` if this build has never seen it."""
     return catalogue().get(slug)
+
+
+@lru_cache
+def _by_leetcode_slug() -> dict[str, NeetCodeProblem]:
+    index: dict[str, NeetCodeProblem] = {}
+    for row in catalogue().values():
+        index.setdefault(row.leetcode_slug, row)
+    return index
+
+
+def lists_for(leetcode_slug: str) -> tuple[str, ...]:
+    """Which of NeetCode's lists a LeetCode problem is on — `()` if none, or unknown.
+
+    Keyed on the LeetCode slug rather than the NeetCode one, so a problem logged from
+    leetcode.com is still known to be on the NeetCode 150: the list is a fact about the
+    problem, not about which site's link was pasted.
+    """
+    row = _by_leetcode_slug().get(leetcode_slug)
+    return row.lists if row is not None else ()

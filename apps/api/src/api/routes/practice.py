@@ -28,6 +28,7 @@ from api.schemas import (
     ImportLeetCodeRequest,
     LogProblemRequest,
     ReviewRequest,
+    UpdateProblemRequest,
 )
 
 router = APIRouter(tags=["practice"])
@@ -142,6 +143,30 @@ def review_queue(db: DbSession, principal: CurrentPrincipal) -> dict[str, Any]:
 @router.get("/practice/problems/{problem_id}")
 def get_problem(db: DbSession, principal: CurrentPrincipal, problem_id: str) -> dict[str, Any]:
     """The problem, every solve of it, and the evidence those solves produced."""
+    return service.problem_detail(db, problem_id)
+
+
+@router.patch("/practice/problems/{problem_id}")
+def update_problem(
+    body: UpdateProblemRequest,
+    db: DbSession,
+    principal: CurrentPrincipal,
+    problem_id: str,
+) -> dict[str, Any]:
+    """Edit what is yours on a problem — labels, notes, the difficulty label.
+
+    Never the classification and never the schedule: a metadata edit that could reach
+    either would be a way around the rules those routes enforce. A field left out of the
+    body is left alone; one sent as `null` is cleared.
+    """
+    service.update_problem(
+        db,
+        problem_id,
+        labels=body.labels,
+        notes=body.notes,
+        difficulty_label=body.difficulty_label,
+        fields=body.model_fields_set,
+    )
     return service.problem_detail(db, problem_id)
 
 

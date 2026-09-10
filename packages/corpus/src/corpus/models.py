@@ -15,6 +15,32 @@ from pydantic import BaseModel, ConfigDict, Field
 Domain = Literal["coding", "quant", "system_design", "behavioral"]
 Modality = Literal["coding", "quant", "design", "behavioral"]
 Band = Literal["foundational", "core", "advanced"]
+# The families `coding` concepts are filed under — the practice log's categories. A fixed
+# vocabulary rather than free text so a filter chip is a finite set and a typo is a
+# validation error, not a twenty-second topic. Grouping only: nothing classifies on it.
+Topic = Literal[
+    "Interview craft",
+    "Arrays & Hashing",
+    "Two Pointers",
+    "Sliding Window",
+    "Stack",
+    "Binary Search",
+    "Linked List",
+    "Trees",
+    "Tries",
+    "Heap / Priority Queue",
+    "Backtracking",
+    "Graphs",
+    "Advanced Graphs",
+    "1-D Dynamic Programming",
+    "2-D Dynamic Programming",
+    "Greedy",
+    "Intervals",
+    "Math & Geometry",
+    "Bit Manipulation",
+    "Strings",
+    "Design",
+]
 DifficultyBand = Literal["warmup", "easy", "medium", "hard", "expert"]
 
 
@@ -30,6 +56,7 @@ class Concept(BaseModel):
     prereqs: tuple[str, ...] = ()
     band: Band = "core"
     tags: tuple[str, ...] = ()
+    topic: Topic | None = None
     deprecated_at: date | None = None
 
 

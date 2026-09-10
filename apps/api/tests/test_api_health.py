@@ -102,6 +102,7 @@ SURFACE = {
     ("POST", "/api/v1/practice/import/leetcode"),
     ("GET", "/api/v1/practice/problems"),
     ("GET", "/api/v1/practice/problems/{problem_id}"),
+    ("PATCH", "/api/v1/practice/problems/{problem_id}"),
     ("PATCH", "/api/v1/practice/problems/{problem_id}/classification"),
     ("POST", "/api/v1/practice/problems/{problem_id}/reviews"),
     ("GET", "/api/v1/practice/review-queue"),

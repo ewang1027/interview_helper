@@ -75,6 +75,9 @@ def _concepts() -> list[dict[str, Any]]:
             "description": concept.description,
             "band": concept.band,
             "tags": list(concept.tags),
+            # The family a coding concept is filed under — the practice log's categories.
+            # Null outside `coding`, where nothing is filed.
+            "topic": concept.topic,
             "prereqs": list(concept.prereqs),
             "unlocks": sorted(unlocks[concept.id]),
             "servable": concept.id in primary,

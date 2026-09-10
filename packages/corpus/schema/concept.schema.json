@@ -5,7 +5,13 @@
   "description": "A node in the concept DAG. Concepts are the unit of mastery: every graded artifact writes evidence against one or more concepts, and the session planner selects work by concept weakness.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "domain", "name", "description", "prereqs"],
+  "required": [
+    "id",
+    "domain",
+    "name",
+    "description",
+    "prereqs"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -13,9 +19,18 @@
       "description": "Stable kebab-case identifier. Never reused, never renamed — mastery history is keyed on it."
     },
     "domain": {
-      "enum": ["coding", "quant", "system_design", "behavioral"]
+      "enum": [
+        "coding",
+        "quant",
+        "system_design",
+        "behavioral"
+      ]
     },
-    "name": { "type": "string", "minLength": 3, "maxLength": 80 },
+    "name": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 80
+    },
     "description": {
       "type": "string",
       "minLength": 20,
@@ -24,25 +39,63 @@
     },
     "prereqs": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "uniqueItems": true,
       "description": "Concept ids that should be solid before this one is drilled. Must form a DAG — the validator rejects cycles."
     },
     "band": {
-      "enum": ["foundational", "core", "advanced"],
+      "enum": [
+        "foundational",
+        "core",
+        "advanced"
+      ],
       "default": "core",
       "description": "Rough tier. Advisory for session planning; it does not gate anything."
     },
     "tags": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "uniqueItems": true
     },
     "deprecated_at": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "date",
       "default": null,
       "description": "Set instead of deleting. Deleting a concept would orphan its evidence rows."
+    },
+    "topic": {
+      "type": "string",
+      "enum": [
+        "Interview craft",
+        "Arrays & Hashing",
+        "Two Pointers",
+        "Sliding Window",
+        "Stack",
+        "Binary Search",
+        "Linked List",
+        "Trees",
+        "Tries",
+        "Heap / Priority Queue",
+        "Backtracking",
+        "Graphs",
+        "Advanced Graphs",
+        "1-D Dynamic Programming",
+        "2-D Dynamic Programming",
+        "Greedy",
+        "Intervals",
+        "Math & Geometry",
+        "Bit Manipulation",
+        "Strings",
+        "Design"
+      ],
+      "description": "The family a coding concept is filed under for grouping and filtering — the practice log's categories. Display metadata: nothing classifies on it, and it is required for `coding` concepts only (the validator checks)."
     }
   }
 }

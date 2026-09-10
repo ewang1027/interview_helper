@@ -142,7 +142,7 @@ worse, would *not* raise inside Phase 4's date arithmetic.
 | `llm_calls` | Cost ledger: model, tokens in/out/cache, computed $, latency, session. Written by `api.llm` in its own transaction, so a caller that fails afterwards cannot erase the record of spend. |
 | `idempotency_keys` | One row per `Idempotency-Key` a client has used, with the response it got. PK `(user_id, endpoint, key)` — the insert is what refuses a concurrent retry, since a read-then-write cannot. No expiry yet ([API](API.md#conventions)) |
 | `research_runs` | Provenance for corpus builds. |
-| `practice_problems`, `practice_solves` | Phase 9. External (LeetCode/NeetCode/Codeforces) problems logged manually, their classification against the corpus taxonomy, and their spaced re-solve schedule. See [PRACTICE_LOG](PRACTICE_LOG.md). |
+| `practice_problems`, `practice_solves` | Phase 9. External (LeetCode/NeetCode/Codeforces) problems logged manually, their classification against the corpus taxonomy, their spaced re-solve schedule, and — since 2026-09-10 — a JSONB `labels` list of the person's own categories, never read by anything that writes evidence. See [PRACTICE_LOG](PRACTICE_LOG.md). |
 | `job_applications`, `job_application_events` | Phase 10. Applications you made, and every stage each one has been in. The events are append-only; `current_stage`, `furthest_stage` and `outcome` on the parent are a **projection** over them, rebuilt by `POST /jobs/recompute` — the same relationship `mastery` has to `concept_evidence`. See [JOBS](JOBS.md). |
 
 pgvector **will be** used for semantic retrieval over corpus items and over your own past

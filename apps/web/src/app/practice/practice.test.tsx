@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Practice from "./page";
@@ -22,7 +22,11 @@ function problem(over: Record<string, unknown> = {}) {
     source_site: "leetcode",
     notes: null,
     difficulty_label: "Easy",
+    labels: [],
     primary_concept_id: null,
+    primary_concept_name: null,
+    topic: null,
+    lists: [],
     secondary_concept_ids: [],
     classification: { confidence: 0, model: null, auto_accepted: false },
     status: "pending_classification",
@@ -244,6 +248,123 @@ describe("practice log", () => {
 
     expect(await screen.findByText("dependency-unavailable")).toBeInTheDocument();
     expect(await screen.findByText(/leetcode.com answered 403/)).toBeInTheDocument();
+  });
+
+  it("files a problem under its topic, and filters and groups by it", async () => {
+    stubFetch({
+      ...BASE,
+      "/api/v1/practice/problems": {
+        problems: [
+          problem({
+            id: "p1",
+            title: "Merge Intervals",
+            status: "active",
+            primary_concept_id: "interval-merge",
+            primary_concept_name: "Merging and inserting intervals",
+            topic: "Intervals",
+            lists: ["blind75", "neetcode150"],
+            difficulty_label: "Medium",
+          }),
+          problem({
+            id: "p2",
+            title: "Two Sum",
+            status: "active",
+            primary_concept_id: "hash-map-counting",
+            primary_concept_name: "Hash map counting and lookup",
+            topic: "Arrays & Hashing",
+            difficulty_label: "Easy",
+          }),
+        ],
+        next_cursor: null,
+      },
+    });
+    renderPage(<Practice />);
+
+    // The row shows the concept by name and the list it is on, not a bare id.
+    expect(await screen.findByText("· Merging and inserting intervals")).toBeInTheDocument();
+    expect(screen.getByText("NeetCode 150")).toBeInTheDocument();
+
+    // Filter options come from the log itself, with counts.
+    await userEvent.selectOptions(screen.getByLabelText("Topic"), "Intervals");
+    expect(screen.getByText("1 of 2 match")).toBeInTheDocument();
+    expect(screen.queryByText("Two Sum")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("Clear"));
+    await userEvent.selectOptions(screen.getByLabelText("Group by"), "topic");
+    const section = screen.getByRole("region", { name: "Arrays & Hashing" });
+    expect(within(section).getByText("Two Sum")).toBeInTheDocument();
+  });
+
+  it("searches across title, concept and label, and says when nothing matches", async () => {
+    stubFetch({
+      ...BASE,
+      "/api/v1/practice/problems": {
+        problems: [
+          problem({ id: "p1", title: "Merge Intervals", labels: ["Blind 75"] }),
+          problem({ id: "p2", title: "Two Sum", primary_concept_name: "Hash map counting and lookup" }),
+        ],
+        next_cursor: null,
+      },
+    });
+    renderPage(<Practice />);
+
+    const search = await screen.findByLabelText("Search problems");
+    await userEvent.type(search, "blind");
+    expect(screen.getByText("Merge Intervals")).toBeInTheDocument();
+    expect(screen.queryByText("Two Sum")).not.toBeInTheDocument();
+
+    await userEvent.clear(search);
+    await userEvent.type(search, "hash map");
+    expect(screen.getByText("Two Sum")).toBeInTheDocument();
+
+    await userEvent.clear(search);
+    await userEvent.type(search, "nothing like this");
+    expect(screen.getByText("Nothing matches")).toBeInTheDocument();
+    // The log is not empty — the view of it is — so the search box must stay.
+    expect(screen.getByLabelText("Search problems")).toBeInTheDocument();
+  });
+
+  it("adds and removes a label on the row, sending the whole list", async () => {
+    const sent: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn());
+    stubFetch({
+      ...BASE,
+      "/api/v1/practice/problems": {
+        problems: [problem({ id: "p1", labels: ["redo"] })],
+        next_cursor: null,
+      },
+      "/api/v1/practice/problems/p1": problem({ id: "p1", labels: ["redo", "Blind 75"] }),
+    });
+    const original = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "PATCH") sent.push(JSON.parse(String(init.body)));
+      return original(input, init);
+    });
+    renderPage(<Practice />);
+
+    await userEvent.click(await screen.findByLabelText("Add a label to Two Sum"));
+    await userEvent.type(screen.getByLabelText("New label for Two Sum"), "Blind 75{Enter}");
+    await waitFor(() => expect(sent).toEqual([{ labels: ["redo", "Blind 75"] }]));
+
+    // The list is refetched after every edit, and the stub above still answers `["redo"]`
+    // for it — so removing that one sends the whole list minus it, which is empty.
+    await userEvent.click(screen.getByLabelText("Remove label redo from Two Sum"));
+    await waitFor(() => expect(sent[1]).toEqual({ labels: [] }));
+  });
+
+  it("loads the whole log across cursor pages, so the counts are the log's", async () => {
+    stubFetch({
+      ...BASE,
+      "/api/v1/practice/problems": (url: string) =>
+        url.includes("cursor=")
+          ? { problems: [problem({ id: "p2", title: "Second page" })], next_cursor: null }
+          : { problems: [problem({ id: "p1", title: "First page" })], next_cursor: "p1" },
+    });
+    renderPage(<Practice />);
+
+    expect(await screen.findByText("Second page")).toBeInTheDocument();
+    expect(screen.getByText("First page")).toBeInTheDocument();
+    expect(screen.getByText("2 problems")).toBeInTheDocument();
   });
 
   it("counts what is due separately from what is logged", async () => {

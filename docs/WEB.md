@@ -120,6 +120,24 @@ is the only visible difference: a NeetCode link imports the LeetCode problem it 
 the title, the difficulty and the suggested concept all read as they would from a LeetCode
 link, and pasting both forms of the same problem imports it once.
 
+**The log is filed, searched and filtered in the browser** (2026-09-10). The page loads the
+whole log — `api.allProblems` follows `next_cursor` to the end, which is the applications
+board's scale decision made again — and then every control is instant: a search across
+title, concept, topic, label and notes; filters for status, **topic** (the family the
+concept is filed under, [CONCEPTS](CONCEPTS.md#topics)), difficulty (Easy/Medium/Hard read
+out of whatever label the site gave), source, NeetCode list, **label** and due state; six
+sorts; and a group-by that sections the list under topic, difficulty, label or status with
+a count on each. Filter options are built from the log itself, with counts, so no control
+names a topic or a label nothing carries. Rows show the concept by **name** rather than id,
+a difficulty badge, the topic, the NeetCode list, and the person's **labels** as chips —
+removable with a click, added by typing on the row, each edit sending the whole list to
+`PATCH /practice/problems/{id}`. Paging is the board's (twenty, then ten, both numbers
+printed); a grouped view shows every match, because a section cut off mid-way would
+misreport every group after it. A search that matches nothing says *Nothing matches* and
+keeps its controls, for the reason the board's does. Four behaviours are pinned in
+`practice.test.tsx`: topic filter and grouping, search and the empty match, label add and
+remove, and the log loading across cursor pages.
+
 Three refusals are surfaced rather than hidden, because each one means something:
 
 - A problem awaiting its tag shows **needs a tag** and says plainly that it counts for

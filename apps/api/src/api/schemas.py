@@ -9,7 +9,7 @@ Pydantic models here would either lie about that or duplicate every grader's sch
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -118,6 +118,29 @@ class ImportLeetCodeRequest(BaseModel):
         if not self.slugs and not self.username:
             raise ValueError("give slugs, a username, or both")
         return self
+
+
+class UpdateProblemRequest(BaseModel):
+    """The fields that are yours to edit after logging: labels, notes, the difficulty.
+
+    Nothing here touches the classification or the schedule — those have their own routes
+    with their own rules, and a metadata edit must not be a back door to either. A field
+    left out is left alone; a field sent as `null` is cleared.
+
+    Labels are capped in count and length because they are rendered as chips on every row,
+    and a label is a category, not a note: forty characters is a name, four thousand is
+    what `notes` is for.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # No minimum length: a blank is dropped by normalisation rather than refused, so a
+    # trailing empty chip from the editor does not fail the whole edit.
+    labels: tuple[Annotated[str, Field(max_length=40)], ...] | None = Field(
+        default=None, max_length=20
+    )
+    notes: str | None = Field(default=None, max_length=4000)
+    difficulty_label: str | None = Field(default=None, max_length=40)
 
 
 class ReviewRequest(BaseModel):

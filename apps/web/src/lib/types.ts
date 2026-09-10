@@ -267,6 +267,8 @@ export interface TaxonomyConcept {
   description: string;
   band: string;
   tags: string[];
+  /** The family a coding concept is filed under — the practice log's categories. Null outside `coding`. */
+  topic: string | null;
   prereqs: string[];
   /** The reverse of `prereqs`, derived server-side so the DAG is drawable in one request. */
   unlocks: string[];
@@ -366,7 +368,14 @@ export interface PracticeProblem {
   source_site: SourceSite;
   notes: string | null;
   difficulty_label: string | null;
+  /** Your own categories — free text, never read by anything that writes evidence. */
+  labels: string[];
   primary_concept_id: string | null;
+  primary_concept_name: string | null;
+  /** The family the primary concept is filed under; null until tagged. */
+  topic: string | null;
+  /** NeetCode's lists this problem is on — `neetcode150`, `blind75` — whichever site it was logged from. */
+  lists: string[];
   secondary_concept_ids: string[];
   classification: {
     confidence: number | null;

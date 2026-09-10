@@ -228,8 +228,10 @@ owes.
       On 2026-09-09 the coding taxonomy grew from 52 to 79 concepts — intervals, sweep
       line, Kadane, matrices, number theory and the rest of what LeetCode actually asks —
       the picker searches problem-name aliases, and the 23 logged problems were re-tagged
-      by a script that corrects the evidence they wrote. The classifier is uncalibrated —
-      no gold set*
+      by a script that corrects the evidence they wrote. Since 2026-09-10 every coding
+      concept is filed under a topic, problems take labels of your own, and the page
+      searches, filters, sorts and groups the whole log in the browser. The classifier is
+      uncalibrated — no gold set*
 - [x] **10 — Job applications** — *the tracker landed 2026-08-25: two tables, a stage
       **event log** with the board derived from it, ten endpoints and a `/jobs` page. A
       pasted list is parsed and tagged by one structured Sonnet 5 call; above ten rows a
