@@ -6520,11 +6520,23 @@ person would have filed it there.
 - **95 component tests**, eslint and `tsc --noEmit` clean. The web fixture pins its own
   seven-rung catalog deliberately — it is a fixture of one response, not a mirror of the
   ladder — so it was left alone.
+- **Live, on the rebuilt stack** (`make up-stack`, all five services healthy):
+  `GET /jobs/catalog` serves the eight-rung ladder with *Recorded video interview* on it,
+  and `GET /jobs/stats` renders the rung in both the funnel and the rejection breakdown
+  across 143 real applications. No migration ran, as expected — alembic was already at
+  head and the vocabulary is not in the schema.
+
+The funnel is **cumulative**, which is visible the moment the rung exists: the two rows at
+`phone_screen` count as having reached `video_assessment` too, because reaching a rung means
+reaching every rung below it. That is the same arithmetic as before and it is right — but it
+means the new rung's count is not "how many recorded a video" until the rows that really
+were HireVues are moved down to it.
 
 ### Not verified
 
-- **No live call.** No paste has been through the parser with a HireVue in it, so whether
-  the model reaches for the new rung over `phone_screen` is untested against a real model.
+- **No live model call.** The endpoints were checked against the running stack, but no
+  paste has been through the parser with a HireVue in it, so whether the model reaches for
+  the new rung over `phone_screen` is untested against a real model.
 - **Nothing opened in a browser**, as ever. The stage select is one option longer.
 - **Nothing reclassifies the rows already filed as `phone_screen`.** If any of the live
   board's screens were really recorded videos, they are still filed as screens; moving one
