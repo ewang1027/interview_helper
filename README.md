@@ -123,6 +123,8 @@ make up-stack   # the whole thing in containers on :3000 — the supported deplo
 make down-stack # stop it (the database volume survives)
 make check      # ruff + mypy + pytest + corpus validate + doc gates + web checks, then hygiene
 make check-web  # just the web app: eslint, tsc, component tests
+make ci-watch   # after a push: wait for HEAD's CI run and exit with its verdict
+make ci-status  # what the last run on this branch concluded (SHA=<commit> for one commit)
 make coverage   # Python coverage — needs Postgres, or the figure drops ~26 points
 make test-db    # seeds the corpus, then the schema and session tests against live Postgres
 
@@ -135,6 +137,19 @@ make backup-schedule  # launchd runs that dump nightly at 21:00 — docs/OPERATI
 make restore FILE=... CONFIRM=1   # replace the database with a dump
 make down             # tear down the local stack — data survives; `down -v` does not
 ```
+
+Every web target runs through `scripts/pnpm.sh`, which invokes the pnpm version
+`apps/web/package.json` pins rather than whatever `pnpm` means on the machine. A mismatch
+is not a version difference, it is `ERR_PNPM_BAD_PM_VERSION` and a target that fails
+before it starts — which is what had been stopping `make check` at `check-web` here, and
+with it everything after `check-web`, `make hygiene` included.
+
+The two `ci-*` targets read the gate that actually guards the remote. `make check` is
+thorough and local, and the difference bit on 2026-09-11: CI had been red for three days
+on an npm advisory no local check looks at, and nothing here knew. `make ci-status` now
+runs at the tail of every `make check` as part of `make hygiene` — informational, never
+failing, and quiet when `gh` is not signed in, since an expired token must not read as a
+broken build.
 
 `make dev` brings up Postgres only, which is what the local `uvicorn`/`next` workflow
 wants. `make up-stack` runs everything in containers instead — that is the *supported

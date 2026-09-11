@@ -15,7 +15,8 @@ endif
 
 .PHONY: help setup dev up dev-api dev-web down check check-web lint typecheck test fmt \
         corpus-validate seed test-sandbox test-e2e test-db cost-report secret-scan \
-        doc-links doc-check hygiene verify-solutions login test-llm build-web \
+        doc-links doc-check hygiene ci-status ci-watch verify-solutions login test-llm \
+        build-web \
         backup restore coverage build-stack up-stack down-stack logs-stack push clean \
         daemon-guard backup-schedule backup-unschedule
 
@@ -31,7 +32,7 @@ setup: ## Install Python deps and the pre-push hooks (secret scan, docs-with-cod
 	@# `pnpm install` exits 1 and aborts setup BEFORE the hook is installed — meaning a
 	@# fresh clone silently ends up with no pre-push secret scan on a public repo.
 	@if [ -f apps/web/package.json ]; then \
-	  cd apps/web && pnpm install; \
+	  bash scripts/pnpm.sh install; \
 	else \
 	  echo "skipping pnpm: apps/web has no package.json yet (Phase 5)"; \
 	fi
@@ -51,10 +52,10 @@ up: dev ## Everything: Postgres, migrations, then the API and web app together (
 	@bash scripts/dev_up.sh
 
 dev-web: ## Run the web app against the API (next dev, proxies /api and /auth to API_ORIGIN)
-	cd apps/web && pnpm dev
+	@bash scripts/pnpm.sh dev
 
 build-web: ## Production build of the web app
-	cd apps/web && pnpm build
+	@bash scripts/pnpm.sh build
 
 build-stack: daemon-guard ## Build the api, executor and web images
 	$(COMPOSE) --profile stack build
@@ -77,15 +78,18 @@ logs-stack: daemon-guard ## Follow every service's logs
 down: daemon-guard ## Tear down the local stack
 	$(COMPOSE) down
 
-check: lint typecheck test corpus-validate doc-links doc-check check-web secret-scan hygiene ## Everything CI runs, then a commit-hygiene report
+check: lint typecheck test corpus-validate doc-links doc-check check-web secret-scan hygiene ## Everything CI runs, then hygiene: uncommitted, unpushed, and CI's last verdict
 
 check-web: ## Web app: eslint, tsc and the component tests
 	@# Skipped with a message rather than failing when dependencies are not
 	@# installed: `make check` is the gate a Python-only change runs, and making
 	@# it depend on a pnpm install nobody asked for would be a gate people learn
 	@# to skip. CI installs them, so CI always runs it.
+	@# Through scripts/pnpm.sh, not `pnpm`: the pinned version is the only one that
+	@# will run at all, and a machine whose `pnpm` is something else failed this whole
+	@# target — which is how `make check` stopped reaching `make hygiene`.
 	@if [ -d apps/web/node_modules ]; then \
-	  cd apps/web && pnpm lint && pnpm typecheck && pnpm test; \
+	  bash scripts/pnpm.sh lint && bash scripts/pnpm.sh typecheck && bash scripts/pnpm.sh test; \
 	else \
 	  echo "skipping web checks: apps/web/node_modules absent (run make setup)"; \
 	fi
@@ -121,8 +125,18 @@ doc-links: ## Verify every internal doc link resolves — file and heading ancho
 doc-check: ## Verify the docs agree with each other: status headers, the index, the phase tables
 	@uv run python scripts/check_docs.py
 
-hygiene: ## Report uncommitted and unpushed work (informational — never fails)
+hygiene: ## Report uncommitted work, unpushed work, and what CI said (never fails)
 	@bash scripts/commit_hygiene.sh
+	@# The other half of the same question. commit_hygiene reports work that has not
+	@# reached the remote; this reports what the remote made of the work that has. On
+	@# 2026-09-11 CI had been red for three days and no local gate could have said so.
+	@bash scripts/ci_status.sh
+
+ci-status: ## What the last CI run on this branch concluded: make ci-status [SHA=<commit>]
+	@bash scripts/ci_status.sh $(SHA)
+
+ci-watch: ## Wait for HEAD's CI run and exit with its verdict — run it after a push
+	@bash scripts/ci_status.sh --watch
 
 secret-scan: ## Grep tracked files for common secret shapes (repo is public)
 	@bash scripts/secret_scan.sh

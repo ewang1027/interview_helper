@@ -86,6 +86,13 @@ Before pushing: `make check`, plus whichever heavier gate the change touches —
 `make test-db` (live Postgres), `make test-sandbox` (real Docker), `make test-e2e`,
 `make verify-solutions`. A gate you did not run is a gate you cannot cite.
 
+**After pushing: `make ci-watch`.** It waits for the run your push created and exits with
+its verdict. `make check` is not the gate that guards the remote — it does not run the
+db-marked tests and it does not audit the npm tree — and on 2026-09-11 the gap cost three
+red days that three separate waves were written across without noticing. `make ci-status`
+(also at the tail of `make check`, via `make hygiene`) answers the same question without
+waiting.
+
 **`wip:` is exempt from the documentation gate.** A checkpoint commit is not a unit of
 work, so mark it `wip:` and the hook lets it through. For the rarer case of a real commit
 that genuinely owes no documentation, the exception is typed out where it is visible:

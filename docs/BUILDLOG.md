@@ -6609,7 +6609,121 @@ gate a change of that shape owes. The rule was right and unread.
 
 - **No run has gone green yet.** Everything above is the same commands CI runs, on the same
   pinned pnpm, but the run that proves it is the one this commit triggers.
-- **Nothing watches the remote gate.** The hole this wave came from is unfixed: the next
-  three-day red streak will be found the same way, by someone looking. A status check on
-  the branch, or a `gh run watch` in the push path, is the obvious answer and is not built.
+- ~~**Nothing watches the remote gate.** The hole this wave came from is unfixed: the next
+  three-day red streak will be found the same way, by someone looking.~~ **Built the same
+  day** — `make ci-status` and `make ci-watch`, in the wave below.
 - **Two moderate advisories remain** and are reported rather than failed, by design.
+
+## Wave — The gate that gets read and the gate that runs · 2026-09-11
+
+Asked for directly, after the streak above was cleared: *continue to a full fix.*
+
+Clearing four advisories and a stale assertion fixed the build. It did not fix the thing
+that let the build stay broken for three days, which is that **nothing in this repo reads
+the remote gate.** `make check` is what gets run when a unit of work is declared good, and
+`make check` does not run the db-marked tests and does not audit the npm tree — so on this
+machine every one of those three days looked clean.
+
+### `make ci-status`, at the end of every `make check`
+
+`scripts/ci_status.sh` asks what the newest CI run on this branch concluded and prints one
+line. It runs from `make hygiene`, beside `commit_hygiene.sh`, which is the other half of
+the same question: that one reports work that has not reached the remote, this one reports
+what the remote made of the work that has.
+
+Red is the case worth designing, so it names the jobs and the step inside each. Pointed at
+the commit that started this, it says:
+
+```
+ci: main failure at 9dfaac4 (1 commit(s) behind HEAD)
+    Python (lint · types · tests · corpus) — DB tests
+    Web (lint · types · components · build) — Audit dependencies
+    gh run view 34654151496 --log-failed
+```
+
+Both causes of the streak, named, in the output of the command that was being run the
+whole time.
+
+### Three decisions, all of them about not becoming the thing that gets deleted
+
+**It never fails in report mode.** Same rule as `make hygiene`: a nudge that can break a
+build gets deleted. It also cannot distinguish a broken build from an expired `gh` token,
+and the second must not look like the first — so a missing `gh`, an unauthenticated `gh`
+or no run at all each print a line saying which and exit 0.
+
+**Every `gh` call has a deadline.** A hung network call at the tail of `make check` is
+precisely the failure this script is forbidden to be. macOS ships no `timeout`, so the
+calls are backgrounded against a 10-second deadline and killed.
+
+**`make ci-watch` is the opposite case** and exits with the run's own conclusion. It is
+asked for explicitly, after a push, about a run whose verdict is the whole answer — so
+failing is what it is for. It waits up to three minutes for the run to be created, and
+says so if none appears, because a dropped push event is a thing that has happened here
+before (it is why the workflow carries `workflow_dispatch`).
+
+CLAUDE.md now says to run it after a push, next to the line about which heavier gate a
+change owes before one.
+
+### And the reason it would not have fired: `make check` never reached its own tail
+
+Wiring the report into `make hygiene` and then running `make check` produced no report.
+`make check` has been dying at `check-web` on this machine for weeks — recorded in six
+entries above as "corepack, unchanged", each one followed by running the web tools by
+hand — and `hygiene` is the step after it. The nudge was installed behind a wall.
+
+The cause is one line outside the repo: `~/.local/bin/pnpm` is a shim that execs
+`corepack pnpm@latest`, `apps/web/package.json` pins `pnpm@11.24.0`, and pnpm refuses to
+run at all on that mismatch (`ERR_PNPM_BAD_PM_VERSION`) rather than running the wrong
+version. So `make setup`, `make dev-web`, `make build-web` and `make check-web` were all
+failing before doing anything, on the machine this project is developed on.
+
+`scripts/pnpm.sh` reads the pin out of `package.json` and runs exactly that version
+through corepack, falling back to `npx` and then to `pnpm` from `PATH`. The four targets
+now go through it. **`make check` runs end to end here for the first time**, and its last
+line is the CI verdict.
+
+That is also the honest ending to the streak this session started with: the gate that had
+been red for three days was the **web** job, and the local half of it was a target that
+had not run on this machine in weeks. Two failures with the same shape — a check that
+exists, is documented, and does not execute — and the second one hid the first.
+
+### What this deliberately does not do
+
+**`make check` still does not run `pnpm audit`.** It would have caught these four
+advisories locally on 2026-09-09, and it is the wrong fix: it duplicates one CI gate while
+the CI-status line covers every CI-only gate at once, and an audit in `make check` makes
+the local gate fail offline and fail the morning an advisory is published against a
+transitive dependency with no fix. That is the gate-people-learn-to-skip failure that
+[SECURITY](SECURITY.md#the-frontends-dependency-surface) already reasons about.
+
+### Verified
+
+- `make check` **end to end on this machine**, `check-web` included: 405 offline tests,
+  lint, format, mypy, corpus, both doc gates, secret scan, 95 component tests, and a tail
+  reading `hygiene: …` then `ci: main green at 61ce6f4 (HEAD)`.
+- Every branch of the report exercised against real runs: green at HEAD, `failure` with
+  both jobs and their failing steps named (run 34654151496), a commit with no run
+  (the repo's first), a bad ref, `CI=1` (silent, exit 0), and `gh` removed from `PATH`
+  (skip line, exit 0). `make ci-status SHA=9dfaac4` reports one named commit; `--commit`
+  asks the API for that sha rather than filtering a page of recent runs, so an old commit
+  gets an answer instead of a shrug.
+- `make test-db`: **222 passed**, 1 skipped, against live Postgres.
+- `scripts/pnpm.sh` resolves 11.24.0 from the pin through corepack; `make check-web` runs
+  the web suite on it.
+
+### Not verified
+
+- **`make ci-watch` has not watched a run that failed.** The green path ran; the exit code
+  on red is one line of shell and is untested.
+- **The window between push and run creation is guessed.** Three minutes, from runs
+  appearing in ten to twenty seconds today. A slower queue reports "no run" and exits 2,
+  which is a false alarm on a slow morning rather than a silent miss.
+- **Nothing runs this on a schedule.** It answers when asked, so a branch left alone stays
+  unexamined — a red `main` is still only found by someone typing `make check`.
+- **`scripts/pnpm.sh`'s fallbacks are untested.** The corepack path is what runs here; the
+  `npx` and bare-`pnpm` branches have never executed. So has no other machine — the shim
+  that caused this is one person's, and whether a clean clone elsewhere needs the script
+  at all is unknown.
+- **The vitest 4 dependency PR is still open.** Its CI passes on top of the advisory fix;
+  merging it clears the last failing Dependabot security update (`@vitest/mocker`,
+  moderate). Blocked here on a permission this session does not have, not on the change.
