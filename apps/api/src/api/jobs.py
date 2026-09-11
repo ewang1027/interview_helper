@@ -67,6 +67,7 @@ TRACKER_VERSION = "jobs-v1"
 LADDER: tuple[str, ...] = (
     "applied",
     "oa",
+    "video_assessment",
     "phone_screen",
     "round_1",
     "round_2",
@@ -93,6 +94,7 @@ OUTCOME_FOR_STAGE: dict[str, str] = {
 STAGE_LABELS: dict[str, str] = {
     "applied": "Applied",
     "oa": "Online assessment",
+    "video_assessment": "Recorded video interview",
     "phone_screen": "Phone screen",
     "round_1": "First round",
     "round_2": "Second round",
@@ -250,7 +252,9 @@ Extract one row per application. Rules:
   sub-category that matches the *work*, not the company's reputation. A software role at a
   hedge fund is still the software sub-category that fits it.
 - `stage` is how far the application has already got, if the paste says so ("passed the
-  OA", "onsite next week", "rejected"). Default to `applied` when it does not say.
+  OA", "onsite next week", "rejected"). Default to `applied` when it does not say. A
+  one-way recorded video — HireVue, Spark Hire, "record your answers by Friday" — is
+  `video_assessment`, not `phone_screen`: nobody was on the other end of it.
 - `confidence` is how sure you are of `subcategory` for that row specifically. Be willing
   to be low: a bare company name with no title is a guess, and below the threshold this
   application flags the row for a human instead of trusting you.

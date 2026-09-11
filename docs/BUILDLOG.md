@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-09-10
+## Where things stand — 2026-09-11
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -28,7 +28,7 @@ detail behind it.
 | **6** AWS deploy | **partial** — step 1 of 5 | Dockerfiles for `api`, `executor` and `web`; `make up-stack` runs all of it behind a **Caddy front door** routing by path, the job the ALB does — so compose mirrors the target topology. Only the front door publishes a port. Sandbox isolation re-verified from inside the containerised launcher | steps 2–5: one service on Fargate by hand, Terraform, the rest of the stack, the portability gate — **all blocked on an authenticated AWS session**, not on code |
 | **7–8** Voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does. The import takes **NeetCode links** as well as LeetCode ones (2026-09-07). **Re-tagged 2026-09-09** against the expanded taxonomy: all 23 logged problems, eleven of them wrong before, by a script that corrects the evidence they wrote and rebuilds mastery. **Filed 2026-09-10**: every coding concept carries a topic, rows carry it with the concept's name and the NeetCode lists, and problems take **labels** of your own through `PATCH /practice/problems/{id}` | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
-| **10** Job applications | **built** | two tables, the **stage event log** and the projection over it, ten endpoints, a Sonnet 5 paste parser, an Opus 5 **web-search research pass**, and the `/jobs` page. **Run live 2026-08-26**: a messy five-row paste parsed correctly, six real web searches, an import down to 3 SQL statements from 240. A **rejections tracker** (2026-09-09): each no filed under the rung it came after, with the days it took | the gold set for calibrating the tagging; time-in-stage beyond applying-to-rejection, which the events already record and nothing reports; a research trigger based on what a row is missing rather than how long the list is |
+| **10** Job applications | **built** | two tables, the **stage event log** and the projection over it, ten endpoints, a Sonnet 5 paste parser, an Opus 5 **web-search research pass**, and the `/jobs` page. **Run live 2026-08-26**: a messy five-row paste parsed correctly, six real web searches, an import down to 3 SQL statements from 240. A **rejections tracker** (2026-09-09): each no filed under the rung it came after, with the days it took. An eighth rung, `video_assessment`, for the recorded one-way video (2026-09-11) | the gold set for calibrating the tagging; time-in-stage beyond applying-to-rejection, which the events already record and nothing reports; a research trigger based on what a row is missing rather than how long the list is |
 
 ~~One thing worth knowing before reading anything else as further along than it is: **no
 full session has run against a live model.**~~ **Closed 2026-08-25.** A full session ran on
@@ -6470,3 +6470,62 @@ three" is the data that would justify more.
 - **Difficulty is read out of a free-text label**, so a Codeforces rating files under
   *Other* with its number shown. Right for now, and worth a real column if ratings ever
   need sorting.
+
+## Wave — A recorded video is not a phone screen · 2026-09-11
+
+Asked for directly: *add a tag in my application section for hirevue like assessments, where
+I have to record myself talking. I don't think these technically count as a phone screen.*
+
+They do not, and the ladder had nowhere else to put them. Seven rungs, and a HireVue landed
+on `phone_screen` because that was the nearest thing to it — which quietly claimed a
+conversation with a person for every application that had only ever talked to a webcam.
+
+### An eighth rung, between `oa` and `phone_screen`
+
+`video_assessment`, labelled *Recorded video interview*. The placement is the decision: a
+one-way video has nobody on the other end, so what it resembles is `oa` — a filter a company
+applies before spending anyone's time — and it goes directly above it, below the first rung
+that involves a human. Because `furthest_stage` is a maximum over the ladder
+([JOBS](JOBS.md)), a row that recorded a video and then had a real screen still reads as
+having reached the screen, and one that only recorded a video no longer reads as having been
+screened.
+
+It is a rung and not a label because the funnel is the thing that was wrong. A label would
+have recorded the fact and left the count saying the same untrue sentence.
+
+### Nothing else had to change
+
+The ladder is data: `LADDER` and `STAGE_LABELS` in `api.jobs`, served to the web by
+`GET /jobs/catalog`, and both stage selects and the funnel are rendered off that response.
+Three source edits — the tuple, the label map, the `Stage` literal in `api.schemas` — plus
+the mirrored union in `types.ts`, which is hand-kept.
+
+**No migration.** `current_stage`, `furthest_stage` and `job_application_events.stage` are
+plain `String` columns with no check constraint enumerating the vocabulary, so existing rows
+stay valid and the new value is storable the moment the constant lists it. The rank shift —
+`phone_screen` and everything above it moved up one index — is computed at read time from
+`LADDER` and stored nowhere, so no row needed rewriting and `POST /jobs/recompute` has
+nothing to correct.
+
+The paste parser was told about it in the same breath, since a paste that says "recorded my
+HireVue" would otherwise be read as a phone screen by the model for the same reason the
+person would have filed it there.
+
+### Verified
+
+- `make check`: **405 offline tests** pass, lint, format and mypy clean. The row schema's
+  stage enum is generated from `STAGES`, so the parser's enum picked the rung up with no
+  test change; `test_jobs_db`'s catalog assertion compares against `jobs.LADDER` and still
+  holds.
+- **95 component tests**, eslint and `tsc --noEmit` clean. The web fixture pins its own
+  seven-rung catalog deliberately — it is a fixture of one response, not a mirror of the
+  ladder — so it was left alone.
+
+### Not verified
+
+- **No live call.** No paste has been through the parser with a HireVue in it, so whether
+  the model reaches for the new rung over `phone_screen` is untested against a real model.
+- **Nothing opened in a browser**, as ever. The stage select is one option longer.
+- **Nothing reclassifies the rows already filed as `phone_screen`.** If any of the live
+  board's screens were really recorded videos, they are still filed as screens; moving one
+  appends an event, which is the honest way to do it by hand.

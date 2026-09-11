@@ -114,10 +114,15 @@ after being solved 3 times; `due_at` is cleared and it is never prompted again.
 **Application** — one company/role pair you applied to, tracked in `job_applications`.
 Writes no `concept_evidence` and moves no mastery, deliberately ([JOBS](JOBS.md)).
 
-**Stage** — where an application stands. Seven **ladder** stages in order — `applied`,
-`oa`, `phone_screen`, `round_1`, `round_2`, `final`, `offer` — and three **terminal** ones
-off the ladder: `rejected`, `withdrawn`, `ghosted`. Terminal stages are deliberately
-unranked; ranking them would count every withdrawal as progress.
+**Stage** — where an application stands. Eight **ladder** stages in order — `applied`,
+`oa`, `video_assessment`, `phone_screen`, `round_1`, `round_2`, `final`, `offer` — and
+three **terminal** ones off the ladder: `rejected`, `withdrawn`, `ghosted`. Terminal stages
+are deliberately unranked; ranking them would count every withdrawal as progress.
+
+**Recorded video interview** (`video_assessment`) — a one-way video you record against a
+prompt with nobody on the other end, HireVue being the common one. A rung of its own
+between `oa` and `phone_screen`, because it is a filter rather than a conversation and a
+funnel that files it under `phone_screen` reports human contact that never happened.
 
 **Furthest stage** — the highest ladder rung an application ever reached, as opposed to
 `current_stage`, where it is now. The funnel counts this one, so a rejection after an onsite

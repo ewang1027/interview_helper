@@ -157,6 +157,7 @@ class ReviewRequest(BaseModel):
 Stage = Literal[
     "applied",
     "oa",
+    "video_assessment",
     "phone_screen",
     "round_1",
     "round_2",

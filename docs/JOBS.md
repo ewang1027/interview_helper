@@ -6,6 +6,9 @@
 > deliberately messy five-application paste parsed into five correct rows, and the research
 > pass completed six real web searches. 40 tests, 22 against live Postgres, 3 against a
 > live model.
+> **Extended 2026-09-11:** an eighth ladder rung, `video_assessment` — the recorded
+> one-way video (HireVue and the like), which was previously only loggable as a phone
+> screen it is not.
 > **Extended 2026-09-09:** a **rejections tracker** — `GET /jobs/stats` grew a `rejections`
 > block, and the page a card and a board filter for it. Each rejection is filed under the
 > rung it came *after* (`furthest_stage`, as the funnel counts) with the days from applying
@@ -83,6 +86,7 @@ The ladder, in order:
 |---|---|
 | `applied` | Applied |
 | `oa` | Online assessment |
+| `video_assessment` | Recorded video interview |
 | `phone_screen` | Phone screen |
 | `round_1` | First round |
 | `round_2` | Second round |
@@ -90,6 +94,15 @@ The ladder, in order:
 | `offer` | Offer |
 
 and off the ladder: `rejected`, `withdrawn`, `ghosted`.
+
+`video_assessment` is its own rung rather than a kind of `phone_screen` because the two
+answer different questions. A one-way recorded video — HireVue, Spark Hire, "record your
+answers by Friday" — has nobody on the other end of it: it is a filter a company applies
+before spending anyone's time, which is what `oa` is too, and a funnel that counts it as a
+human conversation reports contact that never happened. It sits **above `oa` and below
+`phone_screen`**, because it is the rung a company puts after the assessment and before
+anyone talks to you; that placement is what `furthest_stage` maximises over, so a row that
+did a HireVue and then a real screen still reads as having reached the screen.
 
 `furthest_stage` is a **maximum over the ladder**, not the last thing seen, so transitions
 arriving out of order do not move you backwards — a recruiter screen booked after the

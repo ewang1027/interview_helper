@@ -457,6 +457,7 @@ export interface ReviewQueue {
 export type LadderStage =
   | "applied"
   | "oa"
+  | "video_assessment"
   | "phone_screen"
   | "round_1"
   | "round_2"
