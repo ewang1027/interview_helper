@@ -12,12 +12,15 @@ allowBuilds:
 # not clear them and the version has to be forced here.
 #
 #   postcss   >=8.5.23  sourceMappingURL path traversal / arbitrary file read
-#   sharp     >=0.35.0  inherited libvips CVEs (next/image only; unused here)
+#   sharp     >=0.35.4  inherited libvips CVEs, then libheif's (GHSA-g89c-p67h-r497,
+#                       GHSA-2jg2-4ch7-h545) — next/image only, unused here. The floor
+#                       was >=0.35.0 until 2026-09-11, when 0.35.3 became vulnerable and
+#                       a `>=` override happily kept resolving to it
 #   dompurify >=3.4.13  monaco's hover renderer
 #
 # Revisit whenever `next` or `@monaco-editor/react` moves: an override that has
 # become unnecessary is an override that silently holds a version back.
 overrides:
   postcss: ">=8.5.23"
-  sharp: ">=0.35.0"
+  sharp: ">=0.35.4"
   dompurify: ">=3.4.13"

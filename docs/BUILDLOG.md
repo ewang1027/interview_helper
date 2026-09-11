@@ -6520,6 +6520,11 @@ person would have filed it there.
 - **95 component tests**, eslint and `tsc --noEmit` clean. The web fixture pins its own
   seven-rung catalog deliberately — it is a fixture of one response, not a mirror of the
   ladder — so it was left alone.
+- **Correction, 2026-09-11:** the two claims above were true and insufficient. `make check`
+  does not run the db-marked tests, and the rejection-breakdown test in `test_jobs_db.py`
+  pins its answer as a **literal eight-key dict**, so the new rung broke it. CI found it;
+  `make test-db`, which CLAUDE.md names as the gate a change of that shape owes, was not
+  run before the push. Fixed in the wave below.
 - **Live, on the rebuilt stack** (`make up-stack`, all five services healthy):
   `GET /jobs/catalog` serves the eight-rung ladder with *Recorded video interview* on it,
   and `GET /jobs/stats` renders the rung in both the funnel and the rejection breakdown
@@ -6541,3 +6546,70 @@ were HireVues are moved down to it.
 - **Nothing reclassifies the rows already filed as `phone_screen`.** If any of the live
   board's screens were really recorded videos, they are still filed as screens; moving one
   appends an event, which is the honest way to do it by hand.
+
+## Wave — CI had been red for three days and nothing here said so · 2026-09-11
+
+Asked for directly: *ci workflow runs are down, find out and fix.*
+
+They were, since **2026-09-09** — six consecutive runs on `main`, the last green one dated
+2026-09-08. Two unrelated causes, one of them three days old and one of them an hour old,
+and the part worth recording is that neither was visible from inside this repo: three waves
+were written in that window, each recording its local gates honestly, and **not one of them
+mentions that the push it describes went red on the remote.** `make check` was the gate
+being read, and it is not the gate that runs.
+
+### Cause 1 — four npm advisories, accumulating under a gate built to catch them
+
+The web job fails on `pnpm audit --audit-level high`, which is deliberate ([SECURITY](
+SECURITY.md#the-frontends-dependency-surface)). Between 2026-09-09 and 2026-09-11 four
+advisories at `high` or above landed on the tree: two critical in `next` — one of them an
+unauthenticated RCE in the image optimisation API on AVIF input — one high in `sharp`, one
+high in `js-yaml`.
+
+Cleared with the smallest change that reaches each: `next` and `eslint-config-next`
+15.5.23 → **15.5.25** (a patch inside the Next 15 line the spec pins), the `sharp` override
+floor `>=0.35.0` → **`>=0.35.4`**, and `pnpm update js-yaml --depth Infinity` for the last,
+which needed no override at all because `@eslint/eslintrc` already allowed `^4.3.0`.
+
+The sharp entry is the lesson: **a `>=` override is a floor, not a subscription.**
+`>=0.35.0` was written when 0.35.0 was the fix, kept resolving to 0.35.3, and said nothing
+when 0.35.3 became the vulnerability. It is also why the repo's Dependabot security updates
+had been failing since 2026-09-10 with `security_update_not_possible` — `next` 15.5.23
+declared `sharp: ^0.34.3`, and no version in that range reaches 0.35.4. 15.5.25 declares
+`^0.34.3 || ^0.35.4`.
+
+### Cause 2 — the rung added an hour earlier broke a db-marked test
+
+`test_rejections_are_tracked_by_the_rung_they_came_after` asserts the rejection breakdown
+against a **literal dict of every rung**, so `video_assessment` arriving made it a
+nine-key answer to an eight-key assertion. The endpoint was right; the test was pinning a
+list that had grown.
+
+Fixed by adding the rung to the literal rather than deriving it from `LADDER`. The
+neighbouring assertion five lines up *is* derived from the funnel and survived the change
+untouched — which is the argument for deriving this one too, and the argument against is
+that a test that builds its expectation from the same constant the endpoint reads cannot
+fail when that constant is wrong. The explicit dict is the one that would have caught a
+rung inserted in the wrong place, so it stays explicit and it stays a thing to update.
+
+It was found by CI rather than locally because **`make check` does not run db-marked
+tests** and `make test-db` was not run before the push, despite CLAUDE.md naming it as the
+gate a change of that shape owes. The rule was right and unread.
+
+### Verified
+
+- `make test-db`: **222 passed**, 1 skipped, against live Postgres — the suite CI runs at
+  the step that was failing.
+- `make check`: 405 offline tests, lint, format, mypy, corpus, both doc gates clean.
+- The web job reproduced locally end to end on pnpm 11.24.0, the version CI pins:
+  `install --frozen-lockfile`, lint, `tsc --noEmit`, **95 component tests**, `next build`
+  (14 routes), and `pnpm audit --audit-level high` — **exit 0**, two moderate reported.
+
+### Not verified
+
+- **No run has gone green yet.** Everything above is the same commands CI runs, on the same
+  pinned pnpm, but the run that proves it is the one this commit triggers.
+- **Nothing watches the remote gate.** The hole this wave came from is unfixed: the next
+  three-day red streak will be found the same way, by someone looking. A status check on
+  the branch, or a `gh run watch` in the push path, is the obvious answer and is not built.
+- **Two moderate advisories remain** and are reported rather than failed, by design.

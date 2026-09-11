@@ -9,6 +9,9 @@
 > memory and contamination tests have had no negative control, and that is owed.
 > **The answer parser** (2026-08-21) is the second place untrusted text meets something
 > powerful, and the first one outside the sandbox — see below.
+> **Dependency surface re-cleared 2026-09-11** after three days of a red `pnpm audit`
+> gate: two critical `next` advisories, one high in `sharp`, one in `js-yaml`. `pnpm audit`
+> passes at `high` again, with two moderate reported.
 > Not built: `cpp`, `peak_rss_kb`. AWS-layer enforcement in **Phase 6**.
 > "Measured behaviour" below records where this document's original claims were wrong.
 > Related: [ARCHITECTURE](ARCHITECTURE.md) (service boundaries) · [INFRA](INFRA.md) (where these controls are configured) · [GRADING](GRADING.md) (what the executor is for)
@@ -375,7 +378,7 @@ they are forced in `pnpm-workspace.yaml`:
 | Package | Forced | Reached through | Real exposure here |
 |---|---|---|---|
 | `postcss` | `>=8.5.23` | `next` | Build-time CSS only, and the CSS is authored in this repo |
-| `sharp` | `>=0.35.0` | `next` | `next/image` optimisation, which this app does not use |
+| `sharp` | `>=0.35.4` | `next` | `next/image` optimisation, which this app does not use |
 | `dompurify` | `>=3.4.13` | `@monaco-editor/react` → `monaco-editor` | Monaco's hover renderer, over the candidate's own code |
 
 `pnpm audit` is clean as of that change, and **CI fails the build on `high`** while
@@ -386,6 +389,34 @@ fix available — is a gate that gets skipped, which is the same reasoning that 
 
 An override that has become unnecessary is an override silently holding a version back, so
 the list is to be revisited whenever `next` or `@monaco-editor/react` moves.
+
+### What the 2026-09-11 red streak added to that
+
+`pnpm audit` was **not** clean from 2026-09-09 to 2026-09-11: four advisories at `high` or
+above accumulated, the gate did exactly what it was built to do, and three pushes went to
+`main` with the web job failing on it. Cleared by `next` 15.5.23 → **15.5.25**, the `sharp`
+floor `>=0.35.0` → **`>=0.35.4`**, and a lockfile refresh moving `js-yaml` to 4.3.2.
+
+| Advisory | Severity | Cleared by |
+|---|---|---|
+| `next` — unauthenticated RCE in the image optimisation API on AVIF input | critical | 15.5.25 |
+| `next` — [GHSA-p293-qw3h-jr36](https://github.com/advisories/GHSA-p293-qw3h-jr36) | critical | 15.5.25 |
+| `sharp` — inherited libheif CVEs | high | the override's floor raised to `>=0.35.4` |
+| `js-yaml` — merge keys do not bound CPU use | high | lockfile refresh to 4.3.2 |
+
+Two things worth keeping from it. **A `>=` override is a floor, not a subscription**: the
+sharp entry said `>=0.35.0` and resolved to 0.35.3, which was fine on the day it was
+written and vulnerable three weeks later, and nothing about the override noticed — the
+floor has to be raised by hand each time an advisory lands above it. And **an override was
+the wrong tool for `js-yaml`**: `@eslint/eslintrc` already allowed `^4.3.0`, so the patched
+version was reachable by refreshing the lockfile, and forcing it would have added a
+permanent entry to the table above for a problem that resolved itself.
+
+The same advisory is why the repo's **Dependabot security updates** had been failing since
+2026-09-10: `security_update_not_possible` for sharp, because `next` 15.5.23 declared
+`sharp: ^0.34.3` and nothing in that range reaches 0.35.4. `next` 15.5.25 declares
+`^0.34.3 || ^0.35.4`, so the parent has now picked the fix up and those runs should clear
+on their own.
 
 One dependency is a known gap rather than a vulnerability: **`@monaco-editor/react` loads
 Monaco from a CDN by default**, so the editor is a runtime network dependency on a service

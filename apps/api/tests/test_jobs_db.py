@@ -408,6 +408,7 @@ def test_rejections_are_tracked_by_the_rung_they_came_after(client):
     assert after == {
         "applied": 1,
         "oa": 0,
+        "video_assessment": 0,
         "phone_screen": 0,
         "round_1": 0,
         "round_2": 0,
