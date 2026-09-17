@@ -90,10 +90,34 @@ const NO_FILTERS: Filters = {
   due: "any",
 };
 
-function matches(row: PracticeProblem, filters: Filters, needle: string, now: number): boolean {
+/**
+ * A row with the two things every keystroke used to re-derive for it: the
+ * lowercased text the search reads, and the difficulty the filter, the sort and
+ * the grouping each asked for separately. Both depend only on the row, so they
+ * are computed once per load rather than once per row per keystroke.
+ */
+interface Indexed {
+  row: PracticeProblem;
+  difficulty: Difficulty;
+  haystack: string;
+}
+
+function index(row: PracticeProblem): Indexed {
+  return {
+    row,
+    difficulty: difficultyOf(row.difficulty_label),
+    haystack: [row.title, row.primary_concept_id, row.primary_concept_name, row.topic, ...row.labels, row.notes]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase(),
+  };
+}
+
+function matches(entry: Indexed, filters: Filters, terms: string[], now: number): boolean {
+  const { row } = entry;
   if (filters.status && row.status !== filters.status) return false;
   if (filters.topic && (row.topic ?? "Untagged") !== filters.topic) return false;
-  if (filters.difficulty && difficultyOf(row.difficulty_label) !== filters.difficulty) return false;
+  if (filters.difficulty && entry.difficulty !== filters.difficulty) return false;
   if (filters.source && row.source_site !== filters.source) return false;
   if (filters.list && !row.lists.includes(filters.list)) return false;
   if (filters.label && !row.labels.some((label) => label.toLowerCase() === filters.label.toLowerCase()))
@@ -101,43 +125,30 @@ function matches(row: PracticeProblem, filters: Filters, needle: string, now: nu
   if (filters.due === "now" && !(row.due_at && new Date(row.due_at).getTime() <= now)) return false;
   if (filters.due === "scheduled" && !row.due_at) return false;
   if (filters.due === "unscheduled" && row.due_at) return false;
-  if (needle) {
-    const haystack = [
-      row.title,
-      row.primary_concept_id,
-      row.primary_concept_name,
-      row.topic,
-      ...row.labels,
-      row.notes,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    if (!needle.split(/\s+/).every((term) => haystack.includes(term))) return false;
-  }
+  if (terms.length && !terms.every((term) => entry.haystack.includes(term))) return false;
   return true;
 }
 
-function compare(sort: Sort): (a: PracticeProblem, b: PracticeProblem) => number {
+function compare(sort: Sort): (a: Indexed, b: Indexed) => number {
   const far = Number.POSITIVE_INFINITY;
   switch (sort) {
     case "oldest":
-      return (a, b) => a.created_at.localeCompare(b.created_at);
+      return (a, b) => a.row.created_at.localeCompare(b.row.created_at);
     case "due":
       // Unscheduled last: a problem with no date is not "due soonest", it is not due.
       return (a, b) =>
-        (a.due_at ? new Date(a.due_at).getTime() : far) - (b.due_at ? new Date(b.due_at).getTime() : far);
+        (a.row.due_at ? new Date(a.row.due_at).getTime() : far) -
+        (b.row.due_at ? new Date(b.row.due_at).getTime() : far);
     case "title":
-      return (a, b) => a.title.localeCompare(b.title);
+      return (a, b) => a.row.title.localeCompare(b.row.title);
     case "difficulty":
       return (a, b) =>
-        DIFFICULTY_ORDER[difficultyOf(a.difficulty_label)] - DIFFICULTY_ORDER[difficultyOf(b.difficulty_label)] ||
-        a.title.localeCompare(b.title);
+        DIFFICULTY_ORDER[a.difficulty] - DIFFICULTY_ORDER[b.difficulty] || a.row.title.localeCompare(b.row.title);
     case "solves":
-      return (a, b) => b.solve_count - a.solve_count || a.title.localeCompare(b.title);
+      return (a, b) => b.row.solve_count - a.row.solve_count || a.row.title.localeCompare(b.row.title);
     case "newest":
     default:
-      return (a, b) => b.created_at.localeCompare(a.created_at);
+      return (a, b) => b.row.created_at.localeCompare(a.row.created_at);
   }
 }
 
@@ -190,11 +201,17 @@ export function PracticeLog({
   const sources = useMemo(() => countBy(rows, (row) => row.source_site), [rows]);
   const lists = useMemo(() => countBy(rows.flatMap((row) => row.lists), (list) => list), [rows]);
 
+  const indexed = useMemo(() => rows.map(index), [rows]);
+
   const needle = query.trim().toLowerCase();
   const filtered = useMemo(() => {
     const now = Date.now();
-    return rows.filter((row) => matches(row, filters, needle, now)).sort(compare(sort));
-  }, [rows, filters, needle, sort]);
+    const terms = needle ? needle.split(/\s+/) : [];
+    return indexed
+      .filter((entry) => matches(entry, filters, terms, now))
+      .sort(compare(sort))
+      .map((entry) => entry.row);
+  }, [indexed, filters, needle, sort]);
 
   const active = Object.entries(filters).filter(
     ([key, value]) => value !== NO_FILTERS[key as keyof Filters],
@@ -211,7 +228,11 @@ export function PracticeLog({
     const sections = new Map<string, PracticeProblem[]>();
     for (const row of filtered) {
       for (const key of groupKeys(row, groupBy)) {
-        sections.set(key, [...(sections.get(key) ?? []), row]);
+        // Push into the section, never rebuild it: copying the array per row made
+        // grouping quadratic in the size of the largest section.
+        const section = sections.get(key);
+        if (section) section.push(row);
+        else sections.set(key, [row]);
       }
     }
     return [...sections.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));

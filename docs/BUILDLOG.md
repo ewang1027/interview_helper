@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-09-11
+## Where things stand — 2026-09-16
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -6727,3 +6727,61 @@ transitive dependency with no fix. That is the gate-people-learn-to-skip failure
 - **The vitest 4 dependency PR is still open.** Its CI passes on top of the advisory fix;
   merging it clears the last failing Dependabot security update (`@vitest/mocker`,
   moderate). Blocked here on a permission this session does not have, not on the change.
+
+---
+
+## Wave — The practice log's filters, off the per-keystroke path · 2026-09-16
+
+An optimization, not a feature. Nothing the practice log does changed; what changed is how
+much work each keystroke in its search box costs.
+
+### What was being recomputed, and how often
+
+`PracticeLog` holds the whole log in memory and narrows it in the browser — the scale
+decision [recorded on 2026-09-10](#the-filters-run-over-the-whole-log). Two things in that
+path were derived per row per keystroke rather than once per load:
+
+- **The search haystack.** `matches()` built, for every row, an array of six fields,
+  filtered the empties, joined and lowercased it — then threw it away and rebuilt it on the
+  next character. It also re-split the needle on whitespace once per row.
+- **The difficulty.** `difficultyOf()` parses a free-text label (`Easy`, `1700`, whatever a
+  person typed). The filter called it per row, the difficulty sort called it twice per
+  comparison — O(n log n) parses of strings that had not changed — and the grouping called
+  it again.
+
+Both depend only on the row, so both now live on an `Indexed` wrapper built in a `useMemo`
+keyed on `rows`: once per load, reused by the filter, the sort and the grouping.
+
+The grouping had a separate problem, and a worse shape: `sections.set(key, [...(sections.get(key) ?? []), row])`
+copied a section's entire array to append one row, which is quadratic in the size of the
+largest section. It pushes now.
+
+### Verified
+
+Measured on synthetic rows of the log's shape, typing "two pointers variant" a character at
+a time, sorted by difficulty (the branch that parsed labels twice per comparison):
+
+| | 400 rows |
+|---|---|
+| before | 0.222 ms per keystroke |
+| after | 0.073 ms per keystroke |
+
+**3.1x**, and the gap widens with the field count rather than the row count. Grouping 400
+rows into 21 sections: 0.017 ms → 0.006 ms (2.9x); at 2000 rows, 0.116 ms → 0.015 ms
+(7.8x) — the quadratic term showing itself.
+
+`make check-web` passes: eslint, `tsc`, and **95 component tests**, the 15 in
+`practice.test.tsx` included. Those tests drive the search box, every filter, both sorts and
+all four groupings through the rendered component, so the refactor is covered by the
+behaviour it was not allowed to change. The benchmark asserts the two implementations
+return identical results before timing either.
+
+### Not verified
+
+- **No browser has run this.** Same gap Phase 5 has carried throughout: the numbers are
+  from Node on this machine, not from a real render, and the actual win a person feels also
+  includes React's re-render, which this does not touch.
+- **It was not a measured problem.** At today's 23 logged problems none of this was
+  perceptible; the benchmark uses 400 rows because that is the scale the component's own
+  comment says it is built for. This is work done ahead of the complaint, which is worth
+  saying plainly rather than implying a fix to something users hit.
