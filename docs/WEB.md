@@ -6,7 +6,7 @@
 > `/practice` and `/jobs`. `make check-web` and a CI job run eslint, tsc and 103 component
 > tests.
 > **Not built:** the Playwright gate; `/corpus` lists nothing, because the endpoint it
-> needs does not exist (see that section); Monaco loads from a CDN. Nothing here has been
+> needs does not exist (see that section). Nothing here has been
 > opened in a browser yet — see the caveat under **Testing**, which is the most important
 > line on this page.
 > Related: [API](API.md) (everything here consumes it) · [ADAPTIVE](ADAPTIVE.md) (what the dashboard visualizes)
@@ -214,6 +214,29 @@ button showing its own cost, and an end-session control.
 | `quant` | Scratchpad for derivation, answer field with unit, optional timer for mental-math items |
 | `design` | Structured component canvas — palette of nodes and edges, not freehand |
 | `behavioral` | Transcript only, plus a STAR structure hint rail |
+
+### Monaco is vendored, and only the part this editor uses
+
+`@monaco-editor/react` loads the editor from `cdn.jsdelivr.net` unless told otherwise,
+which would mean a self-hosted deployment with no egress has a workspace that never
+finishes loading, and a version chosen by the loader package rather than by this
+lockfile. `scripts/vendor-monaco.mjs` copies it out of `node_modules` into
+`public/monaco/vs` at build time instead; the tree is gitignored, because it is a build
+artifact of a pinned dependency.
+
+**It copies 12.93 MB of the 23.29 MB `min/vs` weighs** (2026-09-21). `min/vs` is Monaco's
+everything-build, and this editor only ever holds Python or C++, so the TypeScript, CSS,
+HTML and JSON language workers (8.8 MB, `ts.worker` alone 6.7 MB) and the twelve locale
+bundles (1.7 MB) are left behind. Both were checked against the code that would request
+them rather than assumed: a locale is fetched only when `availableLanguages["*"]` is set
+to something other than `"en"`, and a language worker only when a model of that language
+exists. The small loader shims stay, so a language that somehow *were* used 404s on its
+payload rather than failing obscurely — and that 404 is the signal the `SKIP` list needs
+revisiting.
+
+This is image size, not page load: nothing removed was ever fetched by a browser running
+this app. The editor's critical path is 9 files and 3.14 MB, served and verified over
+HTTP against a production build.
 
 **Design mode uses a structured canvas, not freehand drawing.** A freehand diagram is far
 harder to grade reliably, and a grader that cannot read the artifact produces vibes.

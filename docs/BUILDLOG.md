@@ -7033,3 +7033,59 @@ the broken code.
 - Nothing measures what this saves in a browser. The request count is real; the taxonomy
   is also now compressed to 20 KB by the change in the wave above, so the saving is
   smaller than the 81 KB figure that motivated it.
+
+---
+
+## Wave — Monaco's everything-build, minus the parts a Python editor never asks for · 2026-09-21
+
+`scripts/vendor-monaco.mjs` copied all of `min/vs`. `min/vs` is Monaco's everything-build,
+and this editor only ever holds Python or C++.
+
+| | files | bytes |
+|---|---|---|
+| full `min/vs` | 151 | 23.29 MB |
+| vendored now | 121 | **12.93 MB** |
+| left behind | 30 | 10.36 MB (44%) |
+
+What is left behind, and why each was safe — **checked against the code that would request
+it, not assumed**, because "surely nothing loads this" is how a language workspace breaks
+for one candidate on one problem:
+
+- **The TypeScript, CSS, HTML and JSON language workers**, 8.8 MB, `ts.worker` alone
+  6.7 MB (and it was vendored twice, hashed and unhashed). Each is referenced only by its
+  own small loader shim, and a shim runs only when a model of that language exists.
+  `coding.tsx` sets `language` to `"cpp"` or `"python"`, and there is no other editor in
+  the app.
+- **The twelve locale bundles**, 1.7 MB. `nls.messages-loader` reads
+  `availableLanguages["*"]` and calls back immediately unless it is set to something other
+  than `"en"`. Nothing sets it — `coding.tsx` configures `paths` and nothing else. This
+  one is settled by four lines of the loader's own source rather than by inference.
+
+The shims stay. If a cut language ever were used it 404s on the payload, which is the loud
+failure of the two available and the signal that the `SKIP` list needs revisiting.
+`assets/editor.worker-*` and `assets/editorWebWorkerMain-*` are explicitly **not** cut:
+those are the core editor's own workers, on the critical path for every language.
+
+The stamp file now records `SKIP` alongside the version, so editing the list re-vendors
+rather than leaving a tree that silently no longer matches it.
+
+### Verified
+
+`next build --turbopack` clean, then served with `next start` and every file on the
+editor's critical path fetched over HTTP: 9 files, 3.14 MB, all `200` — `loader.js`,
+`editor.main.js`, `editor.main.css`, `editor-KLE6jdfb.js`, `index-CBVt3dzv.js`,
+`assets/editor.worker-*`, `nls.messages-loader.js`, and both grammars. A cut payload
+(`assets/ts.worker-*`) and a cut locale (`nls/lang/de.js`) both `404`, which is the
+intended behaviour rather than an accident of the filter.
+
+### Not verified
+
+- **No browser mounted the editor.** Every file it needs is present and served; that it
+  *renders* is the same Phase 5 gap as everything else, and the one thing that would
+  actually close this is the Playwright gate.
+- **The image was not rebuilt.** The 13 MB figure is `public/` on disk after
+  `pnpm build`; `apps/web/Dockerfile`'s comment is updated to match, but no
+  `docker build` was run to confirm the layer shrank by the same amount.
+- `vs/language/` — another 7.6 MB of unhashed duplicates — is **not** cut. It is
+  reachable in principle from `tsMode-*.js`, and cutting it needs the browser test this
+  repo does not have yet.

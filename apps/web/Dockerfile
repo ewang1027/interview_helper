@@ -21,7 +21,9 @@ COPY apps/web/ ./
 
 # `prebuild` vendors Monaco into `public/monaco` — the editor is served from this app
 # rather than a CDN, so the image has to contain it (docs/WEB.md). Runs as part of
-# `pnpm build`; named here because it is the reason `public/` is ~27MB.
+# `pnpm build`; named here because it is the whole of `public/`, ~13MB. It was ~23MB
+# until 2026-09-21, when `scripts/vendor-monaco.mjs` stopped copying the language
+# workers and locale bundles a Python/C++ editor never requests.
 RUN pnpm build
 
 
