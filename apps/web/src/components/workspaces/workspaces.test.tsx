@@ -9,10 +9,12 @@ import type { Draft } from "./types";
 /**
  * What each workspace hands to `POST /sessions/{id}/submissions`.
  *
- * The coding workspace is not here: it renders Monaco, which loads from a CDN
- * and does not run under jsdom. Its contract is the thinnest of the four
+ * The coding workspace's *contract* is not here: it renders Monaco, which does
+ * not run under jsdom. Its contract is the thinnest of the four
  * (`{kind: "code", language}` around editor text), and asserting against a stub
- * of the editor would test the stub.
+ * of the editor would test the stub. What `coding.test.tsx` next door does
+ * assert is narrower and stub-safe: the identity of the props handed to the
+ * editor, which is a fact about this code rather than about Monaco.
  */
 function lastDraft(onChange: ReturnType<typeof vi.fn>): Draft {
   return onChange.mock.calls.at(-1)![0] as Draft;

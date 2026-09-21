@@ -24,7 +24,7 @@ detail behind it.
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **complete** | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | — *(closed 2026-08-25: a real session ran end to end on the Anthropic API — conversation, `run_code` against the sandbox, submission, grading, evidence. Bedrock is still gated on a use-case form; the provider switch is one env var)* |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within twelve sessions — five until `W_UNLOCKS` woke up, ten until the 2026-09-09 taxonomy expansion added edges into the concepts the corpus measures | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus and with the prerequisite graph |
-| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, a concept picker that searches problem-name **aliases** (2026-09-09), and a log that is loaded whole and **searched, filtered, sorted and grouped in the browser** — by topic, difficulty, source, list, label and due state — with labels edited on the row (2026-09-10), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 99 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
+| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, a concept picker that searches problem-name **aliases** (2026-09-09), and a log that is loaded whole and **searched, filtered, sorted and grouped in the browser** — by topic, difficulty, source, list, label and due state — with labels edited on the row (2026-09-10), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 102 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
 | **6** AWS deploy | **partial** — step 1 of 5 | Dockerfiles for `api`, `executor` and `web`; `make up-stack` runs all of it behind a **Caddy front door** routing by path, the job the ALB does — so compose mirrors the target topology. Only the front door publishes a port. Sandbox isolation re-verified from inside the containerised launcher | steps 2–5: one service on Fargate by hand, Terraform, the rest of the stack, the portability gate — **all blocked on an authenticated AWS session**, not on code |
 | **7–8** Voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does. The import takes **NeetCode links** as well as LeetCode ones (2026-09-07). **Re-tagged 2026-09-09** against the expanded taxonomy: all 23 logged problems, eleven of them wrong before, by a script that corrects the evidence they wrote and rebuilds mastery. **Filed 2026-09-10**: every coding concept carries a topic, rows carry it with the concept's name and the NeetCode lists, and problems take **labels** of your own through `PATCH /practice/problems/{id}` | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
@@ -6850,3 +6850,76 @@ genuinely empty log.
 - The audit that found it also flagged two cheaper cache problems — `gcTime` unset beside
   `staleTime: Infinity` on the 81 KB taxonomy, and a full practice-log reload after a
   one-field label edit. Neither is fixed here.
+
+---
+
+## Wave — A streamed token stopped re-rendering the editor · 2026-09-21
+
+An optimization, on the hottest path this app has. Nothing the live session does changed;
+what changed is what each token of the interviewer's reply costs the page around it.
+
+### The cascade
+
+`api.llm` streams the interviewer's turn chunk by chunk, each chunk becomes one
+`agent.message.delta` frame, and `session-reducer` returns new state per frame — so the
+session page re-renders **once per token, roughly 30–80 times a second** for several
+seconds of every turn. That part is correct and stays.
+
+What was wrong is how far each of those renders reached. There was no `memo`, no debounce
+and no `useDeferredValue` anywhere in `apps/web/src`, so every token re-rendered the
+workspace, and in coding mode the Monaco editor inside it. `@monaco-editor/react` *is*
+memoized, but the workspace handed it a freshly-built `options` object and an inline
+`onChange` on every render, and that library keys two effects on their identity:
+
+- `options` → `editor.updateOptions()`, a validation pass over Monaco's option set;
+- `onChange` → `dispose()` and re-subscribe of `onDidChangeModelContent`.
+
+So the editor's own content listener was being torn down and rebuilt tens of times a
+second — including while the candidate was typing into it, since a keystroke re-renders
+the workspace too.
+
+The transcript had the same shape from the other side. Its scroll effect depends on
+`streaming`, so it fired per token: a forced synchronous layout, and a *restart* of a
+smooth-scroll animation that consequently never finished. That is the transcript that
+stutters and never quite reaches the bottom. And `<details>` renders its children whether
+or not it is open, so both `JSON.stringify` calls in every tool call ran on every render —
+`run_code`'s input carries the candidate's whole source file.
+
+### What it is now
+
+`Workspace` is `memo`'d, which cuts the cascade where a token has no business crossing.
+Its three props are stable across a stream, and the `useCallback` at the session page's
+call site is now load-bearing rather than tidy — said so in both places, because a memo
+defeated by a caller is a memo that silently stops working.
+
+Editor options are a module constant with `readOnly` merged through a `useMemo`, and the
+editor's `onChange` is a `useCallback`. The transcript coalesces its scroll to one per
+animation frame, and scrolls instantly while tokens are arriving rather than restarting an
+animation — a message landing on its own still scrolls smoothly. `ToolCall` is `memo`'d
+and serializes each payload once.
+
+### Verified
+
+Measured by the three new tests, run against both shapes. A parent that re-renders 50
+times with unchanged props, standing in for the token stream:
+
+| | editor renders | distinct `options` objects while typing |
+|---|---|---|
+| before | 51 | 4 (one per keystroke) |
+| after | **1** | **1** |
+
+`make check-web` passes: eslint, `tsc --noEmit`, **102 component tests** — three new in
+`coding.test.tsx`.
+
+### Not verified
+
+- **No browser has run this, and Monaco is stubbed.** The tests assert the *identity of
+  the props handed to the editor*, which is a fact about this code; they do not and cannot
+  show what the real editor does with them. The claim that `updateOptions()` and the
+  listener re-subscribe were firing per render comes from reading
+  `@monaco-editor/react`'s compiled effects, not from observing them.
+- **It was not a measured complaint.** No one reported a slow transcript; a full session
+  has run against a live model exactly once (2026-08-25). The render counts are real, the
+  milliseconds they cost a real browser are not known.
+- The delta storm itself is untouched. Coalescing frames in the reducer would cut the
+  re-render count at the source rather than containing it, and is the larger fix left.

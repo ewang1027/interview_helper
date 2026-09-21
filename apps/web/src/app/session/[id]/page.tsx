@@ -71,6 +71,8 @@ export default function LiveSession() {
     onSuccess: () => router.push(`/session/${id}/report`),
   });
 
+  // Stable by necessity, not tidiness: `Workspace` is `memo`'d so a streamed
+  // token cannot re-render the editor, and an inline arrow here would defeat it.
   const onDraftChange = useCallback((next: Draft) => setDraft(next), []);
 
   // Which item is in play: the stream says so directly, otherwise the first

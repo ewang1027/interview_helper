@@ -1,7 +1,7 @@
 "use client";
 
 import Editor, { loader } from "@monaco-editor/react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
 import type { Language } from "@/lib/types";
 import type { WorkspaceProps } from "./types";
@@ -22,6 +22,25 @@ import type { WorkspaceProps } from "./types";
  */
 loader.config({ paths: { vs: "/monaco/vs" } });
 
+/**
+ * Hoisted, and that matters more than it looks.
+ *
+ * `@monaco-editor/react` is itself `memo`'d, but it keys two effects on the
+ * *identity* of what it is handed: `options` drives `editor.updateOptions()`,
+ * and `onChange` drives a `dispose()` + re-`onDidChangeModelContent()`. Built
+ * inline they were new objects on every render, so both fired on every render —
+ * a full options-validation pass and a listener torn down and rebuilt on each
+ * character typed into the editor, and again on each token streamed into the
+ * page around it. Defining them outside the render, and merging the one option
+ * that varies through a `useMemo`, is what makes that memo mean something.
+ */
+const EDITOR_OPTIONS = {
+  minimap: { enabled: false },
+  fontSize: 13,
+  scrollBeyondLastLine: false,
+  tabSize: 4,
+  automaticLayout: true,
+} as const;
 
 const STARTERS: Record<Language, string> = {
   python: "def solve():\n    ...\n",
@@ -39,6 +58,9 @@ export function CodingWorkspace({
   useEffect(() => {
     onChange({ kind: "code", content: source, language });
   }, [source, language, onChange]);
+
+  const options = useMemo(() => ({ ...EDITOR_OPTIONS, readOnly: disabled }), [disabled]);
+  const onEdit = useCallback((value: string | undefined) => setSource(value ?? ""), []);
 
   return (
     <div className="flex h-full flex-col">
@@ -71,15 +93,8 @@ export function CodingWorkspace({
           height="100%"
           language={language === "cpp" ? "cpp" : "python"}
           value={source}
-          onChange={(value) => setSource(value ?? "")}
-          options={{
-            readOnly: disabled,
-            minimap: { enabled: false },
-            fontSize: 13,
-            scrollBeyondLastLine: false,
-            tabSize: 4,
-            automaticLayout: true,
-          }}
+          onChange={onEdit}
+          options={options}
           loading={<div className="text-ink-muted p-3 text-sm">Loading editor…</div>}
         />
       </div>

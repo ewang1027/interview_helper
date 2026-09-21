@@ -3,7 +3,7 @@
 > **Status:** Built (2026-08-24, `/jobs` added 2026-08-25) — **every route below
 > exists**: the dashboard, `/session/new`, the live session view with a workspace per
 > mode, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`,
-> `/practice` and `/jobs`. `make check-web` and a CI job run eslint, tsc and 99 component
+> `/practice` and `/jobs`. `make check-web` and a CI job run eslint, tsc and 102 component
 > tests.
 > **Not built:** the Playwright gate; `/corpus` lists nothing, because the endpoint it
 > needs does not exist (see that section); Monaco loads from a CDN. Nothing here has been
@@ -286,6 +286,13 @@ draw the DAG.
 - **Server state:** TanStack Query. Sessions, mastery, corpus, costs.
 - **Live session state:** a reducer fed by the SSE stream. The server is the only writer
   of session state ([API.md](API.md#session-state-machine)); the client mirrors it.
+
+  The stream re-renders this page **once per streamed token**. `Workspace` is therefore
+  `memo`'d and the `onChange` handed to it is `useCallback`'d — a token has no business
+  reaching the editor, and an inline arrow at the call site would silently undo that. For
+  the same reason Monaco's `options` is a hoisted constant with `readOnly` merged through
+  a `useMemo`: `@monaco-editor/react` keys `updateOptions()` on that object's identity,
+  and a new one per render meant a validation pass per token (2026-09-21).
 - **Local UI state:** component-local. No global store — there is very little genuinely
   global state, and adding one invites business logic to migrate into the frontend.
 
@@ -315,9 +322,10 @@ prints evidence counts in its cells.
 ## Testing
 
 - Component tests for the four workspaces against recorded SSE fixtures, so no live
-  backend is required. **Built** — `pnpm test`, in `make check-web` and in CI. **86 tests**
+  backend is required. **Built** — `pnpm test`, in `make check-web` and in CI. **102 tests**
   covering the stream reducer, the heatmap, three of the four workspaces, the API client,
-  and the dashboard, session-creation, report, practice-log, applications and login pages.
+  and the dashboard, session-creation, report, practice-log, applications, history and
+  login pages.
 
   Pages are tested with **`fetch` stubbed, not `api` stubbed**, which is the choice that
   makes them worth having: it exercises the client in `lib/api.ts` too — the problem+json
@@ -325,8 +333,11 @@ prints evidence counts in its cells.
   handling actually lives. A page tested against a stubbed `api` object passes while every
   one of those is broken.
 
-  The coding workspace is deliberately untested: it renders Monaco, which does not run
-  under jsdom, and asserting against a stub of the editor would test the stub.
+  The coding workspace's *contract* is deliberately untested: it renders Monaco, which
+  does not run under jsdom, and asserting against a stub of the editor would test the
+  stub. `coding.test.tsx` asserts something narrower that a stub can answer honestly —
+  the identity of the props handed to the editor across a simulated token stream, which
+  is a fact about this code rather than about Monaco.
 - One Playwright end-to-end run per mode, against a seeded local stack. This is the
   Phase 5 gate: a full session in each mode driven entirely from the browser. **Owed.**
 

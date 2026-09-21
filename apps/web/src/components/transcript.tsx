@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import { Badge } from "@/components/ui/primitives";
 import { cn } from "@/lib/cn";
 import type { Gap, TranscriptEntry } from "@/lib/session-reducer";
@@ -28,10 +28,34 @@ export function Transcript({
   gaps: Gap[];
 }) {
   const endRef = useRef<HTMLDivElement>(null);
+  const frame = useRef<number | undefined>(undefined);
 
+  /**
+   * Follow the bottom, at most once a frame.
+   *
+   * `streaming` changes on every token, so this used to fire tens of times a
+   * second — each one a forced synchronous layout, and each one *restarting* a
+   * smooth-scroll animation that therefore never finished. That is the
+   * transcript that stutters and never quite reaches the bottom. Coalescing to
+   * one scroll per animation frame fixes the cost; scrolling instantly *while*
+   * tokens are arriving fixes the jitter, and a message that lands on its own
+   * still scrolls smoothly.
+   */
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (frame.current !== undefined) return;
+    const instant = streaming !== "";
+    frame.current = requestAnimationFrame(() => {
+      frame.current = undefined;
+      endRef.current?.scrollIntoView({ behavior: instant ? "auto" : "smooth", block: "end" });
+    });
   }, [entries.length, streaming]);
+
+  useEffect(
+    () => () => {
+      if (frame.current !== undefined) cancelAnimationFrame(frame.current);
+    },
+    [],
+  );
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-y-auto p-3">
@@ -100,8 +124,25 @@ export function Transcript({
   );
 }
 
-function ToolCall({ entry }: { entry: Extract<TranscriptEntry, { kind: "tool" }> }) {
+/**
+ * `memo`'d, and both payloads serialized once rather than per render.
+ *
+ * A `<details>` renders its children whether or not it is open, so these two
+ * `JSON.stringify` calls ran on every render of the transcript — which, while
+ * the interviewer is talking, is every token. `run_code`'s input carries the
+ * candidate's whole source file (docs/API.md), so a session with half a dozen
+ * tool calls was re-serializing several KB of it sixty times a second to
+ * produce the same string. An entry's input never changes after it arrives, and
+ * its output changes exactly once, when the result lands.
+ */
+const ToolCall = memo(function ToolCall({
+  entry,
+}: {
+  entry: Extract<TranscriptEntry, { kind: "tool" }>;
+}) {
   const pending = entry.output === undefined;
+  const input = useMemo(() => JSON.stringify(entry.input, null, 2), [entry.input]);
+  const output = useMemo(() => JSON.stringify(entry.output, null, 2), [entry.output]);
 
   return (
     <details className="border-hairline self-start rounded-md border px-2 py-1.5 text-xs">
@@ -112,13 +153,13 @@ function ToolCall({ entry }: { entry: Extract<TranscriptEntry, { kind: "tool" }>
         </span>
       </summary>
       <pre className="text-ink-muted mt-1.5 max-w-md overflow-x-auto text-[11px] whitespace-pre-wrap">
-        {JSON.stringify(entry.input, null, 2)}
+        {input}
       </pre>
       {!pending ? (
         <pre className="text-ink-secondary border-hairline mt-1 max-w-md overflow-x-auto border-t pt-1 text-[11px] whitespace-pre-wrap">
-          {JSON.stringify(entry.output, null, 2)}
+          {output}
         </pre>
       ) : null}
     </details>
   );
-}
+});
