@@ -1,8 +1,8 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ApiErrorNotice } from "@/components/api-error";
 import { Badge, Button, Card, CardBody, Empty, Skeleton } from "@/components/ui/primitives";
 import { api } from "@/lib/api";
@@ -10,6 +10,8 @@ import { cn } from "@/lib/cn";
 import { when } from "@/lib/format";
 import { keys } from "@/lib/queries";
 import { MODES, REPORTABLE, type Mode, type SessionSummary } from "@/lib/types";
+
+const PAGE_SIZE = 25;
 
 /**
  * Session history.
@@ -19,23 +21,44 @@ import { MODES, REPORTABLE, type Mode, type SessionSummary } from "@/lib/types";
  * back short or empty with a cursor to continue from. Filtering happens here,
  * over everything fetched, which is why "load more" and the mode filter are
  * independent of each other.
+ *
+ * **The accumulator is `useInfiniteQuery`'s, not this component's**, and the
+ * correction is worth keeping because the bug it fixes was invisible. Until
+ * 2026-09-21 the pages were collected into `useState` from inside a `queryFn`
+ * keyed `["sessions", cursor]` — a key the dashboard also used, with a
+ * different `limit`. Arriving here from the dashboard inside the 15s
+ * `staleTime` found that entry fresh, so the `queryFn` never ran, the
+ * accumulator never filled, and `isLoading` was already false: the page
+ * rendered "No sessions yet" over a cache holding twenty of them, with a
+ * working "Load more" underneath. Keeping the pages in the query cache fixes
+ * the collision's other half too — navigating away and back used to discard
+ * every page past the first.
  */
 export default function History() {
-  const [cursor, setCursor] = useState<string | undefined>(undefined);
-  const [pages, setPages] = useState<SessionSummary[]>([]);
   const [mode, setMode] = useState<Mode | undefined>(undefined);
 
-  const query = useQuery({
-    queryKey: keys.sessions(cursor),
-    queryFn: async () => {
-      const page = await api.listSessions({ cursor, limit: 25 });
-      setPages((current) => {
-        const seen = new Set(current.map((row) => row.id));
-        return [...current, ...page.sessions.filter((row) => !seen.has(row.id))];
-      });
-      return page;
-    },
+  const query = useInfiniteQuery({
+    queryKey: keys.sessionPages(PAGE_SIZE),
+    queryFn: ({ pageParam }) => api.listSessions({ cursor: pageParam, limit: PAGE_SIZE }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
+
+  // Deduplicated across pages: a cursor describes where the scan reached, not a
+  // disjoint slice, so an id arriving twice is the API behaving as documented.
+  const pages = useMemo(() => {
+    const seen = new Set<string>();
+    const rows: SessionSummary[] = [];
+    for (const page of query.data?.pages ?? []) {
+      for (const row of page.sessions) {
+        if (!seen.has(row.id)) {
+          seen.add(row.id);
+          rows.push(row);
+        }
+      }
+    }
+    return rows;
+  }, [query.data]);
 
   const rows = mode ? pages.filter((row) => row.mode === mode) : pages;
 
@@ -118,13 +141,13 @@ export default function History() {
         </CardBody>
       </Card>
 
-      {query.data?.next_cursor ? (
+      {query.hasNextPage ? (
         <Button
           variant="secondary"
-          disabled={query.isFetching}
-          onClick={() => setCursor(query.data!.next_cursor!)}
+          disabled={query.isFetchingNextPage}
+          onClick={() => void query.fetchNextPage()}
         >
-          {query.isFetching ? "Loading…" : "Load more"}
+          {query.isFetchingNextPage ? "Loading…" : "Load more"}
         </Button>
       ) : (
         <p className="text-ink-muted text-xs">

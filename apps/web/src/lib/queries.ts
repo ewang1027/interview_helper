@@ -8,7 +8,14 @@ export const keys = {
   mastery: ["mastery"] as const,
   weaknesses: (mode?: Mode) => ["weaknesses", mode ?? "all"] as const,
   concept: (id: string) => ["concept", id] as const,
-  sessions: (cursor?: string) => ["sessions", cursor ?? "first"] as const,
+  // `limit` is part of the key, and that is load-bearing. Without it the dashboard's
+  // 20-row page and History's 25-row page shared one entry: arriving at History from the
+  // dashboard inside `staleTime` found it fresh, so History's own fetch never ran and the
+  // page rendered its empty state over a cache holding twenty sessions.
+  sessions: (cursor?: string, limit = 20) => ["sessions", cursor ?? "first", limit] as const,
+  // History's accumulated pages, kept by `useInfiniteQuery` rather than in component
+  // state — a separate entry from the single page the dashboard reads.
+  sessionPages: (limit: number) => ["sessions", "paged", limit] as const,
   session: (id: string) => ["session", id] as const,
   report: (id: string) => ["report", id] as const,
   plan: (mode: Mode, minutes: number) => ["plan", mode, minutes] as const,

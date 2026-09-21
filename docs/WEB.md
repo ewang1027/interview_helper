@@ -3,7 +3,7 @@
 > **Status:** Built (2026-08-24, `/jobs` added 2026-08-25) — **every route below
 > exists**: the dashboard, `/session/new`, the live session view with a workspace per
 > mode, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`,
-> `/practice` and `/jobs`. `make check-web` and a CI job run eslint, tsc and 86 component
+> `/practice` and `/jobs`. `make check-web` and a CI job run eslint, tsc and 99 component
 > tests.
 > **Not built:** the Playwright gate; `/corpus` lists nothing, because the endpoint it
 > needs does not exist (see that section); Monaco loads from a CDN. Nothing here has been
@@ -73,7 +73,7 @@ maintain, for a service with exactly one browser client.
 | `/session/[id]/report` | Post-session report: per-item scores, per-concept evidence, hints taken |
 | `/concepts` | The DAG, coloured by mastery — click through to a concept's evidence |
 | `/concepts/[id]` | One concept: ability over time, the evidence behind it, related items |
-| `/history` | Session history, filterable by mode and date |
+| `/history` | Session history, filterable by mode and date. Pages accumulate in the query cache (`useInfiniteQuery`), so they survive leaving the page and coming back |
 | `/corpus` | Browse the corpus. Statements of unseen items stay redacted |
 | `/jobs` | The job tracker — the application funnel, the category breakdown, the rejections tracker, paste-import, and the board (searchable, filterable by outcome, twenty rows at a time) |
 | `/practice` | The practice log — log a problem solved elsewhere, and what is due to re-solve |

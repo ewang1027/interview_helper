@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-09-16
+## Where things stand — 2026-09-21
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -24,7 +24,7 @@ detail behind it.
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **complete** | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | — *(closed 2026-08-25: a real session ran end to end on the Anthropic API — conversation, `run_code` against the sandbox, submission, grading, evidence. Bedrock is still gated on a use-case form; the provider switch is one env var)* |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within twelve sessions — five until `W_UNLOCKS` woke up, ten until the 2026-09-09 taxonomy expansion added edges into the concepts the corpus measures | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus and with the prerequisite graph |
-| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, a concept picker that searches problem-name **aliases** (2026-09-09), and a log that is loaded whole and **searched, filtered, sorted and grouped in the browser** — by topic, difficulty, source, list, label and due state — with labels edited on the row (2026-09-10), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 95 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
+| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, a concept picker that searches problem-name **aliases** (2026-09-09), and a log that is loaded whole and **searched, filtered, sorted and grouped in the browser** — by topic, difficulty, source, list, label and due state — with labels edited on the row (2026-09-10), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 99 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
 | **6** AWS deploy | **partial** — step 1 of 5 | Dockerfiles for `api`, `executor` and `web`; `make up-stack` runs all of it behind a **Caddy front door** routing by path, the job the ALB does — so compose mirrors the target topology. Only the front door publishes a port. Sandbox isolation re-verified from inside the containerised launcher | steps 2–5: one service on Fargate by hand, Terraform, the rest of the stack, the portability gate — **all blocked on an authenticated AWS session**, not on code |
 | **7–8** Voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does. The import takes **NeetCode links** as well as LeetCode ones (2026-09-07). **Re-tagged 2026-09-09** against the expanded taxonomy: all 23 logged problems, eleven of them wrong before, by a script that corrects the evidence they wrote and rebuilds mastery. **Filed 2026-09-10**: every coding concept carries a topic, rows carry it with the concept's name and the NeetCode lists, and problems take **labels** of your own through `PATCH /practice/problems/{id}` | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
@@ -6785,3 +6785,68 @@ return identical results before timing either.
   perceptible; the benchmark uses 400 rows because that is the scale the component's own
   comment says it is built for. This is work done ahead of the complaint, which is worth
   saying plainly rather than implying a fix to something users hit.
+
+---
+
+## Wave — History rendered its empty state over a full cache · 2026-09-21
+
+Found while auditing the web app for things worth optimizing. It is not an optimization:
+`/history` showed **"No sessions yet"**, with a working "Load more" underneath it, whenever
+you arrived there from the dashboard. The fix is also the faster shape, which is why it is
+here rather than filed as a bug on its own.
+
+### Three correct-looking decisions, and what they did together
+
+- `keys.sessions` was `["sessions", cursor ?? "first"]` — **no `limit`**.
+- The dashboard reads that key at the API client's default `limit` of 20. `/history` read
+  the *same* key at `limit: 25`.
+- `/history` accumulated its pages into `useState` from **inside the `queryFn`**, and
+  `providers.tsx` sets `staleTime: 15_000`.
+
+So arriving at History within fifteen seconds of the dashboard found the entry fresh.
+TanStack Query did the correct thing and did not call the `queryFn` — which is where the
+accumulator lived, so `pages` stayed empty. `query.data` was served from cache, so
+`isLoading` was already `false` and the skeleton never showed. The empty state rendered,
+and `query.data.next_cursor` was populated, so the "Load more" button below it worked.
+
+After fifteen seconds the entry went stale, the next mount refetched, and the page was
+fine. An empty state that appears only on a fast navigation reads as a slow server, which
+is the reason this survived: there was no `history.test.tsx` at all, and the failure looks
+like the thing everyone ignores.
+
+**The general shape is worth naming: a side effect in a `queryFn` is only as reliable as
+the cache miss that runs it.** A `queryFn` is not a lifecycle hook — it does not run on a
+cache hit, and it may run twice on a retry.
+
+### What it is now
+
+`limit` is part of `keys.sessions`, so the dashboard's page and any other cannot collide
+again. `/history` no longer shares that entry at all: it uses `useInfiniteQuery` under
+`keys.sessionPages(25)`, and the accumulator is the query cache's rather than the
+component's. Deduplication by id stays — a cursor says where the scan reached, not that
+slices are disjoint (docs/API.md).
+
+That fixes a second thing nobody had reported: because the pages lived in component state,
+navigating away from History and back **discarded every page past the first**, and you
+re-paged from scratch. They survive the remount now.
+
+### Verified
+
+Reproduced before fixing, driving the real page through one shared client at the
+production `staleTime` — a per-render client cannot express the bug, since the collision
+only exists between two pages of one tab. With twenty sessions prefetched under the
+dashboard's key, History rendered `0 sessions loaded` and `No sessions yet`; on a cold
+cache the same page rendered `20 sessions loaded`.
+
+`make check-web` passes: eslint, `tsc --noEmit`, and **99 component tests** — four new, in
+a `history.test.tsx` that did not exist. They cover the warm-cache arrival, the remount
+that used to lose the second page, mode filtering across accumulated pages, and a
+genuinely empty log.
+
+### Not verified
+
+- **No browser has run this.** The same Phase 5 gap as everything else here: the
+  reproduction and the fix are both under jsdom.
+- The audit that found it also flagged two cheaper cache problems — `gcTime` unset beside
+  `staleTime: Infinity` on the 81 KB taxonomy, and a full practice-log reload after a
+  one-field label edit. Neither is fixed here.
