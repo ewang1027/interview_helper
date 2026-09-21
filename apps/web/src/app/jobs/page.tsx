@@ -55,8 +55,11 @@ export default function Jobs() {
   const catalog = useQuery({
     queryKey: ["jobs-catalog"],
     queryFn: api.jobCatalog,
-    // Server-side constants: they cannot change while the process is up.
+    // Server-side constants: they cannot change while the process is up — so
+    // `gcTime` says it too. Without it the default five-minute eviction refetched
+    // them on the next visit, which is not what "cannot change" means.
     staleTime: Infinity,
+    gcTime: Infinity,
   });
   const stats = useQuery({ queryKey: ["jobs-stats"], queryFn: api.jobStats });
   const applications = useQuery({

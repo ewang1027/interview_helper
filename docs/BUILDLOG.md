@@ -24,7 +24,7 @@ detail behind it.
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **complete** | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | — *(closed 2026-08-25: a real session ran end to end on the Anthropic API — conversation, `run_code` against the sandbox, submission, grading, evidence. Bedrock is still gated on a use-case form; the provider switch is one env var)* |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within twelve sessions — five until `W_UNLOCKS` woke up, ten until the 2026-09-09 taxonomy expansion added edges into the concepts the corpus measures | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus and with the prerequisite graph |
-| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, a concept picker that searches problem-name **aliases** (2026-09-09), and a log that is loaded whole and **searched, filtered, sorted and grouped in the browser** — by topic, difficulty, source, list, label and due state — with labels edited on the row (2026-09-10), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 102 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
+| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, a concept picker that searches problem-name **aliases** (2026-09-09), and a log that is loaded whole and **searched, filtered, sorted and grouped in the browser** — by topic, difficulty, source, list, label and due state — with labels edited on the row (2026-09-10), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 103 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
 | **6** AWS deploy | **partial** — step 1 of 5 | Dockerfiles for `api`, `executor` and `web`; `make up-stack` runs all of it behind a **Caddy front door** routing by path, the job the ALB does — so compose mirrors the target topology. Only the front door publishes a port. Sandbox isolation re-verified from inside the containerised launcher | steps 2–5: one service on Fargate by hand, Terraform, the rest of the stack, the portability gate — **all blocked on an authenticated AWS session**, not on code |
 | **7–8** Voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does. The import takes **NeetCode links** as well as LeetCode ones (2026-09-07). **Re-tagged 2026-09-09** against the expanded taxonomy: all 23 logged problems, eleven of them wrong before, by a script that corrects the evidence they wrote and rebuilds mastery. **Filed 2026-09-10**: every coding concept carries a topic, rows carry it with the concept's name and the NeetCode lists, and problems take **labels** of your own through `PATCH /practice/problems/{id}` | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
@@ -6997,3 +6997,39 @@ t+0.00s, and ping frames arriving 15s apart rather than batched.
   matcher at all — noted in [INFRA](INFRA.md), not solved.
 - `zstd` is configured and never exercised: every measurement above is gzip, because
   `curl --compressed` offers gzip.
+
+---
+
+## Wave — "It cannot change" had to be said twice · 2026-09-21
+
+Two queries carried `staleTime: Infinity` with a comment saying the data is build-time
+content that cannot change while the server is up — the taxonomy (`GET /concepts`, 81 KB,
+186 concepts) and the job catalog. Both were re-fetched on a five-minute cycle anyway.
+
+`staleTime` only governs refetching **while something is watching**. `gcTime` governs how
+long the entry survives after the last watcher unmounts, and its default is five minutes.
+Three pages read the taxonomy — the dashboard, `/concepts`, and the concept picker on
+every `/practice/{id}` — so tagging a problem, leaving, and tagging another re-downloaded
+81 KB that by construction had not changed. Both now say `gcTime: Infinity` as well.
+
+### Verified
+
+One new test, in a `queries.test.tsx` that did not exist: mount a taxonomy consumer,
+unmount it, advance an hour, remount, and count the requests. **1 with the fix, 2
+without** — checked both ways.
+
+The first version of that test passed against the bug, which is the part worth recording.
+It installed fake timers *after* the unmount, and the eviction timeout had already been
+booked on the real clock, so advancing the fake one moved nothing. A test that cannot fail
+is not evidence, and the only way to know which kind you have written is to run it against
+the broken code.
+
+`make check-web` passes: **103 component tests**.
+
+### Not verified
+
+- The job catalog's `gcTime` has no test of its own; it is the same two lines as the
+  taxonomy's, which does.
+- Nothing measures what this saves in a browser. The request count is real; the taxonomy
+  is also now compressed to 20 KB by the change in the wave above, so the saving is
+  smaller than the 81 KB figure that motivated it.

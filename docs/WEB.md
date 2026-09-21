@@ -3,7 +3,7 @@
 > **Status:** Built (2026-08-24, `/jobs` added 2026-08-25) — **every route below
 > exists**: the dashboard, `/session/new`, the live session view with a workspace per
 > mode, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`,
-> `/practice` and `/jobs`. `make check-web` and a CI job run eslint, tsc and 102 component
+> `/practice` and `/jobs`. `make check-web` and a CI job run eslint, tsc and 103 component
 > tests.
 > **Not built:** the Playwright gate; `/corpus` lists nothing, because the endpoint it
 > needs does not exist (see that section); Monaco loads from a CDN. Nothing here has been
@@ -322,7 +322,7 @@ prints evidence counts in its cells.
 ## Testing
 
 - Component tests for the four workspaces against recorded SSE fixtures, so no live
-  backend is required. **Built** — `pnpm test`, in `make check-web` and in CI. **102 tests**
+  backend is required. **Built** — `pnpm test`, in `make check-web` and in CI. **103 tests**
   covering the stream reducer, the heatmap, three of the four workspaces, the API client,
   and the dashboard, session-creation, report, practice-log, applications, history and
   login pages.

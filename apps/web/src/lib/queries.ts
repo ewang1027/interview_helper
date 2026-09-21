@@ -51,7 +51,16 @@ export function useTaxonomy() {
     queryKey: ["concepts"],
     queryFn: () => api.concepts(),
     // Build-time content: it cannot change while the server is up.
+    //
+    // `gcTime` has to say so as well, and did not. `staleTime` alone only means
+    // "do not refetch while something is watching"; five minutes after the last
+    // consumer unmounts, the default `gcTime` evicts the entry and the next
+    // mount pays for it again. Three pages read this — the dashboard,
+    // `/concepts` and the picker on every `/practice/{id}` — so tagging a
+    // problem, going for coffee and tagging another re-downloaded 81 KB of
+    // taxonomy that by construction had not changed.
     staleTime: Infinity,
+    gcTime: Infinity,
   });
 
   return {
