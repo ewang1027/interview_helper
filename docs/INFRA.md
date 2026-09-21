@@ -176,6 +176,19 @@ meaningful as a side effect.
 compose network, which is the same boundary private subnets draw in AWS. It also keeps the
 session cookie first-party without the web app proxying anything.
 
+**The front door compresses, and the event stream is matched out of it by path.** Next
+compresses its own responses, so this was never about the app bundle — but `/api/*` goes
+to FastAPI, which mounts no middleware, so every API response travelled raw until
+2026-09-21: 81 KB for `GET /concepts`, 98 KB for `GET /jobs`. They are 20 KB and 14 KB
+now. The exclusion is not optional and not about the body: Caddy's encoder wraps the
+response writer before it can know whether it will encode, which holds the *header block*
+until the first body byte — measured at t+15.00s against t+0.00s on a stream that pings
+every 15s. Frames still arrive one at a time either way, but `EventSource` fires `onopen`
+on the headers, so a live session would show "connecting" for fifteen seconds. The
+[Caddyfile](../infra/compose/Caddyfile) carries the measurements. **An ALB doing this job
+in Phase 6 owes the same carve-out**, and an ALB's own compression has no response-header
+matcher at all — so the exclusion there has to be the target group's, or the API's.
+
 ### One daemon per machine
 
 The fifth problem arrived four days after the other four, and it is the project-name

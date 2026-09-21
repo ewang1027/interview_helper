@@ -6923,3 +6923,77 @@ times with unchanged props, standing in for the token stream:
   milliseconds they cost a real browser are not known.
 - The delta storm itself is untouched. Coalescing frames in the reducer would cut the
   re-render count at the source rather than containing it, and is the larger fix left.
+
+---
+
+## Wave — The front door compresses, except where compressing costs fifteen seconds · 2026-09-21
+
+`infra/compose/Caddyfile` had carried **"deliberately no `encode`"** since the front door
+landed, on two grounds. One was a real risk stated with the wrong mechanism. The other was
+simply wrong, and it was costing ~200 KB a page.
+
+### "Compression buys almost nothing on one machine"
+
+True of the app bundle, and the app bundle was never the question: Next compresses its own
+responses, and Caddy passes them through. But `/api/*` goes to FastAPI, which mounts no
+middleware at all, so **every API response was going over the wire raw.** Measured through
+the front door against the live stack:
+
+| | raw | gzip |
+|---|---|---|
+| `GET /concepts` | 81,263 B | 20,198 B (−75%) |
+| `GET /jobs` | 98,799 B | 14,241 B (−86%) |
+| `GET /practice/problems?limit=100` | 25,394 B | 3,986 B (−84%) |
+| `GET /mastery` | 6,658 B | 1,348 B (−80%) |
+
+`localhost` is exactly the place that hides this. The topology the front door exists to
+mirror is an ALB with a browser somewhere else.
+
+### "Caddy 2.8 has no `not` response matcher, so it refused the config"
+
+Also true, and also not the obstacle it was taken for: within one `match` block, repeated
+values of the *same* header field are OR'd, so an allowlist of content types worth
+compressing says "not `text/event-stream`" without needing `not`. The config adapts,
+validates and formats clean on the same `caddy:2.8-alpine` the stack runs.
+
+### What the allowlist did not fix, and this is the finding
+
+With the content-type allowlist alone, an event stream came back with **no**
+`Content-Encoding` and its frames **did** arrive one at a time — and it was still broken.
+Caddy's encoder wraps the response writer *before* it can know whether it will encode, so
+the response **header block** is held until the first body byte. The API pings every 15s:
+
+```
+no encode                 headers at t+ 0.00s
+encode, allowlist only    headers at t+15.00s
+encode, SSE excluded      headers at t+ 0.01s
+```
+
+Nothing is lost and the transcript is fine, but `EventSource` fires `onopen` on the
+headers — so a live session would have sat on "connecting" for fifteen seconds at the
+start of every interview, which is precisely the "looks like a hung model rather than a
+proxy setting" failure the original comment named. **It was right about the risk and wrong
+about the mechanism: the body is not buffered, the header is.** A response-level matcher
+cannot fix a problem that happens before the response has a type; the stream is matched
+out by *request* path instead, and the allowlist stays as the second line of defence.
+
+The struck-out comment stays in the Caddyfile beside the correction, per this repo's rule,
+because the half that was right is the half that made the exclusion necessary.
+
+### Verified
+
+On the running stack, before and after, against a no-`encode` probe on the same image as a
+baseline: JSON compressed as tabled above; the real `/sessions/{id}/events` route returns
+`text/event-stream` with no `Content-Encoding`, headers at t+0.01s against the baseline's
+t+0.00s, and ping frames arriving 15s apart rather than batched.
+
+### Not verified
+
+- **No browser has opened either.** `EventSource.onopen` timing is inferred from when the
+  header block lands on a socket, which is what the API contract says it keys on — not
+  observed in a browser, like everything else in Phase 5.
+- **Nothing here is deployed.** This is the compose front door. Phase 6's ALB does the
+  same routing job and will need the same carve-out, and an ALB has no response-header
+  matcher at all — noted in [INFRA](INFRA.md), not solved.
+- `zstd` is configured and never exercised: every measurement above is gzip, because
+  `curl --compressed` offers gzip.

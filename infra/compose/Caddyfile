@@ -30,15 +30,64 @@
 		reverse_proxy web:3000
 	}
 
-	# **Deliberately no `encode`.** Compression buys almost nothing on one machine and
+	# ~~**Deliberately no `encode`.** Compression buys almost nothing on one machine and
 	# risks the thing that matters most here: a proxy that buffers `text/event-stream`
 	# turns a live interview transcript into one delivery at the end, which looks like a
-	# hung model rather than a proxy setting. Caddy streams SSE untouched when nothing
-	# asks it to compress.
+	# hung model rather than a proxy setting.~~
 	#
-	# (The first attempt did try to compress everything *except* SSE. Caddy 2.8 has no
+	# ~~(The first attempt did try to compress everything *except* SSE. Caddy 2.8 has no
 	# `not` response matcher for `encode`, so it refused the config and restart-looped —
-	# which is the better failure of the two available.)
+	# which is the better failure of the two available.)~~
+	#
+	# **Corrected 2026-09-21.** The risk was real and the conclusion was not. There is no
+	# `not` response matcher, but there does not need to be: within one `match` block,
+	# repeated values of the *same* header field are OR'd, so an allowlist of the content
+	# types worth compressing says "not SSE" without saying `not`.
+	#
+	# The half of the reasoning that was simply wrong is "buys almost nothing". Next
+	# compresses its own responses, so the app bundle was never the problem — but `/api/*`
+	# goes to FastAPI, which mounts no middleware, so **every API response was going over
+	# the wire raw**. Measured through this front door against the live stack:
+	#
+	#     /api/v1/concepts                     81,263 B -> 20,198 B   (-75%)
+	#     /api/v1/jobs                         98,321 B -> 14,176 B   (-86%)
+	#     /api/v1/practice/problems?limit=100  25,394 B ->  3,986 B   (-84%)
+	#
+	# That is ~200 KB of JSON on a dashboard-plus-jobs visit, and it is the deployed
+	# topology this mirrors — an ALB and a browser that is not on this machine — where it
+	# is felt, not `localhost`.
+	#
+	# **The SSE route is matched out by request path, and the content-type allowlist is
+	# not enough on its own.** That was measured the hard way. With the allowlist alone an
+	# event stream did come back with no `Content-Encoding`, and its frames did arrive one
+	# at a time — and the response *header block* was still held until the first body
+	# byte, because the encoder wraps the writer before it can know whether it will
+	# encode. The API pings every 15s, so against the live stack:
+	#
+	#     no encode               headers at t+ 0.00s
+	#     encode, allowlist only  headers at t+15.00s
+	#
+	# No event is lost and the transcript is fine, but `EventSource` does not fire
+	# `onopen` until those headers land, so a live session would sit on "connecting" for
+	# fifteen seconds at the start of every interview. The struck-out comment above was
+	# right about the risk and wrong about the mechanism: the body is not buffered, the
+	# header is.
+	#
+	# The allowlist stays as the second line of defence — it is what keeps any other
+	# streaming or already-compressed response from being wrapped. `zstd` is first because
+	# Caddy negotiates in order and it beats gzip where a client offers both.
+	@compressible not path_regexp ^/api/v1/sessions/[^/]+/events$
+	encode @compressible zstd gzip {
+		match {
+			header Content-Type application/json*
+			header Content-Type application/problem+json*
+			header Content-Type text/html*
+			header Content-Type text/css*
+			header Content-Type application/javascript*
+			header Content-Type text/javascript*
+			header Content-Type image/svg+xml*
+		}
+	}
 
 	log {
 		output stdout
