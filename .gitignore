@@ -17,6 +17,11 @@ out/
 .turbo/
 *.tsbuildinfo
 
+# Playwright: the minted session cookie, traces and failure screenshots. The state
+# file holds a real signed session token — it is regenerated every run by the setup
+# project, and it must never be committed.
+apps/web/.playwright/
+
 # Environment / secrets — never commit these
 .env
 .env.*

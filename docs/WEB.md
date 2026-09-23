@@ -5,10 +5,14 @@
 > mode, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`,
 > `/practice` and `/jobs`. `make check-web` and a CI job run eslint, tsc and 103 component
 > tests.
-> **Not built:** the Playwright gate; `/corpus` lists nothing, because the endpoint it
-> needs does not exist (see that section). Nothing here has been
-> opened in a browser yet — see the caveat under **Testing**, which is the most important
-> line on this page.
+> **Browser gate (2026-09-22):** `make test-browser` drives all ten routes through
+> Chromium against the containerised stack — 20 tests. The **full per-mode session**
+> run is still owed, and CI has no stack to point the gate at.
+> **Not built:** `/corpus` lists nothing. ~~because the endpoint it needs does not
+> exist~~ — **corrected 2026-09-22:** `GET /corpus/items` and `GET /corpus/items/{id}`
+> were both built 2026-08-25 ([API](API.md)), and this page and the card on `/corpus`
+> both went on saying otherwise for four weeks. The page was never wired to them; that
+> is the work, and it is smaller than this line implied.
 > Related: [API](API.md) (everything here consumes it) · [ADAPTIVE](ADAPTIVE.md) (what the dashboard visualizes)
 
 Next.js 15 App Router, React 19, TypeScript strict, Tailwind v4, shadcn/ui, TanStack
@@ -362,13 +366,39 @@ prints evidence counts in its cells.
   the identity of the props handed to the editor across a simulated token stream, which
   is a fact about this code rather than about Monaco.
 - One Playwright end-to-end run per mode, against a seeded local stack. This is the
-  Phase 5 gate: a full session in each mode driven entirely from the browser. **Owed.**
+  Phase 5 gate: a full session in each mode driven entirely from the browser. **Still
+  owed** — it needs a live interviewer, so it is gated on the same model access
+  everything else here is.
 
-**Nothing here has been opened in a browser.** The environment building it has no browser
-tooling, so layout, contrast in situ, focus order and keyboard navigation are unproven.
-The component tests assert structure and class names, which is a weaker claim than it
-looks: they would not catch a collision, an overflow, or a control nothing can reach by
-keyboard. Treat the visual layer as unreviewed until the Playwright gate lands.
+### The browser gate that does exist — `make test-browser`
+
+`apps/web/e2e/`, 20 tests in Chromium, against the stack `make up-stack` runs rather
+than a dev server this config starts. That distinction is the point: `next dev` proxies
+the API itself, so only the container topology exercises the same-origin `/api/v1`, the
+cookie and the SSE carve-out that the front door is responsible for.
+
+Each route asserts four things, and the second is the one that makes the gate worth
+having:
+
+1. its `<h1>` renders — the route resolved and mounted;
+2. **every `/api/v1` request the page made returned 2xx, and nothing threw.** Without
+   this a page whose every query 500s still passes, because the heading comes from the
+   server shell;
+3. it did not navigate to `/auth/login` — a 401 redirects rather than rendering, so
+   staying put is a direct test of the session cookie;
+4. the figures on the page match what the API reports, read at run time rather than
+   hard-coded, because this database is a real one that grows.
+
+Authentication is a real signed cookie from `python -m api.mint_session`, the same
+module `make login` calls, installed on the browser context — not a stub, so the
+verifier is still under test.
+
+**It was checked against broken code.** With one character changed in the cookie, all
+eight route tests fail. A gate nobody has seen fail is not evidence it can.
+
+**Still unproven by it:** contrast in situ, focus order and keyboard navigation. The gate
+watches requests and text, and a screenshot review on 2026-09-22 covered four pages at
+one viewport — neither is an accessibility audit. Nothing runs at a phone width.
 
 ## Deployment
 

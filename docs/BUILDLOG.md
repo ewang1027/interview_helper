@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-09-21
+## Where things stand — 2026-09-22
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -24,7 +24,7 @@ detail behind it.
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **complete** | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | — *(closed 2026-08-25: a real session ran end to end on the Anthropic API — conversation, `run_code` against the sandbox, submission, grading, evidence. Bedrock is still gated on a use-case form; the provider switch is one env var)* |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within twelve sessions — five until `W_UNLOCKS` woke up, ten until the 2026-09-09 taxonomy expansion added edges into the concepts the corpus measures | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus and with the prerequisite graph |
-| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, a concept picker that searches problem-name **aliases** (2026-09-09), and a log that is loaded whole and **searched, filtered, sorted and grouped in the browser** — by topic, difficulty, source, list, label and due state — with labels edited on the row (2026-09-10), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 103 component tests, in `make check` and CI | **nothing has been opened in a browser** — no browser tooling here, so the visual layer is unreviewed; the Playwright gate, and a live session against a real interviewer |
+| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, a concept picker that searches problem-name **aliases** (2026-09-09), and a log that is loaded whole and **searched, filtered, sorted and grouped in the browser** — by topic, difficulty, source, list, label and due state — with labels edited on the row (2026-09-10), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 103 component tests, in `make check` and CI. **A browser gate since 2026-09-22**: `make test-browser` drives all ten routes through Chromium against the containerised stack — 20 tests, asserting each page's own API calls succeeded, that nothing threw, and that its figures match the API's | the **full per-mode session** run, which needs a live interviewer; the gate in CI, which has no stack to point it at; contrast, focus order and keyboard navigation, which it does not check; and any viewport but one |
 | **6** AWS deploy | **partial** — step 1 of 5 | Dockerfiles for `api`, `executor` and `web`; `make up-stack` runs all of it behind a **Caddy front door** routing by path, the job the ALB does — so compose mirrors the target topology. Only the front door publishes a port. Sandbox isolation re-verified from inside the containerised launcher | steps 2–5: one service on Fargate by hand, Terraform, the rest of the stack, the portability gate — **all blocked on an authenticated AWS session**, not on code |
 | **7–8** Voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does. The import takes **NeetCode links** as well as LeetCode ones (2026-09-07). **Re-tagged 2026-09-09** against the expanded taxonomy: all 23 logged problems, eleven of them wrong before, by a script that corrects the evidence they wrote and rebuilds mastery. **Filed 2026-09-10**: every coding concept carries a topic, rows carry it with the concept's name and the NeetCode lists, and problems take **labels** of your own through `PATCH /practice/problems/{id}` | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
@@ -7089,3 +7089,110 @@ intended behaviour rather than an accident of the filter.
 - `vs/language/` — another 7.6 MB of unhashed duplicates — is **not** cut. It is
   reachable in principle from `tsMode-*.js`, and cutting it needs the browser test this
   repo does not have yet.
+
+---
+
+## Wave — A browser finally opened it · 2026-09-22
+
+Every wave since Phase 5 landed has ended with some form of the same sentence: *no
+browser has run this.* Eleven pages, 103 component tests, a front door tuned twice for
+compression and caching, and nothing had ever rendered one of them. The environment was
+said to have no browser tooling. It does now: `@playwright/test` and Chromium install
+here, and the containerised stack has been up for four days.
+
+`make test-browser` — 20 tests, `apps/web/e2e/`, against `make up-stack` rather than a
+dev server the config starts. That distinction is deliberate and is most of the value:
+`next dev` proxies the API itself, so only the container topology exercises the
+same-origin `/api/v1`, the cookie and the SSE carve-out the front door owns. There is no
+`webServer` block, because a config that quietly started a dev server would make the gate
+pass against a topology nothing deploys.
+
+### What each route asserts, and why the second one is the gate
+
+1. Its `<h1>` renders.
+2. **Every `/api/v1` request the page made returned 2xx, and nothing threw.**
+3. It did not navigate to `/auth/login`.
+4. Its figures match what the API reports.
+
+(2) is the one that matters, and (1) is close to worthless without it. A page's heading
+comes from the server shell, so it renders whether or not every query beneath it failed —
+a suite asserting only headings would have passed against a completely broken API. (3) is
+free evidence: a 401 redirects rather than rendering (docs/WEB.md), so staying put is a
+direct test of the session cookie. (4) is read from the API at run time, never hard-coded,
+because this database is the real one and it grows — a test pinned to "40 problems" fails
+the next time one is logged, and a gate that fails for the wrong reason is one people
+learn to skip.
+
+Authentication is a real signed cookie from `python -m api.mint_session`, the module
+`make login` already calls, installed on the browser context. Signing one inside the test
+would have stopped testing the verifier.
+
+### Verified
+
+All 20 pass, three runs, ~4s. Every page in docs/WEB.md has now rendered in a browser
+with all of its own requests succeeding. Two facts are new rather than confirmed:
+
+- **The event stream connects in a browser.** The connection indicator reads `open`
+  within ~300ms of navigation. The 2026-09-21 compression wave could only infer this from
+  when a header block landed on a socket, and said so under *Not verified*; the failure it
+  fixed would show up here as a fifteen-second wait, so the assertion is timed at 10s
+  rather than left generous.
+- **The 409 problem document renders.** `/session/{id}/report` on a `briefing` session
+  returns `wrong-state`, and `ApiErrorNotice` draws it from the real RFC 9457 body —
+  the path docs/WEB.md says a component test against a stubbed `api` object cannot reach.
+  That test asserts the *exact* expected failure rather than no failure, so a 500 still
+  fails it.
+
+**The gate was run against broken code.** One character changed in the session cookie and
+all eight route tests fail — on the failed-request assertion and on the redirect. Per the
+2026-09-21 finding that a test which cannot fail is not evidence, this is the part worth
+recording.
+
+**Four pages were also looked at**, at 1440×1000: the dashboard, `/practice`,
+`/concepts`, `/session/new`. Layout, spacing and the nav are sound; no collisions or
+overflow. `/session/new` renders the planner's real output — targeted concept, expected
+score, item Elo, `outside band`, and the "what it weighed but did not serve" disclosure —
+which is Phase 4 visible for the first time.
+
+### Found by running it
+
+- **`/corpus` tells the user something untrue.** The page renders a card headed
+  "Browsing items is not built", explaining that `GET /corpus/items/{id}` "does not exist
+  yet, and neither does one listing item ids to reach it with". Both were built
+  **2026-08-25**, in `c2a0b48`, and docs/API.md has recorded them as built ever since.
+  The page was simply never wired to them. docs/WEB.md repeated the same stale claim in
+  its status header and is corrected here; **the page itself is left alone**, because
+  wiring up an item browser is work, not a doc fix. No gate could have caught this: the
+  doc checks compare status headers and indexes, not prose against the live API.
+- **"Loaded whole" is a claim about memory, not the DOM.** The practice log holds every
+  row and renders twenty, with a pager. A first version of the test read the 2026-09-10
+  entry as meaning one row per problem and found 38 links for 40 problems — which is also
+  how the "Due to re-solve" card turned out to link every one of its 37 entries, unbounded,
+  where the dashboard slices the same list to six. Not changed, just noticed.
+- Three smaller ones, each a test bug rather than an app bug, kept because they are the
+  shape of mistake this kind of suite invites: `a[href^="/session/"]` counted the nav's
+  own "New session" link as a sixteenth session; `?limit=500` is a 400 rather than a
+  bigger page, so the whole log is read by following `next_cursor`; and `"open"` matches
+  both the connection indicator and an item-status badge, so it is scoped to the page's
+  own `<header>` — the layout's nav is a `<header>` too.
+- **eslint reads Playwright's fixtures as React.** A fixture is
+  `async ({ page }, use) => { … await use(value) }`, and `react-hooks/rules-of-hooks`
+  sees `use(...)` called outside a component. One error, in a directory with no React in
+  it; the rule is turned off for `e2e/**` rather than the fixture contorted around it.
+
+### Not verified
+
+- **The per-mode session run is still owed** — a full interview in each of the four
+  modes, driven from the browser. It needs a live interviewer, so it sits behind the same
+  model access everything else here does. What exists is the narrow half.
+- **Not in CI.** The gate needs Postgres, the executor, real Docker and a built web
+  image; the CI web job has none of that. Run by hand after `make up-stack`, like
+  `make test-sandbox` and `make test-e2e`, and for the same reason.
+- **Not an accessibility audit.** Contrast in situ, focus order and keyboard navigation
+  are still unproven — the gate watches requests and text, and the screenshot pass was
+  four pages at one viewport. **Nothing has run at a phone width.**
+- Chromium only. No Firefox or WebKit project is configured.
+- The session tests run against whatever the first session in the database happens to be.
+  Today all fifteen are `briefing`, so the report test exercises the 409 and **the
+  happy-path report has never rendered** — it skips itself if a completed session ever
+  exists, which is backwards and will need revisiting once one does.

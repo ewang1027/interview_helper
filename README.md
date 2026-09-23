@@ -130,6 +130,7 @@ make test-db    # seeds the corpus, then the schema and session tests against li
 
 make test-sandbox     # every test needing real Docker: escapes, /execute, /probe, grading
 make test-e2e         # one scripted coding session — needs Postgres AND Docker
+make test-browser     # every route in a real browser — needs `make up-stack` running
 make test-llm         # the only tests that call a real model — costs money, needs credentials
 make verify-solutions # every reference solution through the same harness candidates get
 make backup           # dump the local database to backups/ (pruned to the newest 60)
@@ -223,9 +224,13 @@ owes.
       the whole 186-concept taxonomy; `/session/new` shows the plan before you commit to
       it; the live view carries the transcript, the interviewer's tool calls and each
       hint's cost, with a workspace per mode. Gated by `make check-web` and a CI job —
-      eslint, tsc, 86 component tests, production build. **Nothing has been opened in a
-      browser yet**, so the visual layer is unreviewed; the Playwright gate is owed, and
-      so is a live session against a real interviewer*
+      eslint, tsc, 103 component tests, production build. ~~**Nothing has been opened in
+      a browser yet**~~ **Opened 2026-09-22**: `make test-browser` drives all ten routes
+      through Chromium against the containerised stack — 20 tests asserting that each
+      page's own API calls succeeded, that nothing threw, and that the figures on the
+      page match what the API reports. The event stream was watched connecting in a
+      browser for the first time, in ~300ms. Still owed: the **full per-mode session**
+      run, which needs a live interviewer, and CI has no stack to point the gate at*
 - [ ] **6 — AWS deploy** — *step 1 of the ramp landed 2026-08-25: Dockerfiles for
       `api`, `executor` and `web`, and `make up-stack` runs the whole application in
       containers behind a **Caddy front door** that routes by path — the job the ALB does

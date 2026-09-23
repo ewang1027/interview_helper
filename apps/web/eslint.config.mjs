@@ -22,6 +22,14 @@ const eslintConfig = [
     ],
   },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
+  {
+    // The Playwright specs are not React. A fixture is declared as
+    // `async ({ page }, use) => { … await use(value) }`, and the react-hooks plugin
+    // reads that `use(...)` as React's `use` hook called outside a component — one
+    // error, in a directory with no React in it at all.
+    files: ["e2e/**/*.ts", "playwright.config.ts"],
+    rules: { "react-hooks/rules-of-hooks": "off" },
+  },
 ];
 
 export default eslintConfig;

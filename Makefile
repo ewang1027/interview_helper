@@ -159,6 +159,22 @@ test-sandbox: daemon-guard ## Every test that needs real Docker: escape suite, /
 test-e2e: daemon-guard ## One scripted coding session against a live stack — needs Postgres AND Docker
 	TEST_MARKER=e2e bash scripts/test_db.sh
 
+test-browser: ## The Phase 5 browser gate: every route in a real browser against a live stack (make up-stack first)
+	@# Not part of `make check`, for the reason test-sandbox and test-e2e are not: it
+	@# needs the whole stack up, and a gate that fails whenever Docker is down is one
+	@# people learn to skip. It is also not in CI yet — CI has no stack to point it at.
+	@#
+	@# It fails rather than skips when something is missing, unlike check-web. That
+	@# target runs inside `make check`, where a Python-only change should not be asked
+	@# to install pnpm; this one you named on purpose, so silence is the wrong answer.
+	@#
+	@# `playwright install` is idempotent and a no-op once the browser is cached, so
+	@# it stays here rather than in `make setup`, where it would add a ~150MB download
+	@# to every fresh clone that never intends to run this.
+	@if [ ! -d apps/web/node_modules ]; then 	  echo "apps/web/node_modules is absent — run make setup first"; exit 1; 	fi
+	bash scripts/pnpm.sh exec playwright install chromium
+	bash scripts/pnpm.sh exec playwright test $(if $(SPEC),$(SPEC),)
+
 test-db: ## DB-backed tests, against a database of their own (make dev first)
 	@# Runs against `<your database>_test`, created and migrated by the script. These used
 	@# to run against the development database on the promise that no teardown would delete
