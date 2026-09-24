@@ -229,8 +229,13 @@ owes.
       through Chromium against the containerised stack — 20 tests asserting that each
       page's own API calls succeeded, that nothing threw, and that the figures on the
       page match what the API reports. The event stream was watched connecting in a
-      browser for the first time, in ~300ms. Still owed: the **full per-mode session**
-      run, which needs a live interviewer, and CI has no stack to point the gate at*
+      browser for the first time, in ~300ms. **Extended 2026-09-24** to 38 tests —
+      axe-core, keyboard focus order, and every route at 390px — which found that
+      `--ink-muted` fails AA contrast at 3.4:1 wherever a caption appears, that a
+      `<Link>` sits inside a `<summary>`, and that `/jobs` overflows a phone by 86px;
+      all three are recorded rather than fixed, the last as a `test.fail()` that goes
+      red when somebody fixes it. Still owed: the **full per-mode session** run, which
+      needs a live interviewer, and CI has no stack to point the gate at*
 - [ ] **6 — AWS deploy** — *step 1 of the ramp landed 2026-08-25: Dockerfiles for
       `api`, `executor` and `web`, and `make up-stack` runs the whole application in
       containers behind a **Caddy front door** that routes by path — the job the ALB does

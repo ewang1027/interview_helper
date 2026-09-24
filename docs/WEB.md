@@ -5,9 +5,11 @@
 > mode, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`,
 > `/practice` and `/jobs`. `make check-web` and a CI job run eslint, tsc and 103 component
 > tests.
-> **Browser gate (2026-09-22):** `make test-browser` drives all ten routes through
-> Chromium against the containerised stack — 20 tests. The **full per-mode session**
-> run is still owed, and CI has no stack to point the gate at.
+> **Browser gate (2026-09-22, extended 2026-09-24):** `make test-browser` drives all ten
+> routes through Chromium against the containerised stack — **38 tests**, now including
+> axe-core, keyboard focus order, and every route at a phone width. It found two known
+> contrast/structure violations and one real overflow on `/jobs`; see **Testing**. The
+> **full per-mode session** run is still owed, and CI has no stack to point the gate at.
 > **Not built:** `/corpus` lists nothing. ~~because the endpoint it needs does not
 > exist~~ — **corrected 2026-09-22:** `GET /corpus/items` and `GET /corpus/items/{id}`
 > were both built 2026-08-25 ([API](API.md)), and this page and the card on `/corpus`
@@ -396,9 +398,39 @@ verifier is still under test.
 **It was checked against broken code.** With one character changed in the cookie, all
 eight route tests fail. A gate nobody has seen fail is not evidence it can.
 
-**Still unproven by it:** contrast in situ, focus order and keyboard navigation. The gate
-watches requests and text, and a screenshot review on 2026-09-22 covered four pages at
-one viewport — neither is an accessibility audit. Nothing runs at a phone width.
+### Accessibility and phone width — `a11y.spec.ts`, `mobile.spec.ts` (2026-09-24)
+
+axe-core over the eight list routes at desktop width, and every route measured again at
+390×844. Focus and keyboard order are checked directly: a real `Tab` press has to land
+on a control with a non-zero `:focus-visible` outline, and the nav's links have to be
+reachable in the order they are written — the nav is on all ten routes, so a tab order
+that skips part of it is one fault ten times over.
+
+**The axe check asserts the set of rule ids, not a clean bill of health.** Two real
+violations exist, and each has a single cause:
+
+| Rule | Cause | Scale |
+|---|---|---|
+| `color-contrast` | `--ink-muted: #898781` is **3.4–3.49:1** on the page and surface backgrounds where AA wants 4.5:1 — and it is the colour of every caption, stat note and hint. `--accent` under white ink is **4.41:1**, also just under | 12–228 nodes per route, from two token values |
+| `nested-interactive` | the weakness list's `<summary>` contains a `<Link>`; a `summary` has an implicit button role, so the link is a focusable descendant of a control | 8 on the dashboard, 100 on `/concepts` |
+
+Both are design decisions, so they are named per route in `KNOWN` and **anything else
+fails** — including these two appearing on a route not listed, which is how the gate
+notices a11y debt spreading. Node counts are not asserted: they scale with the database
+and drifted between two runs of the same page (228, then 227 on `/concepts`).
+
+`/jobs` **overflows a phone viewport by ~86px**, and is recorded as a `test.fail()`
+rather than a sentence. The rejections tracker's rows are a fixed `w-10` count, a
+`flex-1 min-w-0` bar and a label reading "67% of rejections" that carries neither
+`shrink-0` nor a wrapping allowance, so the label holds its ~100px intrinsic width and
+the row cannot compress. When it is fixed the run fails with "expected to fail but
+passed" — checked by simulating the fix — which is the prompt to move the route into the
+ordinary list.
+
+**Still unproven:** screen-reader output, which no automated rule covers; the four
+session workspaces, which need a live session to render; `prefers-color-scheme: dark`,
+where `--ink-muted` is the same `#898781` against a dark background and so has not been
+measured; and any viewport between 390px and 1440px.
 
 ## Deployment
 

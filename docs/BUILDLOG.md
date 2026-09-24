@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-09-22
+## Where things stand — 2026-09-24
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -24,7 +24,7 @@ detail behind it.
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **complete** | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | — *(closed 2026-08-25: a real session ran end to end on the Anthropic API — conversation, `run_code` against the sandbox, submission, grading, evidence. Bedrock is still gated on a use-case form; the provider switch is one env var)* |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within twelve sessions — five until `W_UNLOCKS` woke up, ten until the 2026-09-09 taxonomy expansion added edges into the concepts the corpus measures | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus and with the prerequisite graph |
-| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, a concept picker that searches problem-name **aliases** (2026-09-09), and a log that is loaded whole and **searched, filtered, sorted and grouped in the browser** — by topic, difficulty, source, list, label and due state — with labels edited on the row (2026-09-10), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 103 component tests, in `make check` and CI. **A browser gate since 2026-09-22**: `make test-browser` drives all ten routes through Chromium against the containerised stack — 20 tests, asserting each page's own API calls succeeded, that nothing threw, and that its figures match the API's | the **full per-mode session** run, which needs a live interviewer; the gate in CI, which has no stack to point it at; contrast, focus order and keyboard navigation, which it does not check; and any viewport but one |
+| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, a concept picker that searches problem-name **aliases** (2026-09-09), and a log that is loaded whole and **searched, filtered, sorted and grouped in the browser** — by topic, difficulty, source, list, label and due state — with labels edited on the row (2026-09-10), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 103 component tests, in `make check` and CI. **A browser gate since 2026-09-22**: `make test-browser` drives all ten routes through Chromium against the containerised stack — **38 tests**, asserting each page's own API calls succeeded, that nothing threw, that its figures match the API's, and since 2026-09-24 **axe-core, keyboard focus order and every route at 390px** | the **full per-mode session** run, which needs a live interviewer; the gate in CI, which has no stack to point it at; **two known a11y violations** (`--ink-muted` at 3.4:1, a `<Link>` inside a `<summary>`) and a **phone overflow on `/jobs`**, all three recorded rather than fixed; dark mode, screen readers, and any viewport between 390px and 1440px |
 | **6** AWS deploy | **partial** — step 1 of 5 | Dockerfiles for `api`, `executor` and `web`; `make up-stack` runs all of it behind a **Caddy front door** routing by path, the job the ALB does — so compose mirrors the target topology. Only the front door publishes a port. Sandbox isolation re-verified from inside the containerised launcher | steps 2–5: one service on Fargate by hand, Terraform, the rest of the stack, the portability gate — **all blocked on an authenticated AWS session**, not on code |
 | **7–8** Voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does. The import takes **NeetCode links** as well as LeetCode ones (2026-09-07). **Re-tagged 2026-09-09** against the expanded taxonomy: all 23 logged problems, eleven of them wrong before, by a script that corrects the evidence they wrote and rebuilds mastery. **Filed 2026-09-10**: every coding concept carries a topic, rows carry it with the concept's name and the NeetCode lists, and problems take **labels** of your own through `PATCH /practice/problems/{id}` | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
@@ -7196,3 +7196,79 @@ which is Phase 4 visible for the first time.
   Today all fifteen are `briefing`, so the report test exercises the 409 and **the
   happy-path report has never rendered** — it skips itself if a completed session ever
   exists, which is backwards and will need revisiting once one does.
+
+---
+
+## Wave — The visual layer, measured · 2026-09-24
+
+Two days ago a browser opened this app for the first time and the wave recording it
+closed with what the gate still could not see: *contrast in situ, focus order and
+keyboard navigation are still unproven, and nothing has run at a phone width.* That list
+is the whole of this entry. 38 tests now, up from 20.
+
+`axe-core` over the eight list routes, every route measured again at **390×844**, and
+focus and keyboard order checked directly — a real `Tab` press has to land on a control
+with a non-zero `:focus-visible` outline, and the nav's links have to be reachable in the
+order they are written. The nav is on all ten routes, so a tab order that skips part of it
+is one fault ten times over.
+
+### What it found
+
+Three things, none of them fixed here, all three recorded in a form that will not rot.
+
+- **`--ink-muted: #898781` fails AA, and it is the colour of every caption in the app.**
+  3.49:1 on the page background, 3.4:1 on a surface, where AA wants 4.5:1 for normal
+  text. This is the finding worth having: axe reports 12 to 228 nodes depending on the
+  route, which reads like hundreds of problems and is **one token value**. `--accent`
+  under white ink is 4.41:1 — also under, also one value. Two numbers in
+  `globals.css` account for essentially the whole count.
+- **`/jobs` overflows a phone viewport by ~86px.** The rejections tracker's rows are a
+  fixed `w-10` count, a `flex-1 min-w-0` bar, and a label reading "67% of rejections"
+  carrying neither `shrink-0` nor a wrapping allowance — so the label holds its ~100px
+  intrinsic width, the row cannot compress below the sum, and the document inherits the
+  overflow. Exactly the "collision or overflow" docs/WEB.md predicted the component tests
+  would miss, found by the first run at a width narrower than a laptop.
+- **A `<Link>` lives inside a `<summary>`** in the weakness list. A `summary` carries an
+  implicit button role, so the link is a focusable descendant of a control:
+  `nested-interactive`, 8 nodes on the dashboard and 100 on `/concepts`. The
+  `stopPropagation` already sitting on that link says the nesting was known to be
+  awkward.
+
+### How they are recorded, which is the design decision here
+
+A gate that fails on all three would have been red the day it landed, and this repo has
+already written down twice what happens then — a gate that is always red for a known
+class of change is one people learn to merge past.
+
+So the axe check asserts the **set of rule ids per route**, not a clean bill of health.
+The two known ids are named in `KNOWN`, and anything else fails — including those two
+appearing on a route not listed, which is how it notices the debt spreading rather than
+merely persisting. Node counts are deliberately not asserted: they scale with how much
+data the database holds, and drifted between two runs of the same page, 228 then 227 on
+`/concepts`.
+
+`/jobs` is a **`test.fail()`** — the bug written as executable fact rather than as a
+sentence in a document. It is the part of this wave most worth keeping, because it fails
+in the useful direction: **when somebody fixes the layout, the run fails** with "expected
+to fail but passed", which is the prompt to delete the marker. That was checked by
+simulating the fix — the assertion was made trivially true, and the run went red as
+intended. A recorded bug that does not notice being fixed is just a stale comment.
+
+### Verified
+
+38 tests pass; `make check` clean; eslint and `tsc` clean over the new specs.
+
+### Not verified
+
+- **Nothing here was fixed.** Two colour tokens and one flex row are the whole remedy,
+  and all three are visual-design changes rather than test changes — `--ink-muted` in
+  particular sets the tone of every secondary line in the app, and darkening it is a
+  decision about how the thing looks, not a bug fix to slip into a gate commit.
+- **Dark mode is unmeasured.** `--ink-muted` is the same `#898781` under
+  `prefers-color-scheme: dark`, against a dark background — so the ratio is different and
+  nobody has computed it. axe ran at the default scheme only.
+- **Screen-reader output is unproven**, and no automated rule covers it. `nested-interactive`
+  says the markup is invalid, not what a screen reader actually announces.
+- **The four session workspaces were not audited.** They need a live session to render,
+  which is the same gap the per-mode run is.
+- Between 390px and 1440px nothing is measured, and only Chromium runs.
