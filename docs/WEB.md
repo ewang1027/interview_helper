@@ -8,7 +8,8 @@
 > **Browser gate (2026-09-22, extended 2026-09-24):** `make test-browser` drives all ten
 > routes through Chromium against the containerised stack — **38 tests**, now including
 > axe-core, keyboard focus order, and every route at a phone width. It found two known
-> contrast/structure violations and one real overflow on `/jobs`; see **Testing**. The
+> contrast/structure violations, still open, and a real overflow on `/jobs` that was
+> **fixed 2026-09-24** — two causes, not the one first recorded; see **Testing**. The
 > **full per-mode session** run is still owed, and CI has no stack to point the gate at.
 > **Not built:** `/corpus` lists nothing. ~~because the endpoint it needs does not
 > exist~~ — **corrected 2026-09-22:** `GET /corpus/items` and `GET /corpus/items/{id}`
@@ -419,13 +420,36 @@ fails** — including these two appearing on a route not listed, which is how th
 notices a11y debt spreading. Node counts are not asserted: they scale with the database
 and drifted between two runs of the same page (228, then 227 on `/concepts`).
 
-`/jobs` **overflows a phone viewport by ~86px**, and is recorded as a `test.fail()`
-rather than a sentence. The rejections tracker's rows are a fixed `w-10` count, a
-`flex-1 min-w-0` bar and a label reading "67% of rejections" that carries neither
-`shrink-0` nor a wrapping allowance, so the label holds its ~100px intrinsic width and
-the row cannot compress. When it is fixed the run fails with "expected to fail but
-passed" — checked by simulating the fix — which is the prompt to move the route into the
-ordinary list.
+~~`/jobs` **overflows a phone viewport by ~86px** … the rejections tracker's rows are a
+fixed `w-10` count, a `flex-1 min-w-0` bar and a label reading "67% of rejections" that
+carries neither `shrink-0` nor a wrapping allowance.~~ **Fixed 2026-09-24, and that
+cause was wrong.** The label was a symptom picked out of a deepest-element-first listing;
+the page had **two independent causes**, each about 420px wide, so fixing either alone
+left the overflow looking barely changed:
+
+1. **`CardHeader`'s action slot was `shrink-0`.** Correct for the short "All" link most
+   cards put there; wrong for the ten filter buttons `/jobs` puts there. A `shrink-0`
+   wrapper takes its width from its content, and that content is `flex flex-wrap`, whose
+   base size is every button on one line — 427px. So it pinned the header row open.
+2. **The rejections grid's two columns had no `min-w-0`.** A grid item's default
+   `min-width: auto` floors it at its content's min-content width, and the role name in
+   "Most recent" is `truncate`, therefore `white-space: nowrap`, therefore min-content is
+   the whole string — 421px of "Software Engineer Intern, Cloud Services (Summer 2027)".
+   The span's own `min-w-0 truncate` could do nothing about an ancestor's floor. Above
+   `md` it never showed, because Tailwind's `grid-cols-2` already expands to
+   `minmax(0, 1fr)`.
+
+**The first attempt at (1) traded the bug for a worse one.** Making the action slot
+shrinkable cleared `/jobs` and overflowed **`/concepts` by 111px**, because it puts five
+mode buttons in that slot in a `flex` that does *not* wrap. The fix is `flex-wrap` on the
+header row **and** a shrinkable action, together: when title and action cannot share a
+line the action drops to its own, full-width, and then has room either to wrap or to stay
+whole. Both halves are in `CardHeader`, with the measurement in a comment.
+
+That trade is the argument for asserting **every** route rather than the one with the
+known bug — a gate watching only `/jobs` would have called the first attempt a success.
+`/jobs` was carried as a `test.fail()` until the fix landed, which was itself verified by
+simulating a fix and watching the run go red with "expected to fail but passed".
 
 **Still unproven:** screen-reader output, which no automated rule covers; the four
 session workspaces, which need a live session to render; `prefers-color-scheme: dark`,

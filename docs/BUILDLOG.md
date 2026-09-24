@@ -24,7 +24,7 @@ detail behind it.
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **complete** | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | — *(closed 2026-08-25: a real session ran end to end on the Anthropic API — conversation, `run_code` against the sandbox, submission, grading, evidence. Bedrock is still gated on a use-case form; the provider switch is one env var)* |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within twelve sessions — five until `W_UNLOCKS` woke up, ten until the 2026-09-09 taxonomy expansion added edges into the concepts the corpus measures | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus and with the prerequisite graph |
-| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, a concept picker that searches problem-name **aliases** (2026-09-09), and a log that is loaded whole and **searched, filtered, sorted and grouped in the browser** — by topic, difficulty, source, list, label and due state — with labels edited on the row (2026-09-10), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 103 component tests, in `make check` and CI. **A browser gate since 2026-09-22**: `make test-browser` drives all ten routes through Chromium against the containerised stack — **38 tests**, asserting each page's own API calls succeeded, that nothing threw, that its figures match the API's, and since 2026-09-24 **axe-core, keyboard focus order and every route at 390px** | the **full per-mode session** run, which needs a live interviewer; the gate in CI, which has no stack to point it at; **two known a11y violations** (`--ink-muted` at 3.4:1, a `<Link>` inside a `<summary>`) and a **phone overflow on `/jobs`**, all three recorded rather than fixed; dark mode, screen readers, and any viewport between 390px and 1440px |
+| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, a concept picker that searches problem-name **aliases** (2026-09-09), and a log that is loaded whole and **searched, filtered, sorted and grouped in the browser** — by topic, difficulty, source, list, label and due state — with labels edited on the row (2026-09-10), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 103 component tests, in `make check` and CI. **A browser gate since 2026-09-22**: `make test-browser` drives all ten routes through Chromium against the containerised stack — **38 tests**, asserting each page's own API calls succeeded, that nothing threw, that its figures match the API's, and since 2026-09-24 **axe-core, keyboard focus order and every route at 390px** | the **full per-mode session** run, which needs a live interviewer; the gate in CI, which has no stack to point it at; **two known a11y violations** (`--ink-muted` at 3.4:1, a `<Link>` inside a `<summary>`), recorded rather than fixed; dark mode, screen readers, and any viewport between 390px and 1440px *(the `/jobs` phone overflow the gate found is **fixed** — 2026-09-24)* |
 | **6** AWS deploy | **partial** — step 1 of 5 | Dockerfiles for `api`, `executor` and `web`; `make up-stack` runs all of it behind a **Caddy front door** routing by path, the job the ALB does — so compose mirrors the target topology. Only the front door publishes a port. Sandbox isolation re-verified from inside the containerised launcher | steps 2–5: one service on Fargate by hand, Terraform, the rest of the stack, the portability gate — **all blocked on an authenticated AWS session**, not on code |
 | **7–8** Voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does. The import takes **NeetCode links** as well as LeetCode ones (2026-09-07). **Re-tagged 2026-09-09** against the expanded taxonomy: all 23 logged problems, eleven of them wrong before, by a script that corrects the evidence they wrote and rebuilds mastery. **Filed 2026-09-10**: every coding concept carries a topic, rows carry it with the concept's name and the NeetCode lists, and problems take **labels** of your own through `PATCH /practice/problems/{id}` | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
@@ -7272,3 +7272,77 @@ intended. A recorded bug that does not notice being fixed is just a stale commen
 - **The four session workspaces were not audited.** They need a live session to render,
   which is the same gap the per-mode run is.
 - Between 390px and 1440px nothing is measured, and only Chromium runs.
+
+---
+
+## Wave — Two causes wearing one bug's clothes · 2026-09-24
+
+The phone overflow the gate found on `/jobs` two entries ago is fixed. The fix is four
+class names. Getting to them took three wrong answers, and the wrong answers are the
+entry.
+
+### What it actually was
+
+**Two independent causes, each about 420px wide**, which is why fixing either one alone
+barely moved the number and looked like a failed fix.
+
+1. **`CardHeader`'s action slot was `shrink-0`.** That is correct for the short "All"
+   link most cards put in that slot, and wrong for the ten filter buttons `/jobs` puts
+   there. A `shrink-0` wrapper takes its width from its content; the content is
+   `flex flex-wrap`, whose base size is every button on one line — 427px — so the inner
+   wrapping never engaged and the header row was pinned open.
+2. **The rejections grid's two columns had no `min-w-0`.** A grid item's default
+   `min-width: auto` floors it at its content's min-content width. The role name in "Most
+   recent" is `truncate`, so `white-space: nowrap`, so its min-content is the entire
+   string — 421px of "Software Engineer Intern, Cloud Services (Summer 2027)". The span
+   already said `min-w-0 truncate` and could do nothing about an ancestor's floor. Above
+   `md` this never showed, because Tailwind's `grid-cols-2` already expands to
+   `minmax(0, 1fr)`; only the implicit single column below `md` has the `auto` floor.
+
+### The three wrong answers, in order
+
+- **"It is the percentage label."** Recorded in the 2026-09-22 entry and in
+  docs/WEB.md, both now corrected. It came from a probe that listed overflowing boxes
+  **deepest-first**, on the reasoning that the innermost offender is the cause. That is
+  backwards: the innermost box is the *symptom*, inheriting a width decided by an
+  ancestor. Shallowest-first is the listing that names a cause.
+- **"It is the grid, and `grid-cols-[minmax(0,1fr)]` fixes it."** Half right, and the
+  half that was wrong wasted a rebuild. Making the *track* shrinkable does nothing while
+  the *item* still has `min-width: auto`. Measured: 85px before, 85px after, and three
+  further candidates all 85px — because cause (1) was dominating and masked every one of
+  them.
+- **"Making the action slot shrinkable fixes it."** It did, for `/jobs`, and it
+  **overflowed `/concepts` by 111px** instead, because `/concepts` puts five mode buttons
+  in that same slot in a `flex` that does not wrap. The answer is `flex-wrap` on the
+  header row *and* a shrinkable action, together: when the title and action cannot share
+  a line, the action drops to its own full-width line, where it can wrap or stay whole.
+
+**That third one is the argument for the gate asserting every route rather than the one
+with the known bug.** A suite watching only `/jobs` would have reported the regression as
+a success. It cost one probe to catch, because `mobile.spec.ts` measures all eight.
+
+### What made the difference
+
+Injecting the candidate styles into the live page and measuring, instead of rebuilding
+the image per guess. `make up-stack` rebuilds Next and re-vendors Monaco; a wrong guess
+costs minutes, and the first two wrong answers each cost one. The comparison that settled
+it — four candidates against eight routes — ran in one pass against the running stack and
+is what turned up the `/concepts` regression before it was ever committed.
+
+### Verified
+
+38 browser tests pass, `/jobs` now in the ordinary phone list with its `test.fail()`
+marker deleted. `make check` clean, 103 component tests included — the `CardHeader`
+change touches every card in the app, and nothing else moved. Screenshots at 390px and
+1440px: the phone layout fits, and on desktop the actions still sit inline beside their
+titles, the two-column grids are intact, and the role names still truncate.
+
+### Not verified
+
+- **Only `/jobs` was broken, so only `/jobs` proves the fix.** `CardHeader` now wraps on
+  every card in the app, and the evidence that this is harmless is seven other routes
+  measuring 0px and a desktop screenshot of one page — not a review of all eleven.
+- The two a11y violations from the previous entry are **untouched**: `--ink-muted` still
+  fails AA, and the `<Link>` is still inside a `<summary>`.
+- Nothing between 390px and 1440px is measured, which is exactly where a header that
+  wraps is most likely to look odd.

@@ -232,9 +232,12 @@ owes.
       browser for the first time, in ~300ms. **Extended 2026-09-24** to 38 tests —
       axe-core, keyboard focus order, and every route at 390px — which found that
       `--ink-muted` fails AA contrast at 3.4:1 wherever a caption appears, that a
-      `<Link>` sits inside a `<summary>`, and that `/jobs` overflows a phone by 86px;
-      all three are recorded rather than fixed, the last as a `test.fail()` that goes
-      red when somebody fixes it. Still owed: the **full per-mode session** run, which
+      `<Link>` sits inside a `<summary>`, and that `/jobs` overflows a phone by 86px.
+      The first two are recorded rather than fixed; the overflow was **fixed the same
+      day**, and had two causes rather than the one first written down — a `shrink-0`
+      action slot in `CardHeader` and a grid column with no `min-w-0`. The attempted fix
+      for the first cleared `/jobs` and broke `/concepts` by 111px, which is why the
+      gate asserts every route. Still owed: the **full per-mode session** run, which
       needs a live interviewer, and CI has no stack to point the gate at*
 - [ ] **6 — AWS deploy** — *step 1 of the ramp landed 2026-08-25: Dockerfiles for
       `api`, `executor` and `web`, and `make up-stack` runs the whole application in

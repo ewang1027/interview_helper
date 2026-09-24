@@ -35,12 +35,28 @@ export function CardHeader({
   className?: string;
 }) {
   return (
-    <div className={cn("flex items-start justify-between gap-4 px-4 pt-4 pb-2", className)}>
+    // `flex-wrap` on the row *and* a shrinkable action, which have to travel together.
+    //
+    // The action slot was `shrink-0` alone, which is right for the short "All" link most
+    // cards put there and wrong for the ten filter buttons on `/jobs`: a `shrink-0`
+    // wrapper takes its width from its content, and its content was `flex flex-wrap`,
+    // whose base size is every button on one line — 427px. So the wrapper pinned the row
+    // open and the whole page scrolled sideways by 86px at 390px wide.
+    //
+    // Letting the action shrink is what makes its inner wrapping actually engage. On its
+    // own that traded one overflow for a worse one: `/concepts` puts five mode buttons
+    // here in a `flex` that does *not* wrap, so a shrinking wrapper overflowed by 111px
+    // — measured, on the way to this. `flex-wrap` here is the other half: when title and
+    // action cannot share a line the action drops to its own, full-width, and then has
+    // room to wrap or to stay whole. Above `md` nothing moves; they still fit on one line.
+    <div
+      className={cn("flex flex-wrap items-start justify-between gap-4 px-4 pt-4 pb-2", className)}
+    >
       <div className="min-w-0">
         <h2 className="text-ink text-sm font-semibold tracking-tight">{title}</h2>
         {hint ? <p className="text-ink-muted mt-0.5 text-xs">{hint}</p> : null}
       </div>
-      {action ? <div className="shrink-0">{action}</div> : null}
+      {action ? <div className="min-w-0 shrink">{action}</div> : null}
     </div>
   );
 }

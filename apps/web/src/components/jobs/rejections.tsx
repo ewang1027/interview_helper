@@ -38,8 +38,16 @@ export function Rejections({ rejections }: { rejections: RejectionsView }) {
   );
 
   return (
+    // Both columns are `min-w-0`, and that is load-bearing rather than tidiness. A grid
+    // item's default `min-width: auto` floors it at its content's min-content width; the
+    // role name in "Most recent" is `truncate`, so it is `white-space: nowrap` and its
+    // min-content is the entire string — 421px of "Software Engineer Intern, Cloud
+    // Services (Summer 2027)". That floor held the column wider than a phone and the
+    // page scrolled sideways, while the span's own `min-w-0 truncate` sat there unable
+    // to do anything about it. Above `md` this never showed, because Tailwind's
+    // `grid-cols-2` already expands to `minmax(0, 1fr)`.
     <div className="grid gap-6 md:grid-cols-2">
-      <div>
+      <div className="min-w-0">
         <h3 className="text-ink-secondary text-xs font-medium tracking-wide uppercase">
           Rejected after
         </h3>
@@ -73,7 +81,7 @@ export function Rejections({ rejections }: { rejections: RejectionsView }) {
         </p>
       </div>
 
-      <div>
+      <div className="min-w-0">
         <h3 className="text-ink-secondary text-xs font-medium tracking-wide uppercase">
           Most recent
         </h3>
