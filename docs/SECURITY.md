@@ -390,6 +390,15 @@ fix available — is a gate that gets skipped, which is the same reasoning that 
 An override that has become unnecessary is an override silently holding a version back, so
 the list is to be revisited whenever `next` or `@monaco-editor/react` moves.
 
+**A moderate the gate lets through still gets fixed, just not by the gate.** On
+2026-09-28 Dependabot held three open alerts — one advisory, GHSA-82fw-gwwq-j7x9, a path
+traversal in `@vitest/mocker`'s redirect mock, counted once for `vitest` in the manifest,
+once in the lockfile, and once for the transitive `@vitest/mocker`. CI stayed green
+throughout, as designed. Dev-only: vitest runs the component tests and ships in no image.
+The vulnerable range is `>=2.1.0 <4.1.11`, so **no 3.x release carries the fix** and an
+override could not reach one; `vitest` moved `^3.0.0` → **`^4.1.11`**, a major, and the
+lockfile change is vitest's own subtree and nothing else — `vite` stayed on 7.3.6.
+
 ### What the 2026-09-11 red streak added to that
 
 `pnpm audit` was **not** clean from 2026-09-09 to 2026-09-11: four advisories at `high` or

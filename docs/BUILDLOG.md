@@ -7424,3 +7424,32 @@ containers serving. The string moved to `lib/theme-bootstrap.ts`.
 - The new muted grey is darker everywhere — every caption in the app. It passes AA and
   the screenshots read well, but it is a change to how every page looks, made on the
   strength of a request to fix it.
+
+---
+
+## Wave — Three alerts, one advisory, one major · 2026-09-28
+
+Asked for directly: *fix the security alerts without being too invasive.*
+
+The three Dependabot alerts the previous push reported were **one advisory**
+(GHSA-82fw-gwwq-j7x9, moderate: arbitrary file read through `@vitest/mocker`'s redirect
+mock), counted per manifest and per package. Dev-only — the test runner — and below the
+`high` line CI fails on, which is why CI stayed green ([SECURITY](
+SECURITY.md#the-frontends-dependency-surface)).
+
+The least invasive fix was not a patch bump, because there is none: the vulnerable range
+is `>=2.1.0 <4.1.11`, so nothing on the 3.x line is fixed and a `pnpm-workspace.yaml`
+override had no safe version to force. `vitest` `^3.0.0` → `^4.1.11`. The lockfile diff is
+vitest's own subtree — `@vitest/*`, `chai`, `tinyrainbow` and the like — and nothing
+else; `vite` stayed on 7.3.6. `vitest.config.ts` needed no change.
+
+### Verified
+
+- **103 component tests pass on vitest 4.1.11** with no config edit and no deprecation
+  warning; `tsc --noEmit` clean.
+- `pnpm audit`: **no known vulnerabilities**, at any severity.
+
+### Not verified
+
+- Whether Dependabot closes the three alerts — it re-scans on push and should, but the
+  alerts were open when this was written.
