@@ -5,11 +5,14 @@
 > mode, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`,
 > `/practice` and `/jobs`. `make check-web` and a CI job run eslint, tsc and 103 component
 > tests.
-> **Browser gate (2026-09-22, extended 2026-09-24):** `make test-browser` drives all ten
-> routes through Chromium against the containerised stack — **38 tests**, now including
-> axe-core, keyboard focus order, and every route at a phone width. It found two known
-> contrast/structure violations, still open, and a real overflow on `/jobs` that was
-> **fixed 2026-09-24** — two causes, not the one first recorded; see **Testing**. The
+> **Browser gate (2026-09-22, extended 2026-09-24 and 2026-09-28):** `make test-browser`
+> drives all ten routes through Chromium against the containerised stack — **46 tests**,
+> including axe-core **in both colour schemes**, keyboard focus order, and every route at
+> a phone width. The two contrast/structure violations it found were **fixed
+> 2026-09-28**, and axe now reports none on any route, light or dark. It also found a real
+> overflow on `/jobs`, **fixed 2026-09-24** — two causes, not the one first recorded; see
+> **Testing**. **Theme:** follows the OS, or is pinned from the picker in the nav
+> (2026-09-28); see **Colour**. The
 > **full per-mode session** run is still owed, and CI has no stack to point the gate at.
 > **Not built:** `/corpus` lists nothing. ~~because the endpoint it needs does not
 > exist~~ — **corrected 2026-09-22:** `GET /corpus/items` and `GET /corpus/items/{id}`
@@ -349,6 +352,35 @@ light / 8.4 dark, normal-vision 22.9 / 19.8, against both surfaces. Two of them 
 never carried by colour alone on that page, which is the same rule the heatmap keeps when it
 prints evidence counts in its cells.
 
+### Light and dark (2026-09-28)
+
+`globals.css` has carried a dark palette since Phase 5, applied under
+`prefers-color-scheme: dark`, with `<html data-theme>` overriding the OS either way.
+Until 2026-09-28 nothing set that attribute and nobody had measured the dark theme.
+
+- **The picker** is a native `<select>` at the right of the nav — System, Light, Dark.
+  A pinned choice is kept in `localStorage` under `theme`; "System" removes it. A
+  one-line script in `<head>` (`lib/theme-bootstrap.ts`) applies it before first paint,
+  so a pinned theme never flashes the other one. Storage that throws means "System".
+- **Monaco** draws its own colours and reads no CSS variable, so the coding workspace
+  asks `useIsDark()` (`lib/theme.ts`) and passes `vs-dark` or `light`. Before this it
+  stayed a white editor inside a dark page.
+- **Heatmap cell ink is a token per ramp step** (`--ability-ink-1..5`), set per theme.
+  The light ramp wants white ink from step 4; the dark ramp only on step 5. The rule it
+  replaced — dark ink on the two lightest steps and on unmeasured cells — was written for
+  light mode, and in dark mode drew near-black on `--ability-none` (**1.25:1**) and white
+  on the mid steps (**2.5:1**). Those were the only dark-mode failures axe found. The
+  middle light step (`#2a78d6`) is the awkward one: `#0b0b0b` is 4.46:1 on it and white
+  4.42:1, so it takes pure black at 4.76:1.
+
+The contrast fixes moved three token values, each noted where it is defined:
+
+| Token | Was | Now | Why |
+|---|---|---|---|
+| `--ink-muted` (light) | `#898781` | `#6f6d67` | 3.4–3.49:1 on page and surface; now ≥ 4.58:1 on all three surfaces |
+| `--ink-muted` (dark) | `#898781` | `#918f89` | passed on page and surface, 4.38:1 on sunken; now 4.86:1 |
+| `--accent` (light) | `#2a78d6` | `#2670c9` | white on it was 4.41:1; now 4.95:1. `--ability-3` and `--series-swe` keep the validated `#2a78d6` |
+
 ## Testing
 
 - Component tests for the four workspaces against recorded SSE fixtures, so no live
@@ -401,23 +433,29 @@ eight route tests fail. A gate nobody has seen fail is not evidence it can.
 
 ### Accessibility and phone width — `a11y.spec.ts`, `mobile.spec.ts` (2026-09-24)
 
-axe-core over the eight list routes at desktop width, and every route measured again at
-390×844. Focus and keyboard order are checked directly: a real `Tab` press has to land
+axe-core over the eight list routes at desktop width, **in the light and the dark scheme**
+(dark added 2026-09-28), and every route measured again at 390×844. Focus and keyboard order are checked directly: a real `Tab` press has to land
 on a control with a non-zero `:focus-visible` outline, and the nav's links have to be
 reachable in the order they are written — the nav is on all ten routes, so a tab order
 that skips part of it is one fault ten times over.
 
-**The axe check asserts the set of rule ids, not a clean bill of health.** Two real
-violations exist, and each has a single cause:
+**The axe check asserts the set of rule ids per route.** It landed with two real
+violations named per route in `KNOWN`, and each had a single cause. **Both fixed
+2026-09-28** — every route now expects no violation in either scheme, and a rule id left
+in `KNOWN` that stops appearing fails too:
 
 | Rule | Cause | Scale |
 |---|---|---|
 | `color-contrast` | `--ink-muted: #898781` is **3.4–3.49:1** on the page and surface backgrounds where AA wants 4.5:1 — and it is the colour of every caption, stat note and hint. `--accent` under white ink is **4.41:1**, also just under | 12–228 nodes per route, from two token values |
 | `nested-interactive` | the weakness list's `<summary>` contains a `<Link>`; a `summary` has an implicit button role, so the link is a focusable descendant of a control | 8 on the dashboard, 100 on `/concepts` |
 
-Both are design decisions, so they are named per route in `KNOWN` and **anything else
-fails** — including these two appearing on a route not listed, which is how the gate
-notices a11y debt spreading. Node counts are not asserted: they scale with the database
+**Fixed:** the three token values in **Colour → Light and dark** above; and the weakness
+list's row is now a link and a separate `aria-expanded` button, siblings rather than one
+inside the other, so the `stopPropagation` that worked around the nesting is gone.
+
+They were carried as known debt because both were design decisions — darkening the
+caption colour changes how every page looks — and **anything else failed** meanwhile,
+including these two appearing on a route not listed. Node counts are not asserted: they scale with the database
 and drifted between two runs of the same page (228, then 227 on `/concepts`).
 
 ~~`/jobs` **overflows a phone viewport by ~86px** … the rejections tracker's rows are a
@@ -452,9 +490,10 @@ known bug — a gate watching only `/jobs` would have called the first attempt a
 simulating a fix and watching the run go red with "expected to fail but passed".
 
 **Still unproven:** screen-reader output, which no automated rule covers; the four
-session workspaces, which need a live session to render; `prefers-color-scheme: dark`,
-where `--ink-muted` is the same `#898781` against a dark background and so has not been
-measured; and any viewport between 390px and 1440px.
+session workspaces, which need a live session to render — in either scheme, so the dark
+Monaco theme has been wired but not seen; and any viewport between 390px and 1440px.
+~~`prefers-color-scheme: dark` … has not been measured~~ — **measured 2026-09-28**; see
+above.
 
 ## Deployment
 

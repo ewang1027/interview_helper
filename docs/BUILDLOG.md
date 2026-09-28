@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-09-24
+## Where things stand — 2026-09-28
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -24,7 +24,7 @@ detail behind it.
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **complete** | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | — *(closed 2026-08-25: a real session ran end to end on the Anthropic API — conversation, `run_code` against the sandbox, submission, grading, evidence. Bedrock is still gated on a use-case form; the provider switch is one env var)* |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within twelve sessions — five until `W_UNLOCKS` woke up, ten until the 2026-09-09 taxonomy expansion added edges into the concepts the corpus measures | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus and with the prerequisite graph |
-| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, a concept picker that searches problem-name **aliases** (2026-09-09), and a log that is loaded whole and **searched, filtered, sorted and grouped in the browser** — by topic, difficulty, source, list, label and due state — with labels edited on the row (2026-09-10), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 103 component tests, in `make check` and CI. **A browser gate since 2026-09-22**: `make test-browser` drives all ten routes through Chromium against the containerised stack — **38 tests**, asserting each page's own API calls succeeded, that nothing threw, that its figures match the API's, and since 2026-09-24 **axe-core, keyboard focus order and every route at 390px** | the **full per-mode session** run, which needs a live interviewer; the gate in CI, which has no stack to point it at; **two known a11y violations** (`--ink-muted` at 3.4:1, a `<Link>` inside a `<summary>`), recorded rather than fixed; dark mode, screen readers, and any viewport between 390px and 1440px *(the `/jobs` phone overflow the gate found is **fixed** — 2026-09-24)* |
+| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, a concept picker that searches problem-name **aliases** (2026-09-09), and a log that is loaded whole and **searched, filtered, sorted and grouped in the browser** — by topic, difficulty, source, list, label and due state — with labels edited on the row (2026-09-10), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 103 component tests, in `make check` and CI. **A browser gate since 2026-09-22**: `make test-browser` drives all ten routes through Chromium against the containerised stack — **38 tests**, asserting each page's own API calls succeeded, that nothing threw, that its figures match the API's, and since 2026-09-24 **axe-core, keyboard focus order and every route at 390px** — **46 tests** since 2026-09-28, axe **clean in both colour schemes**, with a theme picker in the nav | the **full per-mode session** run, which needs a live interviewer; the gate in CI, which has no stack to point it at; screen readers, and any viewport between 390px and 1440px *(the two known a11y violations and the unmeasured dark theme are **fixed** — 2026-09-28)* *(the `/jobs` phone overflow the gate found is **fixed** — 2026-09-24)* |
 | **6** AWS deploy | **partial** — step 1 of 5 | Dockerfiles for `api`, `executor` and `web`; `make up-stack` runs all of it behind a **Caddy front door** routing by path, the job the ALB does — so compose mirrors the target topology. Only the front door publishes a port. Sandbox isolation re-verified from inside the containerised launcher | steps 2–5: one service on Fargate by hand, Terraform, the rest of the stack, the portability gate — **all blocked on an authenticated AWS session**, not on code |
 | **7–8** Voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does. The import takes **NeetCode links** as well as LeetCode ones (2026-09-07). **Re-tagged 2026-09-09** against the expanded taxonomy: all 23 logged problems, eleven of them wrong before, by a script that corrects the evidence they wrote and rebuilds mastery. **Filed 2026-09-10**: every coding concept carries a topic, rows carry it with the concept's name and the NeetCode lists, and problems take **labels** of your own through `PATCH /practice/problems/{id}` | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
@@ -7346,3 +7346,81 @@ titles, the two-column grids are intact, and the role names still truncate.
   fails AA, and the `<Link>` is still inside a `<summary>`.
 - Nothing between 390px and 1440px is measured, which is exactly where a header that
   wraps is most likely to look odd.
+
+---
+
+## Wave — Contrast in both schemes, and a way to choose one · 2026-09-28
+
+Asked for directly: *make some improvements to the site* — narrowed, when asked, to **fix
+the two known a11y violations** and **dark mode**.
+
+"Dark mode" turned out not to mean building one. `globals.css` has carried a dark palette
+since Phase 5, applied under `prefers-color-scheme: dark`, and it even has
+`data-theme` overrides. What it lacked was a measurement and a switch: axe had never run
+dark, and nothing set the attribute, so the only way to see it was to change the OS.
+
+### Measured first
+
+axe over the eight routes in each scheme, before any change, with every contrast failure
+grouped by its colour pair. Light was the two findings of 2026-09-24 and nothing else —
+`#898781` on the page and surface, and white on `#2a78d6`. The white-on-blue nodes were
+not only buttons: **25 of them were heatmap cells**, whose middle band is the same blue.
+
+Dark was not what the 2026-09-24 entry predicted. It guessed at `--ink-muted` on a dark
+background; that passes (4.85:1 on the surface). **Every dark failure was the heatmap**:
+near-black on unmeasured cells at 1.25:1, white on the mid steps at 2.5:1 and 3.63:1.
+The cell ink was chosen by a rule — dark ink on the two lightest steps — that was written
+for the light ramp and silently applied to both.
+
+### What changed
+
+- **Three token values**, each noted where it is defined and in the table in
+  [WEB](WEB.md#light-and-dark-2026-09-28): light `--ink-muted` `#898781` → `#6f6d67`, the
+  lightest step of the same grey that clears AA on all three light surfaces, sunken
+  included; dark `--ink-muted` → `#918f89`, because the dark one was 4.38:1 on sunken — a
+  combination no current route draws, so axe could not have found it; light `--accent`
+  `#2a78d6` → `#2670c9`. The ability ramp and `--series-swe` keep the validated `#2a78d6`,
+  so no chart moved.
+- **Heatmap ink is a token per ramp step**, set per theme. The middle light step is the
+  one with no good answer: `#0b0b0b` is 4.46:1 and white 4.42:1, both just under, so it
+  takes pure black at 4.76:1. The observation count lost its 70–80% opacity, which at
+  10px pushed it under on the mid steps.
+- **The weakness row is a link and an `aria-expanded` button side by side**, not a link
+  inside a `<summary>`. Clicking the name navigates, clicking the priority toggles the
+  breakdown; the `stopPropagation` that worked around the nesting is gone.
+- **A theme picker** in the nav — System, Light, Dark — stored in `localStorage` and
+  applied by a one-line script in `<head>` before first paint. **Monaco follows it**: it
+  reads no CSS variable, so it had been a white editor inside a dark page.
+
+### One wrong turn
+
+`lib/theme.ts` first held both the hook and the `<head>` script string. The layout is a
+server component, and **`next build` refuses a server import of any module that imports
+a React hook**, called or not — `tsc`, eslint and all 103 component tests passed with it,
+and the stack's image build failed. The browser gate then ran green-and-red against the
+*previous* image, which is worth knowing: `make up-stack` failing leaves the old
+containers serving. The string moved to `lib/theme-bootstrap.ts`.
+
+### Verified
+
+- **`make test-browser`: 46 passed** against the rebuilt stack — axe reports **no
+  violation on any of the eight routes, in either scheme**, `KNOWN` empty for all of them;
+  phone width, keyboard order and data checks unchanged with the picker in the nav.
+- A probe in Chromium: choosing *Dark* and reloading keeps `data-theme="dark"` and a
+  `#0d0d0d` body; choosing *System* removes the attribute; the weakness toggle expands
+  and reports `aria-expanded="true"`. Screenshots of the dashboard in both themes looked
+  at, heatmap included.
+- 103 component tests, eslint and `tsc --noEmit` clean; `next build` clean.
+
+### Not verified
+
+- **The dark Monaco theme has not been seen.** The editor only renders inside a live
+  session, which is the per-mode run this phase still owes.
+- **Nothing between 390px and 1440px**, and only Chromium. The picker adds a control to a
+  nav that already scrolls on a phone; the phone gate passes, but whether it looks right
+  at tablet width is unmeasured.
+- **Screen-reader output is still unproven.** The row is now valid markup; what a screen
+  reader announces for it has not been listened to.
+- The new muted grey is darker everywhere — every caption in the app. It passes AA and
+  the screenshots read well, but it is a change to how every page looks, made on the
+  strength of a request to fix it.

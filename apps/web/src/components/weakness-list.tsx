@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useId, useState } from "react";
 import { cn } from "@/lib/cn";
 import { elo } from "@/lib/format";
 import type { PriorityTerms, RankedConcept } from "@/lib/types";
@@ -67,44 +68,81 @@ export function WeaknessList({
   return (
     <ol className="divide-hairline divide-y">
       {concepts.map((concept, index) => (
-        <li key={concept.concept_id} className="py-2 first:pt-0 last:pb-0">
-          <details className="group">
-            <summary className="flex cursor-pointer list-none items-baseline gap-2">
-              <span className="tabular text-ink-muted w-5 shrink-0 text-xs">{index + 1}</span>
-              <span className="min-w-0 flex-1">
-                <Link
-                  href={`/concepts/${concept.concept_id}`}
-                  className="text-ink text-sm hover:underline"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  {concept.name}
-                </Link>
-                <span className="text-ink-muted ml-2 text-xs">
-                  {concept.unseen
-                    ? "never measured"
-                    : `${elo(concept.ability)} · ${concept.observations} obs`}
-                </span>
-              </span>
-              <span className="tabular text-ink-secondary shrink-0 text-xs">
-                {concept.priority.toFixed(3)}
-              </span>
-              <span className="text-ink-muted shrink-0 text-xs group-open:hidden">▸</span>
-              <span className="text-ink-muted hidden shrink-0 text-xs group-open:inline">▾</span>
-            </summary>
-            <div className="mt-2 space-y-1 pl-7">
-              {(Object.keys(TERM_LABEL) as (keyof PriorityTerms)[]).map((term) => (
-                <TermBar key={term} term={term} value={concept.terms[term]} scale={scale} />
-              ))}
-              {weights ? (
-                <p className="text-ink-muted pt-1 text-[11px]">
-                  Weights: {Object.entries(weights).map(([k, v]) => `${k} ${v}`).join(" · ")} —
-                  placeholders until real sessions calibrate them.
-                </p>
-              ) : null}
-            </div>
-          </details>
-        </li>
+        <Row
+          key={concept.concept_id}
+          concept={concept}
+          rank={index + 1}
+          scale={scale}
+          weights={weights}
+        />
       ))}
     </ol>
+  );
+}
+
+/**
+ * One ranked concept: a link to it, and a toggle for its breakdown, as **siblings**.
+ *
+ * This was a `<details>` whose `<summary>` held the link, which made the link a focusable
+ * descendant of a control — `summary` has an implicit button role — and axe reported it
+ * as `nested-interactive` on every row (8 on the dashboard, 100 on `/concepts`). The
+ * `stopPropagation` on the link was the workaround for the same nesting. A button with
+ * `aria-expanded` is the same disclosure without the nesting: the link is announced as a
+ * link, the toggle as a button, and each is its own tab stop.
+ */
+function Row({
+  concept,
+  rank,
+  scale,
+  weights,
+}: {
+  concept: RankedConcept;
+  rank: number;
+  scale: number;
+  weights?: PriorityTerms;
+}) {
+  const [open, setOpen] = useState(false);
+  const panel = useId();
+
+  return (
+    <li className="py-2 first:pt-0 last:pb-0">
+      <div className="flex items-baseline gap-2">
+        <span className="tabular text-ink-muted w-5 shrink-0 text-xs">{rank}</span>
+        <span className="min-w-0 flex-1">
+          <Link href={`/concepts/${concept.concept_id}`} className="text-ink text-sm hover:underline">
+            {concept.name}
+          </Link>
+          <span className="text-ink-muted ml-2 text-xs">
+            {concept.unseen
+              ? "never measured"
+              : `${elo(concept.ability)} · ${concept.observations} obs`}
+          </span>
+        </span>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={panel}
+          aria-label={`Priority ${concept.priority.toFixed(3)} — ${open ? "hide" : "show"} breakdown for ${concept.name}`}
+          onClick={() => setOpen((value) => !value)}
+          className="flex shrink-0 cursor-pointer items-baseline gap-2 rounded-sm text-xs"
+        >
+          <span className="tabular text-ink-secondary">{concept.priority.toFixed(3)}</span>
+          <span aria-hidden className="text-ink-muted">
+            {open ? "▾" : "▸"}
+          </span>
+        </button>
+      </div>
+      <div id={panel} hidden={!open} className="mt-2 space-y-1 pl-7">
+        {(Object.keys(TERM_LABEL) as (keyof PriorityTerms)[]).map((term) => (
+          <TermBar key={term} term={term} value={concept.terms[term]} scale={scale} />
+        ))}
+        {weights ? (
+          <p className="text-ink-muted pt-1 text-[11px]">
+            Weights: {Object.entries(weights).map(([k, v]) => `${k} ${v}`).join(" · ")} —
+            placeholders until real sessions calibrate them.
+          </p>
+        ) : null}
+      </div>
+    </li>
   );
 }

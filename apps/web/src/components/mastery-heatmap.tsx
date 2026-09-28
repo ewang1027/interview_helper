@@ -46,14 +46,19 @@ const DOMAIN_LABEL: Record<string, string> = {
  * so what a shade means is inspectable rather than implied.
  */
 const BANDS = [
-  { max: 1425, cls: "bg-ability-1", label: "under 1425" },
-  { max: 1500, cls: "bg-ability-2", label: "1425–1500" },
-  { max: 1600, cls: "bg-ability-3", label: "1500–1600" },
-  { max: 1675, cls: "bg-ability-4", label: "1600–1675" },
-  { max: Infinity, cls: "bg-ability-5", label: "1675 and up" },
+  { max: 1425, cls: "bg-ability-1 text-ability-ink-1", label: "under 1425" },
+  { max: 1500, cls: "bg-ability-2 text-ability-ink-2", label: "1425–1500" },
+  { max: 1600, cls: "bg-ability-3 text-ability-ink-3", label: "1500–1600" },
+  { max: 1675, cls: "bg-ability-4 text-ability-ink-4", label: "1600–1675" },
+  { max: Infinity, cls: "bg-ability-5 text-ability-ink-5", label: "1675 and up" },
 ] as const;
 
-/** The lower two ramp steps are light; ink on them has to be dark to stay legible. */
+/**
+ * Each band carries its own ink token. Which steps want dark ink is a property of the
+ * theme, not the band: the light ramp flips to white ink at step 4, the dark ramp at
+ * step 5. A per-band `darkInk` rule written for the light theme drew near-black on
+ * `--ability-none` in dark mode (1.25:1) and white on the mid steps (2.5:1).
+ */
 function bandFor(ability: number) {
   return BANDS.find((band) => ability < band.max) ?? BANDS[BANDS.length - 1];
 }
@@ -105,9 +110,6 @@ function Cell({ concept }: { concept: HeatmapConcept }) {
   const overdue = isOverdue(concept.due_at);
   const unmeasured = concept.normalized === null;
   const band = unmeasured ? null : bandFor(concept.ability);
-  // Ink has to survive both ends of the ramp: the two lightest steps are pale
-  // in light mode, and the two darkest are near-black in dark mode.
-  const darkInk = unmeasured || BANDS.indexOf(band!) < 2;
 
   return (
     <Link
@@ -123,7 +125,7 @@ function Cell({ concept }: { concept: HeatmapConcept }) {
         .join(" · ")}
       className={cn(
         "group relative flex h-11 flex-col justify-between overflow-hidden rounded p-1 transition-transform hover:z-10 hover:scale-105",
-        unmeasured ? "bg-ability-none border-hairline border border-dashed" : band!.cls,
+        unmeasured ? "bg-ability-none text-ink border-hairline border border-dashed" : band!.cls,
         overdue && "ring-2 ring-[var(--status-critical)]",
       )}
     >
@@ -134,22 +136,12 @@ function Cell({ concept }: { concept: HeatmapConcept }) {
           className="absolute top-0 right-0 h-0 w-0 border-t-[9px] border-l-[9px] border-t-[var(--status-critical)] border-l-transparent"
         />
       ) : null}
-      <span
-        className={cn(
-          "truncate text-[10px] leading-tight font-medium",
-          darkInk ? "text-[#0b0b0b]" : "text-white",
-        )}
-      >
+      <span className="truncate text-[10px] leading-tight font-medium">
         {concept.concept_id}
       </span>
-      <span
-        className={cn(
-          "tabular text-[10px] leading-none",
-          darkInk ? "text-[#0b0b0b]/70" : "text-white/80",
-        )}
-      >
-        {concept.observations}
-      </span>
+      {/* Full-strength ink, not the 70–80% it was: at 10px, faded ink on the mid steps
+          fell under AA, and the count is the evidence the cell is honest about. */}
+      <span className="tabular text-[10px] leading-none">{concept.observations}</span>
     </Link>
   );
 }

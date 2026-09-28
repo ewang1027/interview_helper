@@ -25,13 +25,19 @@
 
   --ink-primary: #0b0b0b;
   --ink-secondary: #52514e;
-  --ink-muted: #898781;
+  /* #898781 until 2026-09-28, at 3.4–3.49:1 on the page and surface — the colour of every
+     caption in the app, failing AA. This is the lightest step of the same warm grey that
+     clears 4.5:1 on all three light surfaces, sunken (4.58:1) included. */
+  --ink-muted: #6f6d67;
 
   --line-hairline: #e1e0d9;
   --line-axis: #c3c2b7;
   --ring-border: rgba(11, 11, 11, 0.1);
 
-  --accent: #2a78d6;
+  /* #2a78d6 until 2026-09-28: white on it was 4.41:1, just under AA, and it is the fill
+     of every primary button and selected toggle. The ramp's --ability-3 and --series-swe
+     keep the validated #2a78d6; only the accent moved. White on this is 4.95:1. */
+  --accent: #2670c9;
   --accent-ink: #ffffff;
 
   /* Ability ramp — weakest to strongest. */
@@ -40,6 +46,14 @@
   --ability-3: #2a78d6;
   --ability-4: #1c5cab;
   --ability-5: #104281;
+  /* Ink for text drawn on each ramp step, chosen per theme because the ramp's steps sit
+     at different lightness in each. The middle light step is the awkward one: #0b0b0b is
+     4.46:1 on it and white 4.42:1, both under AA, so it takes pure black (4.76:1). */
+  --ability-ink-1: #0b0b0b;
+  --ability-ink-2: #0b0b0b;
+  --ability-ink-3: #000000;
+  --ability-ink-4: #ffffff;
+  --ability-ink-5: #ffffff;
   /* Never measured. Deliberately outside the ramp: absence is not a low score. */
   --ability-none: #f2f1ed;
 
@@ -76,7 +90,9 @@
 
     --ink-primary: #ffffff;
     --ink-secondary: #c3c2b7;
-    --ink-muted: #898781;
+    /* #898781 until 2026-09-28: it passed on the page and surface but was 4.38:1 on
+       sunken. */
+    --ink-muted: #918f89;
 
     --line-hairline: #2c2c2a;
     --line-axis: #383835;
@@ -91,6 +107,12 @@
     --ability-4: #3987e5;
     --ability-5: #184f95;
     --ability-none: #232322;
+    /* Dark ink on the four light steps (5.41:1 at the worst), white on the darkest. */
+    --ability-ink-1: #0b0b0b;
+    --ability-ink-2: #0b0b0b;
+    --ability-ink-3: #0b0b0b;
+    --ability-ink-4: #0b0b0b;
+    --ability-ink-5: #ffffff;
 
     /* The same four hues re-stepped for the dark surface, not an automatic flip. */
     --series-swe: #3987e5;
@@ -111,7 +133,7 @@
 
   --ink-primary: #ffffff;
   --ink-secondary: #c3c2b7;
-  --ink-muted: #898781;
+  --ink-muted: #918f89;
 
   --line-hairline: #2c2c2a;
   --line-axis: #383835;
@@ -126,6 +148,11 @@
   --ability-4: #3987e5;
   --ability-5: #184f95;
   --ability-none: #232322;
+  --ability-ink-1: #0b0b0b;
+  --ability-ink-2: #0b0b0b;
+  --ability-ink-3: #0b0b0b;
+  --ability-ink-4: #0b0b0b;
+  --ability-ink-5: #ffffff;
 
   --series-swe: #3987e5;
   --series-ai: #d95926;
@@ -156,6 +183,11 @@
   --color-ability-4: var(--ability-4);
   --color-ability-5: var(--ability-5);
   --color-ability-none: var(--ability-none);
+  --color-ability-ink-1: var(--ability-ink-1);
+  --color-ability-ink-2: var(--ability-ink-2);
+  --color-ability-ink-3: var(--ability-ink-3);
+  --color-ability-ink-4: var(--ability-ink-4);
+  --color-ability-ink-5: var(--ability-ink-5);
 
   --color-good: var(--status-good);
   --color-warning: var(--status-warning);

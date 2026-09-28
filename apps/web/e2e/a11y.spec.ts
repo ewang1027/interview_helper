@@ -10,62 +10,65 @@ import { expect, test } from "./fixtures";
  * on 2026-09-22 did not close that — it watches requests and text. This does the
  * contrast and structure half; `mobile.spec.ts` does the overflow half.
  *
- * **What this asserts is the set of rule ids, not a clean bill of health.** The app has
- * two real, known violations, both traced to a single cause each (see below), and both
- * are design decisions rather than bugs to fix inside a test commit. A gate that failed
- * on them would be red from the day it landed, which this repo has already learned is a
- * gate people route around. So the known ids are named per route, and **anything new
- * fails** — including these two spreading to a route not listed here, which is the
- * signal that a11y debt is growing.
+ * **What this asserts is the set of rule ids per route.** It began, on 2026-09-24, with
+ * two known violations named per route so the gate could land green and still fail on
+ * anything new. Both were fixed on 2026-09-28 and every route now expects **none**; the
+ * `KNOWN` table stays as the place a future, deliberately deferred one would go, and a
+ * rule id listed there that stops appearing fails too, so the table cannot outlive its
+ * debt.
+ *
+ * **Both colour schemes.** Until 2026-09-28 axe ran at the default scheme only, and the
+ * dark theme had never been measured. It had three failures, all in the mastery
+ * heatmap, which picked its cell ink with a rule written for the light ramp.
  *
  * Node counts are deliberately not asserted: they scale with how much data is in the
  * database, and drifted between two runs of the same page (228 and 227 on `/concepts`).
- * The counts as measured on 2026-09-24 are recorded in docs/WEB.md instead.
  */
 
 const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 
 /**
- * Known violations, per route, as of 2026-09-24.
+ * Known violations, per route. Empty since 2026-09-28. What was here, and the fix:
  *
- * - `color-contrast` — one token. `--ink-muted: #898781` sits at 3.4–3.49:1 on the page
- *   and surface backgrounds where AA wants 4.5:1, and it is the colour of every caption,
- *   stat note and hint in the app. `--accent` with white ink is 4.41:1, also just under.
- *   Two token values, hundreds of nodes.
- * - `nested-interactive` — the weakness list's `<summary>` contains a `<Link>`. A
- *   `summary` has an implicit button role, so the link is a focusable descendant of a
- *   control; the `stopPropagation` already on it says the nesting was known to be
- *   awkward.
+ * - `color-contrast` — `--ink-muted: #898781` at 3.4–3.49:1 and white on `--accent`
+ *   at 4.41:1. Two token values in `globals.css`, now #6f6d67 and #2670c9.
+ * - `nested-interactive` — a `<Link>` inside the weakness list's `<summary>`. The row
+ *   is now a link and an `aria-expanded` button side by side.
  */
 const KNOWN: Record<string, string[]> = {
-  "/": ["color-contrast", "nested-interactive"],
-  "/session/new": ["color-contrast"],
-  "/jobs": ["color-contrast"],
-  "/practice": ["color-contrast"],
-  "/concepts": ["color-contrast", "nested-interactive"],
-  "/history": ["color-contrast"],
-  "/corpus": ["color-contrast"],
-  "/costs": ["color-contrast"],
+  "/": [],
+  "/session/new": [],
+  "/jobs": [],
+  "/practice": [],
+  "/concepts": [],
+  "/history": [],
+  "/corpus": [],
+  "/costs": [],
 };
 
-for (const [route, known] of Object.entries(KNOWN)) {
-  test(`${route} has no accessibility violation beyond the known ones`, async ({ page }) => {
-    await page.goto(route);
-    await page.waitForLoadState("networkidle");
+for (const scheme of ["light", "dark"] as const) {
+  for (const [route, known] of Object.entries(KNOWN)) {
+    test(`${route} (${scheme}) has no accessibility violation beyond the known ones`, async ({
+      page,
+    }) => {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.goto(route);
+      await page.waitForLoadState("networkidle");
 
-    const { violations } = await new AxeBuilder({ page }).withTags(WCAG).analyze();
-    const found = [...new Set(violations.map((violation) => violation.id))].sort();
+      const { violations } = await new AxeBuilder({ page }).withTags(WCAG).analyze();
+      const found = [...new Set(violations.map((violation) => violation.id))].sort();
 
-    expect(
-      found,
-      `axe rule ids on ${route}. Anything not in the known list is new breakage; ` +
-        "if one of the known ones is now absent, take it out of KNOWN rather than " +
-        "leaving the gate weaker than the app.\n" +
-        violations
-          .map((violation) => `  ${violation.id} (${violation.nodes.length}) ${violation.help}`)
-          .join("\n"),
-    ).toEqual([...known].sort());
-  });
+      expect(
+        found,
+        `axe rule ids on ${route} in the ${scheme} scheme. Anything not in the known list ` +
+          "is new breakage; if one of the known ones is now absent, take it out of KNOWN " +
+          "rather than leaving the gate weaker than the app.\n" +
+          violations
+            .map((violation) => `  ${violation.id} (${violation.nodes.length}) ${violation.help}`)
+            .join("\n"),
+      ).toEqual([...known].sort());
+    });
+  }
 }
 
 test("focus is visible on whatever the keyboard reaches first", async ({ page }) => {

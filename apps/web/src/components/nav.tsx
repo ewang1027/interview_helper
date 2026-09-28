@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
+import { ThemeToggle } from "./theme-toggle";
 
 const LINKS = [
   { href: "/", label: "Dashboard" },
@@ -45,6 +46,9 @@ export function Nav() {
             );
           })}
         </nav>
+        <div className="ml-auto shrink-0">
+          <ThemeToggle />
+        </div>
       </div>
     </header>
   );

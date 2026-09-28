@@ -3,6 +3,7 @@
 import Editor, { loader } from "@monaco-editor/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
+import { useIsDark } from "@/lib/theme";
 import type { Language } from "@/lib/types";
 import type { WorkspaceProps } from "./types";
 
@@ -60,6 +61,9 @@ export function CodingWorkspace({
   }, [source, language, onChange]);
 
   const options = useMemo(() => ({ ...EDITOR_OPTIONS, readOnly: disabled }), [disabled]);
+  // Monaco draws its own colours and knows nothing of the CSS tokens, so without this it
+  // stayed a white editor inside a dark page.
+  const dark = useIsDark();
   const onEdit = useCallback((value: string | undefined) => setSource(value ?? ""), []);
 
   return (
@@ -92,6 +96,7 @@ export function CodingWorkspace({
         <Editor
           height="100%"
           language={language === "cpp" ? "cpp" : "python"}
+          theme={dark ? "vs-dark" : "light"}
           value={source}
           onChange={onEdit}
           options={options}

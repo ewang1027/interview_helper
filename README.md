@@ -233,8 +233,9 @@ owes.
       axe-core, keyboard focus order, and every route at 390px — which found that
       `--ink-muted` fails AA contrast at 3.4:1 wherever a caption appears, that a
       `<Link>` sits inside a `<summary>`, and that `/jobs` overflows a phone by 86px.
-      The first two are recorded rather than fixed; the overflow was **fixed the same
-      day**, and had two causes rather than the one first written down — a `shrink-0`
+      The first two were recorded rather than fixed, then **fixed 2026-09-28** along
+      with a dark-mode audit (46 tests, axe clean in both schemes, and a theme picker
+      in the nav); the overflow was **fixed the same day**, and had two causes rather than the one first written down — a `shrink-0`
       action slot in `CardHeader` and a grid column with no `min-w-0`. The attempted fix
       for the first cleared `/jobs` and broke `/concepts` by 111px, which is why the
       gate asserts every route. Still owed: the **full per-mode session** run, which
