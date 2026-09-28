@@ -7449,7 +7449,6 @@ else; `vite` stayed on 7.3.6. `vitest.config.ts` needed no change.
   warning; `tsc --noEmit` clean.
 - `pnpm audit`: **no known vulnerabilities**, at any severity.
 
-### Not verified
-
-- Whether Dependabot closes the three alerts — it re-scans on push and should, but the
-  alerts were open when this was written.
+- **All three alerts closed** after the push (0 open), and CI on `37e6ce5` green. The
+  push itself still printed "3 vulnerabilities" — that notice is the state *before* the
+  re-scan, not after it.
