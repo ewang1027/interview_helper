@@ -162,7 +162,10 @@ test-e2e: daemon-guard ## One scripted coding session against a live stack — n
 test-browser: ## The Phase 5 browser gate: every route in a real browser against a live stack (make up-stack first)
 	@# Not part of `make check`, for the reason test-sandbox and test-e2e are not: it
 	@# needs the whole stack up, and a gate that fails whenever Docker is down is one
-	@# people learn to skip. It is also not in CI yet — CI has no stack to point it at.
+	@# people learn to skip. CI runs it in a job of its own (`browser` in
+	@# .github/workflows/ci.yml, since 2026-09-29), which builds the same stack from the
+	@# commit on a fresh, seeded database with a throwaway SESSION_SECRET — so locally it
+	@# is the gate against your real data, and in CI the gate against the code.
 	@#
 	@# It fails rather than skips when something is missing, unlike check-web. That
 	@# target runs inside `make check`, where a Python-only change should not be asked

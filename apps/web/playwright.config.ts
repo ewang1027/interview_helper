@@ -28,7 +28,11 @@ export default defineConfig({
   workers: process.env.CI ? 2 : undefined,
   timeout: 45_000,
   expect: { timeout: 15_000 },
-  reporter: process.env.CI ? [["github"], ["list"]] : [["list"]],
+  // In CI the HTML report is written too, so a red run leaves something to open: the CI
+  // job uploads `.playwright/` as an artifact on failure, traces and screenshots included.
+  reporter: process.env.CI
+    ? [["github"], ["list"], ["html", { outputFolder: "./.playwright/report", open: "never" }]]
+    : [["list"]],
   use: {
     baseURL: BASE_URL,
     trace: "retain-on-failure",
