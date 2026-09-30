@@ -229,8 +229,9 @@ jobs:
     # No real secret is involved. The session secret is generated here and dies with the
     # runner, and no model provider is configured: every spec is a page load, a nav click
     # or a pager button, and none of those reach a model. The database is a fresh one,
-    # migrated and seeded, so the specs that need a logged session or problem skip with a
-    # reason rather than pass on data this job does not have — see docs/WEB.md.
+    # migrated, seeded and given one session; the two specs that need a logged practice
+    # problem skip with a reason rather than pass on data this job does not have — see
+    # docs/WEB.md.
     timeout-minutes: 30
 
     steps:
@@ -287,6 +288,20 @@ jobs:
       # healthcheck passes rather than when the containers merely exist.
       - name: Build and start the stack
         run: docker compose -f infra/compose/docker-compose.yml --profile stack up -d --build --wait
+
+      # Three specs skip on a database with no session: /history's order, the live event
+      # stream through the front door, and the report's 409 problem document. The stream
+      # is the one the front door is most able to break, so the job makes one — through
+      # the API, the way the app does. The planner is deterministic, so this reaches no
+      # model. A logged practice problem cannot be made the same way (its classification
+      # is a model call), so the two specs that need one still skip here.
+      - name: Create a session for the specs to open
+        run: |
+          token=$(uv run python -m api.mint_session --raw)
+          echo "::add-mask::$token"
+          curl -sSf -X POST http://localhost:3000/api/v1/sessions \
+            -H "Cookie: ih_session=$token" -H "Content-Type: application/json" \
+            -d '{"mode": "coding"}' -o /dev/null -w "POST /api/v1/sessions -> %{http_code}\n"
 
       - name: Install Chromium
         working-directory: apps/web
