@@ -24,7 +24,7 @@ detail behind it.
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **complete** | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | — *(closed 2026-08-25: a real session ran end to end on the Anthropic API — conversation, `run_code` against the sandbox, submission, grading, evidence. Bedrock is still gated on a use-case form; the provider switch is one env var)* |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within twelve sessions — five until `W_UNLOCKS` woke up, ten until the 2026-09-09 taxonomy expansion added edges into the concepts the corpus measures | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus and with the prerequisite graph |
-| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, a concept picker that searches problem-name **aliases** (2026-09-09), and a log that is loaded whole and **searched, filtered, sorted and grouped in the browser** — by topic, difficulty, source, list, label and due state — with labels edited on the row (2026-09-10), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 103 component tests, in `make check` and CI. **A browser gate since 2026-09-22**: `make test-browser` drives all ten routes through Chromium against the containerised stack — **38 tests**, asserting each page's own API calls succeeded, that nothing threw, that its figures match the API's, and since 2026-09-24 **axe-core, keyboard focus order and every route at 390px** — **46 tests** since 2026-09-28, axe **clean in both colour schemes**, with a theme picker in the nav | the **full per-mode session** run, which needs a live interviewer; the gate in CI, which has no stack to point it at; screen readers, and any viewport between 390px and 1440px *(the two known a11y violations and the unmeasured dark theme are **fixed** — 2026-09-28)* *(the `/jobs` phone overflow the gate found is **fixed** — 2026-09-24)* |
+| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, a concept picker that searches problem-name **aliases** (2026-09-09), and a log that is loaded whole and **searched, filtered, sorted and grouped in the browser** — by topic, difficulty, source, list, label and due state — with labels edited on the row (2026-09-10), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 103 component tests, in `make check` and CI. **A browser gate since 2026-09-22**: `make test-browser` drives all ten routes through Chromium against the containerised stack — **38 tests**, asserting each page's own API calls succeeded, that nothing threw, that its figures match the API's, and since 2026-09-24 **axe-core, keyboard focus order and every route at 390px** — **46 tests** since 2026-09-28, axe **clean in both colour schemes**, with a theme picker in the nav — **62 tests** since 2026-09-29, every route also at **768px and 1024px**, and the gate **runs in CI** against a stack the job builds from the commit | the **full per-mode session** run, which needs a live interviewer; screen readers; widths between 1024px and the 1280px desktop default, and any browser but Chromium *(the gate in CI and the 768/1024px widths are **delivered** — 2026-09-29)* *(the two known a11y violations and the unmeasured dark theme are **fixed** — 2026-09-28)* *(the `/jobs` phone overflow the gate found is **fixed** — 2026-09-24)* |
 | **6** AWS deploy | **partial** — step 1 of 5 | Dockerfiles for `api`, `executor` and `web`; `make up-stack` runs all of it behind a **Caddy front door** routing by path, the job the ALB does — so compose mirrors the target topology. Only the front door publishes a port. Sandbox isolation re-verified from inside the containerised launcher | steps 2–5: one service on Fargate by hand, Terraform, the rest of the stack, the portability gate — **all blocked on an authenticated AWS session**, not on code |
 | **7–8** Voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does. The import takes **NeetCode links** as well as LeetCode ones (2026-09-07). **Re-tagged 2026-09-09** against the expanded taxonomy: all 23 logged problems, eleven of them wrong before, by a script that corrects the evidence they wrote and rebuilds mastery. **Filed 2026-09-10**: every coding concept carries a topic, rows carry it with the concept's name and the NeetCode lists, and problems take **labels** of your own through `PATCH /practice/problems/{id}` | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
@@ -7472,3 +7472,81 @@ nothing is stubbed.
 
 - **103 component tests pass, and the run prints no navigation errors** (it printed three
   before).
+
+---
+
+## Wave — The browser gate at tablet width, and in CI · 2026-09-29
+
+Asked for: the two items Phase 5's row listed as owed by the browser gate — **measure
+the widths between 390px and 1440px**, and **run the gate in CI**, which until now "has
+no stack to point it at".
+
+**Two more widths, and nothing overflowed.** `mobile.spec.ts` now measures every route
+at **768×1024** and **1024×768** as well as 390×844 — Tailwind's `md` and `lg`
+breakpoints exactly, the narrowest width each wider layout switches on at. The assertion
+is the phone test's, unchanged: the document does not scroll sideways. 16 new tests; the
+gate is **62**. No layout bug turned up, so there is no fix in this wave — which is only
+worth anything because the new tests were seen to fail: a 900px element injected into
+every page failed all 16 at 390 and 768, and none at 1024.
+
+**CI has a stack now, because a runner has Docker.** A new `browser` job runs the same
+compose file `make up-stack` does, built from the commit, and then `playwright test`
+against the Caddy front door. What it had to provide, none of it a real secret:
+
+- a **throwaway `SESSION_SECRET`**, generated in the job into a `.env` that both the API
+  container (`env_file`) and the host-side `api.mint_session` read, and masked in the log;
+  `COOKIE_SECURE=false` beside it, as locally;
+- **Postgres alone first**, then `alembic upgrade head` and `api.seed` from the host,
+  because the API image does not migrate on start;
+- **one session**, made with a `POST /api/v1/sessions` through the front door. The first
+  run had none, and five specs skipped — including the event-stream timing, the one test
+  of what the front door is most able to break. The planner is deterministic, so this
+  reaches no model;
+- **no model provider**. No spec reaches one: every test is a page load, a nav click, a
+  pager button or a theme scheme.
+
+The users row `mint_session` signs for is created by `single_user` on first use, so
+nothing else was needed. On failure the job uploads `apps/web/.playwright/` — an HTML
+report is now written under `CI`, with traces and screenshots — and the stack's logs, as
+the `playwright-report` artifact.
+
+**What the e2e specs write, answered while doing this:** nothing, to any database they
+run against. Every request the specs make is a GET, and the browser only navigates,
+clicks nav links and the pager. The one write anywhere in the path is `mint_session`'s
+`single_user`, which inserts the sentinel user **only if the `users` table is empty** —
+never the case on the development database. The CI job's `POST /sessions` is in the
+workflow, not in a spec, and runs against a throwaway database.
+
+### Verified
+
+- **`make test-browser`: 62 passed, 0 skipped** locally, against a stack rebuilt from
+  this branch with `make up-stack` (46 before this wave, plus 16).
+- **The overflow spec at all three widths: 25 passed** (8 per width, and setup). With a
+  900px element injected: **16 failed, 9 passed** — 390 and 768 red, 1024 green.
+- **CI, `browser` job, green twice.** Run
+  [36666466399](https://github.com/ewang1027/interview_helper/actions/runs/36666466399):
+  57 passed, 5 skipped (no session in the database). Run
+  [36668208623](https://github.com/ewang1027/interview_helper/actions/runs/36668208623),
+  with the session step: **60 passed, 2 skipped**, `POST /api/v1/sessions -> 201`, the
+  event stream opened in 1.1s. The job took 3m29s, under the Python job's 4m11s, so it
+  adds no wall time to a run.
+- `make doc-check`, `make doc-links` and `make check` pass.
+
+### Not verified
+
+- **The two specs that need a logged practice problem skip in CI** — `/practice`'s count
+  and pager, and opening a problem. Logging one runs the classification call, which is a
+  model. They run locally.
+- **The `Web` job is red on both CI runs, and on `main` since `f84d0a0`**, for a reason
+  outside this wave: `pnpm audit --audit-level high` found 4 high advisories published
+  since the last green run, `brace-expansion` (GHSA-6j4f-fj2g-mc7p) among them, reached
+  through `eslint` and `@typescript-eslint` — dev-only. Not fixed here; it owes its own
+  dependency change.
+- **The failure artifact has not been seen**, because the job has not failed. The upload
+  step is standard `actions/upload-artifact@v4` with `include-hidden-files`, which
+  `.playwright/` needs; that is reasoning, not a run.
+- **Widths between 1024px and the 1280px desktop default are not asserted**, and only
+  Chromium runs. The pages at 768 and 1024 were measured, not looked at.
+- The first local `make test-browser` attempt after the rebuild hung until a 10-minute
+  timeout with no output captured; the immediate re-run took 11s and passed. The cause
+  was not found.

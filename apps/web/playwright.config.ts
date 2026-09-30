@@ -9,7 +9,8 @@ import { resolve } from "node:path";
  * Caddy puts in front of it — same-origin `/api/v1`, the session cookie travelling
  * because the browser sends it, SSE arriving unbuffered — and none of that is
  * exercised by `next dev`, which proxies the API itself (see infra/compose/Caddyfile
- * on why the container does not). So `make test-browser` expects `make up-stack`.
+ * on why the container does not). So `make test-browser` expects `make up-stack`, and
+ * the `browser` job in .github/workflows/ci.yml brings the same stack up before it runs.
  *
  * There is no `webServer` block for the same reason: a config that silently starts a
  * dev server would make the gate pass against a topology nothing deploys.

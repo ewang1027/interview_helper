@@ -130,7 +130,7 @@ make test-db    # seeds the corpus, then the schema and session tests against li
 
 make test-sandbox     # every test needing real Docker: escapes, /execute, /probe, grading
 make test-e2e         # one scripted coding session — needs Postgres AND Docker
-make test-browser     # every route in a real browser — needs `make up-stack` running
+make test-browser     # every route in a real browser — needs `make up-stack` running (CI runs it too)
 make test-llm         # the only tests that call a real model — costs money, needs credentials
 make verify-solutions # every reference solution through the same harness candidates get
 make backup           # dump the local database to backups/ (pruned to the newest 60)
@@ -238,8 +238,11 @@ owes.
       in the nav); the overflow was **fixed the same day**, and had two causes rather than the one first written down — a `shrink-0`
       action slot in `CardHeader` and a grid column with no `min-w-0`. The attempted fix
       for the first cleared `/jobs` and broke `/concepts` by 111px, which is why the
-      gate asserts every route. Still owed: the **full per-mode session** run, which
-      needs a live interviewer, and CI has no stack to point the gate at*
+      gate asserts every route. **Widened and put in CI 2026-09-29**: 62 tests, every
+      route also at 768px and 1024px (nothing overflowed), and a `browser` CI job that
+      builds the stack from the commit on a fresh seeded database and runs the gate
+      against it. Still owed: the **full per-mode session** run, which needs a live
+      interviewer*
 - [ ] **6 — AWS deploy** — *step 1 of the ramp landed 2026-08-25: Dockerfiles for
       `api`, `executor` and `web`, and `make up-stack` runs the whole application in
       containers behind a **Caddy front door** that routes by path — the job the ALB does
