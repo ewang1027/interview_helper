@@ -9,7 +9,8 @@ import { resolve } from "node:path";
  * Caddy puts in front of it — same-origin `/api/v1`, the session cookie travelling
  * because the browser sends it, SSE arriving unbuffered — and none of that is
  * exercised by `next dev`, which proxies the API itself (see infra/compose/Caddyfile
- * on why the container does not). So `make test-browser` expects `make up-stack`.
+ * on why the container does not). So `make test-browser` expects `make up-stack`, and
+ * the `browser` job in .github/workflows/ci.yml brings the same stack up before it runs.
  *
  * There is no `webServer` block for the same reason: a config that silently starts a
  * dev server would make the gate pass against a topology nothing deploys.
@@ -28,7 +29,11 @@ export default defineConfig({
   workers: process.env.CI ? 2 : undefined,
   timeout: 45_000,
   expect: { timeout: 15_000 },
-  reporter: process.env.CI ? [["github"], ["list"]] : [["list"]],
+  // In CI the HTML report is written too, so a red run leaves something to open: the CI
+  // job uploads `.playwright/` as an artifact on failure, traces and screenshots included.
+  reporter: process.env.CI
+    ? [["github"], ["list"], ["html", { outputFolder: "./.playwright/report", open: "never" }]]
+    : [["list"]],
   use: {
     baseURL: BASE_URL,
     trace: "retain-on-failure",

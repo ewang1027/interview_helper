@@ -5,15 +5,17 @@
 > mode, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`,
 > `/practice` and `/jobs`. `make check-web` and a CI job run eslint, tsc and 103 component
 > tests.
-> **Browser gate (2026-09-22, extended 2026-09-24 and 2026-09-28):** `make test-browser`
-> drives all ten routes through Chromium against the containerised stack — **46 tests**,
+> **Browser gate (2026-09-22, extended 2026-09-24, 2026-09-28 and 2026-09-29):** `make test-browser`
+> drives all ten routes through Chromium against the containerised stack — **62 tests**,
 > including axe-core **in both colour schemes**, keyboard focus order, and every route at
-> a phone width. The two contrast/structure violations it found were **fixed
+> a phone, a tablet (768px) and a small-laptop (1024px) width. **CI runs it** since
+> 2026-09-29, in a job that builds the stack from the commit. The two contrast/structure violations it found were **fixed
 > 2026-09-28**, and axe now reports none on any route, light or dark. It also found a real
 > overflow on `/jobs`, **fixed 2026-09-24** — two causes, not the one first recorded; see
 > **Testing**. **Theme:** follows the OS, or is pinned from the picker in the nav
 > (2026-09-28); see **Colour**. The
-> **full per-mode session** run is still owed, and CI has no stack to point the gate at.
+> **full per-mode session** run is still owed. ~~CI has no stack to point the gate at~~ —
+> **it does since 2026-09-29**; see **Testing**.
 > **Not built:** `/corpus` lists nothing. ~~because the endpoint it needs does not
 > exist~~ — **corrected 2026-09-22:** `GET /corpus/items` and `GET /corpus/items/{id}`
 > were both built 2026-08-25 ([API](API.md)), and this page and the card on `/corpus`
@@ -407,7 +409,7 @@ The contrast fixes moved three token values, each noted where it is defined:
 
 ### The browser gate that does exist — `make test-browser`
 
-`apps/web/e2e/`, 20 tests in Chromium, against the stack `make up-stack` runs rather
+`apps/web/e2e/`, 20 tests in Chromium when it landed (62 since 2026-09-29, and in CI — see below), against the stack `make up-stack` runs rather
 than a dev server this config starts. That distinction is the point: `next dev` proxies
 the API itself, so only the container topology exercises the same-origin `/api/v1`, the
 cookie and the SSE carve-out that the front door is responsible for.
@@ -491,9 +493,47 @@ simulating a fix and watching the run go red with "expected to fail but passed".
 
 **Still unproven:** screen-reader output, which no automated rule covers; the four
 session workspaces, which need a live session to render — in either scheme, so the dark
-Monaco theme has been wired but not seen; and any viewport between 390px and 1440px.
-~~`prefers-color-scheme: dark` … has not been measured~~ — **measured 2026-09-28**; see
-above.
+Monaco theme has been wired but not seen; ~~and any viewport between 390px and 1440px~~
+— **768px and 1024px measured 2026-09-29**, see below; widths between 1024px and the
+1280px desktop default are still not asserted. ~~`prefers-color-scheme: dark` … has not
+been measured~~ — **measured 2026-09-28**; see above.
+
+### Tablet and small-laptop widths, and the gate in CI (2026-09-29)
+
+**`mobile.spec.ts` runs every route at three widths**: 390×844, **768×1024** and
+**1024×768** — 24 overflow tests where there were 8, 62 in the gate. 768 and 1024 are
+Tailwind's `md` and `lg` breakpoints exactly, the narrowest width each wider layout
+switches on at, which is where a two-column grid or an inline header that fits at 1280
+is most likely not to. The assertion is the phone test's, unchanged: the document does
+not scroll sideways. **Nothing overflowed** at either new width. That the new widths can
+fail was checked, not assumed: a 900px element injected into every page failed all 16
+tests at 390 and 768 and none at 1024, as it should.
+
+**CI runs the gate** in a `browser` job of its own (`.github/workflows/ci.yml`). The
+runner has Docker, so it runs the same compose file `make up-stack` does — Caddy, the
+same-origin `/api`, the real cookie — built from the commit, then `playwright test`.
+What it needs, and how the job provides it without a real secret:
+
+| Needs | In CI |
+|---|---|
+| `SESSION_SECRET`, shared by the API container and the host-side `api.mint_session` | generated in the job into a throwaway `.env`, masked, gone with the runner |
+| `COOKIE_SECURE=false` (plain http on localhost) | same `.env` |
+| a migrated schema and the corpus | Postgres started alone, then `alembic upgrade head` and `api.seed` from the host |
+| a `users` row to mint a cookie for | created by `mint_session` itself on first use (`single_user`) |
+| a session, for `/history`, the event stream and the report's 409 | one `POST /api/v1/sessions` through the front door — the planner is deterministic, so no model |
+| a model provider | **none** — no spec reaches a model |
+
+**Two specs skip in CI**, with the reason they print: `/practice`'s count-and-pager and
+opening a logged problem. Both need a logged practice problem, and logging one runs the
+classification call, which is a model. Locally, against the real database, all 62 run.
+
+On failure the job uploads `apps/web/.playwright/` — the HTML report, traces and
+screenshots — and the stack's logs as the `playwright-report` artifact.
+
+**The two runs mean different things.** Locally the gate runs against your real data,
+which is what catches a page that breaks on the shape of real rows. In CI it runs
+against the code on a nearly empty database, which is what catches a change that breaks
+the page on every machine. Neither replaces the other.
 
 ## Deployment
 

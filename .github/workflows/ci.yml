@@ -216,3 +216,112 @@ jobs:
         run: |
           pnpm audit || true
           pnpm audit --audit-level high
+
+  browser:
+    name: Browser (the Phase 5 gate, against the containerised stack)
+    runs-on: ubuntu-latest
+
+    # `make test-browser` was local-only from 2026-09-22 to 2026-09-29, "because CI has no
+    # stack to point it at". A runner has Docker, so the stack is the same compose file
+    # `make up-stack` runs — Caddy front door, same-origin /api, the real session cookie —
+    # built from this commit. Nothing is stubbed that the local gate does not stub.
+    #
+    # No real secret is involved. The session secret is generated here and dies with the
+    # runner, and no model provider is configured: every spec is a page load, a nav click
+    # or a pager button, and none of those reach a model. The database is a fresh one,
+    # migrated, seeded and given one session; the two specs that need a logged practice
+    # problem skip with a reason rather than pass on data this job does not have — see
+    # docs/WEB.md.
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # The host side needs Python for three things: migrations, the seed, and
+      # `api.mint_session`, which auth.setup.ts shells out to for the cookie.
+      - name: Sync workspace
+        run: uv sync --all-packages
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+
+      - name: Install web dependencies
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+
+      # The compose file reads `.env` for the API container and the host-side mint reads
+      # it too, so both sign and verify with the same throwaway secret. COOKIE_SECURE is
+      # false because the stack is plain http on localhost, exactly as locally.
+      - name: Write a throwaway .env
+        run: |
+          secret=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')
+          echo "::add-mask::$secret"
+          {
+            echo "DATABASE_URL=postgresql+psycopg://interview:interview@localhost:5432/interview_helper"
+            echo "SESSION_SECRET=$secret"
+            echo "COOKIE_SECURE=false"
+          } > .env
+
+      # Postgres first and alone, so the schema and the corpus exist before the API
+      # serves its first request. The API image does not migrate on start.
+      - name: Start Postgres
+        run: docker compose -f infra/compose/docker-compose.yml up -d --wait postgres
+
+      - name: Migrate and seed
+        run: |
+          uv run alembic -c apps/api/alembic.ini upgrade head
+          uv run python -m api.seed
+
+      # The same command `make up-stack` runs, with `--wait` so the step ends when every
+      # healthcheck passes rather than when the containers merely exist.
+      - name: Build and start the stack
+        run: docker compose -f infra/compose/docker-compose.yml --profile stack up -d --build --wait
+
+      # Three specs skip on a database with no session: /history's order, the live event
+      # stream through the front door, and the report's 409 problem document. The stream
+      # is the one the front door is most able to break, so the job makes one — through
+      # the API, the way the app does. The planner is deterministic, so this reaches no
+      # model. A logged practice problem cannot be made the same way (its classification
+      # is a model call), so the two specs that need one still skip here.
+      - name: Create a session for the specs to open
+        run: |
+          token=$(uv run python -m api.mint_session --raw)
+          echo "::add-mask::$token"
+          curl -sSf -X POST http://localhost:3000/api/v1/sessions \
+            -H "Cookie: ih_session=$token" -H "Content-Type: application/json" \
+            -d '{"mode": "coding"}' -o /dev/null -w "POST /api/v1/sessions -> %{http_code}\n"
+
+      - name: Install Chromium
+        working-directory: apps/web
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Browser gate
+        working-directory: apps/web
+        run: pnpm exec playwright test
+
+      - name: Stack logs
+        if: failure()
+        run: docker compose -f infra/compose/docker-compose.yml --profile stack logs --no-color > stack-logs.txt 2>&1 || true
+
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/web/.playwright/
+            stack-logs.txt
+          retention-days: 14
+          include-hidden-files: true
