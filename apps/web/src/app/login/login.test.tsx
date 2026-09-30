@@ -1,5 +1,5 @@
 import { screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Login from "./page";
 import { renderPage } from "@/test/harness";
 
@@ -17,6 +17,13 @@ vi.mock("next/navigation", () => ({
  * problem+json when OAuth is unset, with no way forward.
  */
 afterEach(() => vi.unstubAllGlobals());
+
+// The page lives at /login, and the api client's 401 handler checks the real
+// location, not the mocked `usePathname`. Left at jsdom's default `/`, every
+// unauthenticated stub made it attempt a navigation jsdom cannot perform, and
+// each run printed three "Not implemented: navigation" stack traces that read
+// like failures.
+beforeEach(() => window.history.replaceState(null, "", "/login"));
 
 function stub(handlers: { me: Response | (() => Response); login: Response | (() => Response) }) {
   vi.stubGlobal(

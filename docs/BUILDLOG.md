@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-09-28
+## Where things stand — 2026-09-29
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -7452,3 +7452,23 @@ else; `vite` stayed on 7.3.6. `vitest.config.ts` needed no change.
 - **All three alerts closed** after the push (0 open), and CI on `37e6ce5` green. The
   push itself still printed "3 vulnerabilities" — that notice is the state *before* the
   re-scan, not after it.
+
+---
+
+## Wave — Three stack traces that were not failures · 2026-09-29
+
+Every `make check` printed three `Error: Not implemented: navigation` stack traces from
+the web suite while reporting 103 passed. That is noise, and noise like this teaches a
+reader to skim past the lines a real failure would print.
+
+One cause, in `login.test.tsx`. It mocks `usePathname` to `/login`, but the api client's
+401 handler (`loginRedirect`) reads the *real* `window.location`, which jsdom leaves at
+`/`. So each unauthenticated stub made it attempt `location.replace("/login")`, which jsdom
+cannot perform. The fix puts the test page at `/login`, which is where the page actually
+lives. That is the state `loginRedirect` is written to skip, so nothing is silenced and
+nothing is stubbed.
+
+### Verified
+
+- **103 component tests pass, and the run prints no navigation errors** (it printed three
+  before).
