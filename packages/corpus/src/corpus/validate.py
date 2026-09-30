@@ -41,6 +41,11 @@ LONG_SHINGLE = 12
 SHORT_SHINGLE = 8
 MAX_SHORT_CONTAINMENT = 0.15
 
+# Fewest complexity-probe sizes a corpus item may ship. Five doubling sizes from 1000
+# reach n=16000, where the thinnest reference's largest sample measured 0.665ms against
+# the probe's 0.2ms noise floor (3.3x); four stopped at 0.342ms (1.7x).
+MIN_CORPUS_PROBE_SIZES = 5
+
 # DFS colours for cycle detection.
 _WHITE, _GREY, _BLACK = 0, 1, 2
 
@@ -191,6 +196,22 @@ def _check_complexity(grading: dict[str, Any], where: str) -> list[Finding]:
                     "error",
                     where,
                     f"complexity_probe.sizes must ascend and be distinct: {sizes}",
+                )
+            )
+        if len(sizes) < MIN_CORPUS_PROBE_SIZES:
+            # The schema's minItems (3) is what the slope fit needs, and the executor's
+            # `/probe` accepts that. The corpus asks for more: at four doubling sizes the
+            # largest reference sample sat 1.7x above the 0.2ms noise floor, so a machine
+            # ~1.8x faster than the calibration one read `inconclusive` on a correct
+            # submission. The fifth size doubles that margin; this keeps the next item
+            # from quietly authoring it away. See docs/BUILDLOG.md, 2026-09-29.
+            findings.append(
+                Finding(
+                    "error",
+                    where,
+                    f"complexity_probe.sizes has {len(sizes)} sizes; the corpus uses at "
+                    f"least {MIN_CORPUS_PROBE_SIZES} so the largest run clears the noise "
+                    "floor with room to spare",
                 )
             )
         if "make_input" not in str(probe.get("generator", "")):

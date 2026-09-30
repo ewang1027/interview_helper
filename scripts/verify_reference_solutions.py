@@ -60,7 +60,7 @@ def main() -> int:
         help=(
             "Also run the complexity probe against each reference solution and fail if it "
             "is measurably slower than the item's own declared complexity_target. Slow: "
-            "each item runs at four sizes."
+            "each item runs at five sizes."
         ),
     )
     args = parser.parse_args()
@@ -129,11 +129,17 @@ def main() -> int:
                     repeats=probe_spec.get("repeats", 5),
                 )
                 slope = f"{probe.slope:.2f}" if probe.slope is not None else "n/a"
+                # The largest sample is the probe's margin over its 0.2ms noise floor —
+                # printed so that margin is read off every run, not re-measured by hand.
+                largest = max((t for _, t in probe.points), default=0.0) * 1e3
                 if probe.penalises:
                     print(f"SLOW {item.id}: slope {slope} vs {target} — {probe.detail}")
                     failed = True
                 else:
-                    print(f"     {item.id}: complexity {probe.verdict} (slope {slope} vs {target})")
+                    print(
+                        f"     {item.id}: complexity {probe.verdict} (slope {slope} vs "
+                        f"{target}, largest sample {largest:.3f}ms)"
+                    )
 
     return 1 if failed else 0
 

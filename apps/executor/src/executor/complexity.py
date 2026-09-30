@@ -43,13 +43,14 @@ from executor.sandbox import run_sandboxed
 
 PROBE_MARKER = "##LEARN-PROBE "
 
-# Generous relative to `/execute`'s 5s: the probe deliberately runs the solution at four
-# sizes with repeats, and its own internal budget (20s of process time) is what actually
-# bounds the work. A wall this short would cut the measurement off mid-sweep and report
-# `inconclusive` for a run that was about to produce a verdict. The budget stays the real
-# bound only because the driver refuses to *start* a size it cannot afford — the spend
-# check between sizes cannot interrupt a run already in flight, and CI's slower runners
-# proved a single unaffordable n will otherwise blow through this wall mid-measurement.
+# Generous relative to `/execute`'s 5s: the probe deliberately runs the solution at every
+# size in its sweep (five, for every corpus item) with repeats, and its own internal
+# budget (20s of process time) is what actually bounds the work. A wall this short would
+# cut the measurement off mid-sweep and report `inconclusive` for a run that was about to
+# produce a verdict. The budget stays the real bound only because the driver refuses to
+# *start* a size it cannot afford — the spend check between sizes cannot interrupt a run
+# already in flight, and CI's slower runners proved a single unaffordable n will otherwise
+# blow through this wall mid-measurement.
 PROBE_WALL_MS = 60_000
 PROBE_MEMORY_MB = 512
 
@@ -212,14 +213,22 @@ def judge(
     # rather than an absence of evidence — the driver only truncates because it projected
     # the next size as unaffordable, which is a statement about how fast this submission
     # grows.
+    #
+    # The verdict does not need a slope, but a sweep cut short after three or more sizes
+    # still measured one, and it is reported rather than thrown away. With the corpus's
+    # fifth size (n=16000, 2026-09-29) this stopped being a corner: on a slow runner a
+    # quadratic submission affords 1000…8000 and is refused 16000, so dropping the slope
+    # here would have erased the growth exponent from exactly the grading that caught it.
     if truncated and pts:
+        slope = fit_slope(list(points)) if len(pts) >= 3 else None
+        measured = f" (slope {slope:.2f} over the sizes measured)" if slope is not None else ""
         return ProbeResult(
             "slower_than_target",
-            None,
+            slope,
             pts,
             target,
             f"the sweep was cut short after {len(pts)} size(s): the next one was projected "
-            f"to exceed the probe's budget, which {target} would not",
+            f"to exceed the probe's budget, which {target} would not{measured}",
         )
     if pts and pts[0][1] > _ABSURD_FIRST_SIZE_SECONDS:
         return ProbeResult(

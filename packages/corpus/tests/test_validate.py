@@ -515,11 +515,21 @@ def test_two_sentences_are_not_two_independent_sources(tmp_path: Path) -> None:
         ("unrecognised target", lambda i: i["grading"].update({"complexity_target": "O(n + m)"})),
         (
             "descending sizes",
-            lambda i: i["grading"]["complexity_probe"].update({"sizes": [8000, 4000, 1000]}),
+            lambda i: i["grading"]["complexity_probe"].update(
+                {"sizes": [16000, 8000, 4000, 2000, 1000]}
+            ),
         ),
         (
             "identical sizes",
-            lambda i: i["grading"]["complexity_probe"].update({"sizes": [1000, 1000, 1000]}),
+            lambda i: i["grading"]["complexity_probe"].update(
+                {"sizes": [1000, 1000, 1000, 1000, 1000]}
+            ),
+        ),
+        (
+            # The four-size sweep the whole corpus shipped until 2026-09-29: valid for the
+            # fit, but its largest reference sample sat only 1.7x above the noise floor.
+            "four sizes",
+            lambda i: i["grading"]["complexity_probe"].update({"sizes": [1000, 2000, 4000, 8000]}),
         ),
         (
             "generator that defines nothing",

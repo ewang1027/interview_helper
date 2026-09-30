@@ -186,3 +186,18 @@ def test_a_complete_sweep_is_still_judged_on_its_slope():
     """The guards above must not swallow the ordinary path."""
     assert judge([(1000, 0.010), (2000, 0.021), (4000, 0.042)], "O(n)").verdict == "matches"
     assert judge([(1000, 0.02), (2000, 0.08), (4000, 0.32)], "O(n)").verdict == "slower_than_target"
+
+
+def test_a_truncated_sweep_keeps_the_slope_it_measured():
+    """The corpus's fifth size (n=16000, 2026-09-29) made truncation the common path for
+    a quadratic submission on a slow runner: it affords 1000…8000 and is refused 16000.
+    The verdict never needed a slope, but four measured sizes still fit one, and throwing
+    it away erased the growth exponent from exactly the grading that caught the submission.
+    """
+    result = judge(_curve(2.0), "O(n)", truncated=True)
+
+    assert result.verdict == "slower_than_target"
+    assert result.slope is not None and math.isclose(result.slope, 2.0, abs_tol=1e-9)
+    assert "slope 2.00" in result.detail
+    # Fewer than three points still judge on truncation alone, without inventing a slope.
+    assert judge([(1000, 0.9), (2000, 7.2)], "O(n)", truncated=True).slope is None

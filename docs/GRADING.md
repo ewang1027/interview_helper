@@ -61,7 +61,17 @@ is not evidence about `two-pointers`; a passing hidden test is.
    driver stops growing n — keeping the points it has, which still judge at three — rather
    than start a size the budget cannot afford: the slow submission is the one being
    measured, so timing the probe out on it would hand `inconclusive` to exactly the case
-   the probe exists for. Three things govern how much a verdict is allowed to mean:
+   the probe exists for. A sweep cut short that way is judged `slower_than_target`, and
+   if it measured three or more sizes before stopping it still **reports the slope** it
+   fitted — the verdict never needed one, but a grading that caught a quadratic
+   submission should say how fast it grew (2026-09-29).
+   Every corpus item sweeps the same **five** sizes, `[1000, 2000, 4000, 8000, 16000]`,
+   and the validator refuses fewer than five. The fifth size is for the noise floor:
+   below 0.2 ms of real work the probe reports `inconclusive`, and at four sizes the
+   thinnest reference's largest sample was 0.342 ms (1.7× the floor) — a machine ~1.8×
+   faster than this sandbox would have stopped judging correct submissions at all. At
+   n=16000 the thinnest is 0.665 ms (3.3×). Three things govern how much a verdict is
+   allowed to mean:
    - **A `complexity_target` with no `complexity_probe` is inert.** Fixed test inputs
      cannot be grown, so nothing is measured. Nothing enforces the pairing — the verifier
      prints a notice and continues, and a grading says so in its `detail` rather than
