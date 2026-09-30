@@ -7,8 +7,10 @@ than wiring, and each is here because it is the part that would be wrong quietly
   from and a rejection must not erase the rounds that came before it,
 - the **taxonomy**, because the model is constrained to an enum built from it and a
   duplicated sub-category would silently make one big category unreachable,
-- the **one research path that is pure**, the provider check, because it is the thing that
-  decides whether the expensive call happens at all.
+- the **research trigger** — the provider check and what a row is missing — because it
+  decides whether the expensive call happens at all,
+- and **time-in-stage**, because a stint measured across an event nobody timed would put
+  the gap between applying and *making the row* on a rung, and look like data.
 
 Everything else about the research pass runs through `llm.complete`, which reserves a row
 on the ledger before it calls anything — so those tests need Postgres and live in
@@ -17,10 +19,11 @@ on the ledger before it calls anything — so those tests need Postgres and live
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 
 from api import jobs
-from api.models import JobApplicationEvent
+from api.models import JobApplication, JobApplicationEvent
 from api.settings import Settings
 
 
@@ -153,9 +156,178 @@ def test_research_needs_a_key_when_the_provider_is_anthropic():
     assert jobs.research_available(_settings()) is None
 
 
+def test_a_zero_search_ceiling_is_the_off_switch():
+    reason = jobs.research_available(_settings(jobs_research_max_searches=0))
+    assert reason is not None and "JOBS_RESEARCH_MAX_SEARCHES=0" in reason
+
+
+def test_what_a_row_is_missing_is_what_triggers_research():
+    """The trigger is per row: a URL, a location, a confident tag. The length of the list
+    does not appear anywhere in it."""
+    complete = jobs.ParsedJob(
+        company="Aurora Labs",
+        role="Backend Engineer",
+        location="Boston",
+        url="https://jobs.example.com/1",
+        subcategory="backend",
+        confidence=0.9,
+    )
+    assert jobs.missing_for_research(complete) == ()
+    bare = jobs.ParsedJob(company="Aurora Labs", role="Engineer")
+    assert jobs.missing_for_research(bare) == ("url", "location", "subcategory")
+    assert jobs.missing_for_research(replace(complete, url=None)) == ("url",)
+    assert jobs.missing_for_research(replace(complete, confidence=0.3)) == ("subcategory",)
+    unclassified = replace(complete, subcategory="unclassified")
+    assert jobs.missing_for_research(unclassified) == ("subcategory",)
+
+
 def test_research_with_no_rows_does_not_call_anything():
     """A client that would raise if touched, so this proves the early return rather than
     merely observing that nothing broke."""
     result = jobs.research_jobs([], client=object(), settings=_settings())
     assert result.rows == ()
     assert result.skipped == "nothing to research"
+
+
+# --- Time in stage ------------------------------------------------------------------------
+
+
+T0 = datetime(2026, 6, 1, tzinfo=UTC)
+
+
+def _application(app_id: str, *, outcome: str = "open", created: datetime = T0) -> JobApplication:
+    return JobApplication(
+        id=app_id,
+        user_id="u1",
+        company=f"Company {app_id}",
+        role="Engineer",
+        outcome=outcome,
+        applied_at=T0,
+        created_at=created,
+        updated_at=created,
+    )
+
+
+def _at(app_id: str, sequence: int, stage: str, day: float) -> JobApplicationEvent:
+    return JobApplicationEvent(
+        application_id=app_id,
+        sequence=sequence,
+        stage=stage,
+        occurred_at=T0 + timedelta(days=day),
+    )
+
+
+def _by_stage(report: dict) -> dict[str, dict]:
+    return {row["stage"]: row for row in report["stages"]}
+
+
+def test_a_stint_lasts_until_the_next_event():
+    """applied (day 0) -> oa (day 4) -> phone screen (day 10) -> rejected (day 30): four
+    days at applied, six at the OA, twenty at the screen. Nothing is left waiting, and the
+    rejection itself is not a rung anybody spends time on."""
+    report = jobs.time_in_stage(
+        [_application("a", outcome="rejected")],
+        [
+            _at("a", 0, "applied", 0),
+            _at("a", 1, "oa", 4),
+            _at("a", 2, "phone_screen", 10),
+            _at("a", 3, "rejected", 30),
+        ],
+        now=T0 + timedelta(days=60),
+    )
+    stages = _by_stage(report)
+    assert stages["applied"]["median_days"] == 4.0
+    assert stages["oa"]["median_days"] == 6.0
+    assert stages["phone_screen"]["median_days"] == 20.0
+    assert stages["round_1"] == {
+        "stage": "round_1",
+        "label": "First round",
+        "left": 0,
+        "median_days": None,
+        "mean_days": None,
+        "waiting": 0,
+        "median_days_waiting": None,
+    }
+    assert "rejected" not in stages
+    assert report["longest_waiting"] == []
+
+
+def test_median_and_mean_are_over_every_application_that_left_the_rung():
+    report = jobs.time_in_stage(
+        [_application("a"), _application("b"), _application("c")],
+        [
+            _at("a", 0, "applied", 0),
+            _at("a", 1, "oa", 2),
+            _at("b", 0, "applied", 0),
+            _at("b", 1, "oa", 3),
+            _at("c", 0, "applied", 0),
+            _at("c", 1, "oa", 10),
+        ],
+        now=T0 + timedelta(days=20),
+    )
+    applied = _by_stage(report)["applied"]
+    assert applied["left"] == 3
+    assert applied["median_days"] == 3.0
+    assert applied["mean_days"] == 5.0
+
+
+def test_open_applications_are_waiting_since_their_last_event_longest_first():
+    report = jobs.time_in_stage(
+        [_application("a"), _application("b"), _application("done", outcome="offer")],
+        [
+            _at("a", 0, "applied", 0),
+            _at("b", 0, "applied", 0),
+            _at("b", 1, "round_1", 15),
+            _at("done", 0, "applied", 0),
+            _at("done", 1, "offer", 5),
+        ],
+        now=T0 + timedelta(days=20),
+    )
+    stages = _by_stage(report)
+    assert stages["applied"]["waiting"] == 1
+    assert stages["applied"]["median_days_waiting"] == 20.0
+    assert stages["round_1"]["waiting"] == 1
+    assert stages["offer"]["waiting"] == 0, "an offer is not an open application"
+    assert [(row["id"], row["stage"], row["days"]) for row in report["longest_waiting"]] == [
+        ("a", "applied", 20),
+        ("b", "round_1", 5),
+    ]
+
+
+def test_a_stage_the_row_arrived_at_is_not_timed():
+    """Imported already at `final` on day 40, having applied on day 0: the `final` event is
+    dated when the row was made, not when the onsite was. The applied -> final gap is the
+    time until somebody pasted the list, and final -> rejected started at the paste, so
+    neither is a stint. The row is still counted everywhere else; it is just not timed."""
+    created = T0 + timedelta(days=40)
+    report = jobs.time_in_stage(
+        [_application("a", outcome="rejected", created=created)],
+        [
+            _at("a", 0, "applied", 0),
+            _at("a", 1, "final", 40),
+            _at("a", 2, "rejected", 45),
+        ],
+        now=T0 + timedelta(days=60),
+    )
+    stages = _by_stage(report)
+    assert stages["applied"]["left"] == 0
+    assert stages["final"]["left"] == 0
+
+
+def test_an_open_row_that_arrived_mid_ladder_waits_from_when_it_was_recorded():
+    created = T0 + timedelta(days=40)
+    report = jobs.time_in_stage(
+        [_application("a", created=created)],
+        [_at("a", 0, "applied", 0), _at("a", 1, "phone_screen", 40)],
+        now=T0 + timedelta(days=47),
+    )
+    assert report["longest_waiting"][0]["days"] == 7
+
+
+def test_a_backdated_event_before_the_one_it_follows_counts_as_zero():
+    report = jobs.time_in_stage(
+        [_application("a")],
+        [_at("a", 0, "applied", 5), _at("a", 1, "oa", 2)],
+        now=T0 + timedelta(days=10),
+    )
+    assert _by_stage(report)["applied"]["median_days"] == 0.0

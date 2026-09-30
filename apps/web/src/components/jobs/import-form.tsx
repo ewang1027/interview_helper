@@ -12,8 +12,9 @@ import type { CreateJobBody, ImportJobsResult, JobCatalog, Stage } from "@/lib/t
  * The two ways applications get in: paste a list, or type one.
  *
  * The paste box is the slow path and says so before you use it. It always makes
- * one structured call to parse and tag what you pasted, and above the configured
- * threshold a second one that searches the web for the postings — which reaches
+ * one structured call to parse and tag what you pasted, and — for the new rows
+ * missing a URL, a location or a confident tag — a second one that searches the
+ * web for the postings, which reaches
  * the network and can take a while. A spinner with no explanation would read as
  * a hang.
  *
@@ -83,7 +84,8 @@ export function ImportForm({ onImported }: { onImported: () => void }) {
               ) : null}
               {result.researched ? (
                 <Badge tone="accent">
-                  researched · {result.web_searches} search
+                  researched {result.researched_rows} row
+                  {result.researched_rows === 1 ? "" : "s"} · {result.web_searches} search
                   {result.web_searches === 1 ? "" : "es"}
                 </Badge>
               ) : null}
