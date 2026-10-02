@@ -56,7 +56,7 @@ You get applications into it two ways, and they meet in the same place:
                                                                     (a projection, rebuildable)
 ```
 
-## The four decisions
+## The decisions
 
 ### 1. Stages are events, not a column
 

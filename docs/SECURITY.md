@@ -379,7 +379,7 @@ they are forced in `pnpm-workspace.yaml`:
 |---|---|---|---|
 | `postcss` | `>=8.5.23` | `next` | Build-time CSS only, and the CSS is authored in this repo |
 | `sharp` | `>=0.35.4` | `next` | `next/image` optimisation, which this app does not use |
-| `dompurify` | `>=3.4.13` | `@monaco-editor/react` → `monaco-editor` | Monaco's hover renderer, over the candidate's own code |
+| `dompurify` | `>=3.4.16` (was `>=3.4.13` until 2026-10-01) | `@monaco-editor/react` → `monaco-editor` | Monaco's hover renderer, over the candidate's own code |
 
 `pnpm audit` is clean as of that change, and **CI fails the build on `high`** while
 reporting everything below it. Not on `moderate`: a gate that breaks every build the
@@ -426,6 +426,22 @@ The same advisory is why the repo's **Dependabot security updates** had been fai
 `sharp: ^0.34.3` and nothing in that range reaches 0.35.4. `next` 15.5.25 declares
 `^0.34.3 || ^0.35.4`, so the parent has now picked the fix up and those runs should clear
 on their own.
+
+### What the 2026-09-30 red streak added to that
+
+From 2026-09-30 the web job failed again on `pnpm audit --audit-level high`: three
+advisories against `brace-expansion` (GHSA-6j4f-fj2g-mc7p and GHSA-qhr7-859c-m2p7 high,
+GHSA-q2hr-2g5m-vwhr moderate), on both of the major lines in the tree — 1.x through
+`@eslint/eslintrc` → `minimatch` 3, and 5.x through typescript-eslint → `minimatch` 10.
+Dev only: eslint ships in no image. A low against `dompurify` landed beside them.
+
+The `js-yaml` lesson above applied exactly. An override was the first thing written — two
+ranged entries, one per major line — and it was **dropped before commit**: `minimatch`
+3.1.5 asks for `^1.1.7` and 10.2.6 for `^5.0.8`, so 1.1.21 and 5.0.12 were both reachable
+by `pnpm update --depth Infinity brace-expansion`, an eight-line lockfile change with no
+permanent entry. `dompurify` was the other case: its override's floor resolved to 3.4.13,
+inside the new advisory's range, so the floor went up to `>=3.4.16` — the `sharp` lesson,
+a second time.
 
 One dependency is a known gap rather than a vulnerability: **`@monaco-editor/react` loads
 Monaco from a CDN by default**, so the editor is a runtime network dependency on a service

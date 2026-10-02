@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-09-29
+## Where things stand — 2026-10-01
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -7720,3 +7720,42 @@ and assert on its `requests`.
 - **Not run against real data.** Whether the arrival rule leaves enough timed stints on
   a board built mostly from imports is a question only the real board can answer.
 - Whether `location` alone deserves a search is a judgement, not a measurement.
+
+---
+
+## Wave — CI red on an eslint transitive, and two stale sentences · 2026-10-01
+
+Asked for as "continue fixing", after this session's first push found the web job red.
+From `f84d0a0` (2026-09-30) on, `pnpm audit --audit-level high` failed on three
+`brace-expansion` advisories, two of them high. Today's changes did not cause them: they
+were published against what was already in the lockfile, under eslint and
+typescript-eslint, and they are dev only. The gate did what it is for
+([SECURITY](SECURITY.md#what-the-2026-09-30-red-streak-added-to-that)).
+
+**Fixed by a lockfile refresh, not an override.** The override was written first, then
+dropped, because both `minimatch` ranges (`^1.1.7`, `^5.0.8`) already allowed the patched
+releases. `brace-expansion` 1.1.18 → 1.1.21 and 5.0.9 → 5.0.12. The `dompurify` override's
+floor went `>=3.4.13` → `>=3.4.16` for a low advisory, because a floor that resolves to a
+vulnerable version has stopped doing its job.
+
+Two docs this session's agents found stale and left alone, now corrected:
+
+- `item.schema.json`'s `sizes` description said a truncated sweep lets the impostor
+  "escape as inconclusive". It has been judged `slower_than_target` since truncation was
+  made a verdict, and since the fifth-size wave it keeps its slope when three or more sizes
+  were measured.
+- docs/JOBS.md's heading "The four decisions" sat over six. It is now "The decisions":
+  a count in a heading goes stale with every decision added, and no link pointed at it.
+
+### Verified
+
+- `pnpm audit`: **no known vulnerabilities**, at any severity (6 before: 4 high, 1
+  moderate after dedup, 1 low).
+- eslint and `tsc --noEmit` clean, **106 component tests** pass, and `pnpm build`
+  succeeds on the refreshed lockfile.
+- `make check` clean; `make doc-links` and `make doc-check` clean after the heading
+  rename.
+
+### Not verified
+
+- CI's verdict is read after the push, not before. It is recorded below when it lands.
