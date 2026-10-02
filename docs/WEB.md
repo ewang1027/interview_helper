@@ -3,8 +3,9 @@
 > **Status:** Built (2026-08-24, `/jobs` added 2026-08-25) — **every route below
 > exists**: the dashboard, `/session/new`, the live session view with a workspace per
 > mode, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`,
-> `/practice` and `/jobs`. `make check-web` and a CI job run eslint, tsc and 103 component
-> tests.
+> `/practice` and `/jobs`. `make check-web` and a CI job run eslint, tsc and 106 component
+> tests. `/jobs` gained a **time-in-stage card** on 2026-09-29 — component tests only; the
+> browser gate below has not been run since it landed.
 > **Browser gate (2026-09-22, extended 2026-09-24, 2026-09-28 and 2026-09-29):** `make test-browser`
 > drives all ten routes through Chromium against the containerised stack — **62 tests**,
 > including axe-core **in both colour schemes**, keyboard focus order, and every route at
@@ -87,7 +88,7 @@ maintain, for a service with exactly one browser client.
 | `/concepts/[id]` | One concept: ability over time, the evidence behind it, related items |
 | `/history` | Session history, filterable by mode and date. Pages accumulate in the query cache (`useInfiniteQuery`), so they survive leaving the page and coming back |
 | `/corpus` | Browse the corpus. Statements of unseen items stay redacted |
-| `/jobs` | The job tracker — the application funnel, the category breakdown, the rejections tracker, paste-import, and the board (searchable, filterable by outcome, twenty rows at a time) |
+| `/jobs` | The job tracker — the application funnel, the category breakdown, the rejections tracker, time in stage, paste-import, and the board (searchable, filterable by outcome, twenty rows at a time) |
 | `/practice` | The practice log — log a problem solved elsewhere, and what is due to re-solve |
 | `/practice/[id]` | One logged problem: confirm its concept, record a re-solve, read its evidence |
 | `/costs` | Token and dollar spend from the ledger |
@@ -214,6 +215,26 @@ on the board* sets an **outcome filter** the board now carries beside the catego
 All · Live · Rejected — which re-keys the board so it opens fresh at twenty rows, exactly as
 a category change does. Three behaviours are pinned in `jobs.test.tsx`: the rung and the
 date, the empty state, and the filter reaching `GET /jobs?outcome=rejected`.
+
+### Time in stage
+
+Added 2026-09-29, from the buildlog's list of what Phase 10 still owed. A card under the
+rejections tracker, from `GET /jobs/stats`'s `time_in_stage` block ([JOBS](JOBS.md),
+decision 6), in the same two-column shape. **Before moving on**: one line per rung that has
+something to say — median and mean days over the applications that left it, how many did,
+and how many are waiting there now. **Waiting longest**: the ten open applications that
+have sat longest on their current rung, with the rung and the days since their last event.
+Both columns are `min-w-0`, for the phone-overflow reason recorded against the rejections
+card. Printed as text rather than bars: the medians are few, small and on different
+denominators, and a bar would give a rung with one stint the same visual weight as one
+with forty.
+
+The import result also says **how many rows the research pass was sent** —
+`researched N rows · M searches` — because the trigger is per row now and "researched"
+alone no longer says which rows were looked up.
+
+Pinned in `jobs.test.tsx`: the per-rung line and the longest-waiting order, the empty
+state, and the researched-row count.
 
 ## The live session view
 
@@ -386,7 +407,7 @@ The contrast fixes moved three token values, each noted where it is defined:
 ## Testing
 
 - Component tests for the four workspaces against recorded SSE fixtures, so no live
-  backend is required. **Built** — `pnpm test`, in `make check-web` and in CI. **103 tests**
+  backend is required. **Built** — `pnpm test`, in `make check-web` and in CI. **106 tests**
   covering the stream reducer, the heatmap, three of the four workspaces, the API client,
   and the dashboard, session-creation, report, practice-log, applications, history and
   login pages.

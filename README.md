@@ -224,7 +224,7 @@ owes.
       the whole 186-concept taxonomy; `/session/new` shows the plan before you commit to
       it; the live view carries the transcript, the interviewer's tool calls and each
       hint's cost, with a workspace per mode. Gated by `make check-web` and a CI job —
-      eslint, tsc, 103 component tests, production build. ~~**Nothing has been opened in
+      eslint, tsc, 106 component tests, production build. ~~**Nothing has been opened in
       a browser yet**~~ **Opened 2026-09-22**: `make test-browser` drives all ten routes
       through Chromium against the containerised stack — 20 tests asserting that each
       page's own API calls succeeded, that nothing threw, and that the figures on the
@@ -266,11 +266,14 @@ owes.
       uncalibrated — no gold set*
 - [x] **10 — Job applications** — *the tracker landed 2026-08-25: two tables, a stage
       **event log** with the board derived from it, ten endpoints and a `/jobs` page. A
-      pasted list is parsed and tagged by one structured Sonnet 5 call; above ten rows a
-      second Opus 5 pass **searches the web** for the postings and fills in what the list
-      left out. The funnel counts `furthest_stage`, so a rejection after an onsite still
-      counts as an onsite reached, and since 2026-09-09 a rejections tracker files each no
-      under the rung it came after, with the days it took. Web search is billed per search and does not appear in
+      pasted list is parsed and tagged by one structured Sonnet 5 call; for the new rows
+      missing a URL, a location or a confident tag (per row since 2026-09-29 — it used to
+      be lists over ten rows) a second Opus 5 pass **searches the web** for the postings
+      and fills in what the list left out. The funnel counts `furthest_stage`, so a
+      rejection after an onsite still counts as an onsite reached, since 2026-09-09 a
+      rejections tracker files each no under the rung it came after, with the days it
+      took, and since 2026-09-29 **time in stage** reports how long each rung took and
+      what is waiting longest. Web search is billed per search and does not appear in
       any token count, so the ledger grew a column for it. **Run live 2026-08-26**: a
       messy five-row paste parsed correctly for $0.0092, and the research pass made six
       real web searches for $0.2266 — which found that structured outputs reject the JSON

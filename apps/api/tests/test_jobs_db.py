@@ -3,8 +3,8 @@
 `test_jobs.py` pins the projection arithmetic and the taxonomy. This drives the routes,
 and the cases that matter are the ones where a shortcut would have been invisible:
 
-- an import that runs the **research pass** and one that does not, chosen by the threshold
-  rather than by the caller,
+- an import that runs the **research pass** and one that does not, chosen by what each new
+  row is missing rather than by the caller or the length of the list,
 - a stage move that **appends** rather than overwrites, so the funnel can still see where
   the application got to after it was rejected,
 - a **recompute** that rebuilds the board from the events and changes nothing, which is the
@@ -137,52 +137,88 @@ def client(user_id: str, ledger: None) -> Iterator[TestClient]:
 # --- Importing ----------------------------------------------------------------------------
 
 
-def test_a_short_paste_is_parsed_and_not_researched(client):
-    """The threshold decides the second call, never the first. Two rows is below it, so
-    the research pass is skipped with a reason rather than silently not happening."""
-    use_settings(jobs_research_threshold=10)
+RESEARCHING = {"model_provider": "anthropic", "anthropic_api_key": "k"}
+# The research pass switched off. Every import test that is not *about* research uses it,
+# because the settings under test are the real ones — `.env` may name the Anthropic
+# provider and a real key — and a research pass with no scripted client builds a real one.
+NO_RESEARCH = {"jobs_research_max_searches": 0}
+
+COMPLETE = {"location": "Boston", "url": "https://jobs.example.com/1", "confidence": 0.9}
+
+
+def test_complete_rows_are_parsed_and_not_researched(client):
+    """What a row is missing decides the second call, never the first — and not the length
+    of the list. Two rows that already carry a URL, a location and a confident tag give the
+    research pass nothing to do, so it is not called, and the import says why."""
+    use_settings(**RESEARCHING)
+    unused = researcher([])
     _install(
         parser(
             [
-                _row(company="Aurora Labs", role="Backend Engineer", subcategory="backend"),
-                _row(company="Northwind Systems", role="Trader", subcategory="quant_trading"),
+                _row(company="Aurora Labs", role="Backend Engineer", **COMPLETE),
+                _row(
+                    company="Northwind Systems",
+                    role="Trader",
+                    subcategory="quant_trading",
+                    **COMPLETE,
+                ),
             ]
-        )
+        ),
+        unused,
     )
     response = client.post("/api/v1/jobs/import", json={"text": "Aurora, Northwind"})
     assert response.status_code == 201
     body = response.json()
     assert body["created"] == 2
     assert body["researched"] is False
-    assert "threshold" in body["research_skipped"]
+    assert body["researched_rows"] == 0
+    assert "already has a URL" in body["research_skipped"]
+    assert unused.requests == []
     categories = {row["company"]: row["category"] for row in body["applications"]}
     assert categories == {"Aurora Labs": "swe", "Northwind Systems": "quant"}
 
 
-def test_a_long_paste_is_researched_and_the_searches_reach_the_ledger(client):
+def test_a_short_paste_missing_detail_is_researched_and_the_searches_reach_the_ledger(client):
     """The whole point of the second pass, and the cost it carries.
+
+    Three rows — the old threshold of ten would never have looked at them. Two are missing
+    something and are sent; the third is complete and is not, so it stays exactly as pasted
+    and is marked `paste` rather than `paste+research`.
 
     Web search is billed per search on top of the tokens, so a ledger that recorded only
     tokens would report this import at a fraction of what it cost — against dollar
     ceilings that are supposed to be the thing that binds.
     """
-    use_settings(jobs_research_threshold=1, model_provider="anthropic", anthropic_api_key="k")
+    use_settings(**RESEARCHING)
     parsed = [
         _row(company="Aurora Labs", role="Engineer", confidence=0.4),
+        _row(company="Cascade Analytics", role="Analyst", subcategory="data_science", **COMPLETE),
         _row(company="Northwind Systems", role="Trader", subcategory="quant_trading"),
     ]
     enriched = [
         _row(company="Aurora Labs", role="Software Engineer, Platform", location="Boston"),
         _row(company="Northwind Systems", role="Quantitative Trader", subcategory="quant_trading"),
     ]
-    _install(parser(parsed), researcher(enriched, searches=4))
+    scripted = researcher(enriched, searches=4)
+    _install(parser(parsed), scripted)
 
-    body = client.post("/api/v1/jobs/import", json={"text": "a long list"}).json()
+    body = client.post("/api/v1/jobs/import", json={"text": "a short list"}).json()
     assert body["researched"] is True
     assert body["research_skipped"] is None
+    assert body["researched_rows"] == 2
     assert body["web_searches"] == 4
-    roles = {row["company"]: row["role"] for row in body["applications"]}
-    assert roles["Aurora Labs"] == "Software Engineer, Platform"
+    rows = {row["company"]: row for row in body["applications"]}
+    assert rows["Aurora Labs"]["role"] == "Software Engineer, Platform"
+    assert rows["Aurora Labs"]["source"] == "paste+research"
+    assert rows["Northwind Systems"]["source"] == "paste+research"
+    assert rows["Cascade Analytics"]["source"] == "paste"
+    assert rows["Cascade Analytics"]["url"] == "https://jobs.example.com/1"
+
+    # Only the two incomplete rows reached the model.
+    (request,) = scripted.requests
+    prompt = request["messages"][0]["content"]
+    assert "Aurora Labs" in prompt and "Northwind Systems" in prompt
+    assert "Cascade Analytics" not in prompt
 
     with Session(get_engine()) as db:
         searched = db.exec(
@@ -196,10 +232,41 @@ def test_a_long_paste_is_researched_and_the_searches_reach_the_ledger(client):
     assert searched.cost_usd >= 4 * 0.01
 
 
+def test_rows_already_tracked_are_never_researched(client):
+    """Re-pasting a list is the normal way this is used. Researching a row only to discard
+    it as a duplicate would pay for Opus and the searches and keep nothing, so the
+    duplicate check runs before the research pass rather than after it."""
+    use_settings(**NO_RESEARCH)
+    _install(parser([_row(company="Aurora Labs", role="Backend Engineer")]))
+    assert client.post("/api/v1/jobs/import", json={"text": "Aurora"}).json()["created"] == 1
+
+    use_settings(**RESEARCHING)
+    unused = researcher([])
+    _install(parser([_row(company="Aurora Labs", role="Backend Engineer")]), unused)
+    again = client.post("/api/v1/jobs/import", json={"text": "Aurora"}).json()
+    assert again["created"] == 0
+    assert again["duplicates"] == 1
+    assert again["researched"] is False
+    assert again["research_skipped"] == "every row is already tracked"
+    assert unused.requests == []
+
+
+def test_a_zero_search_ceiling_switches_the_research_pass_off(client):
+    """The off switch, now that no threshold can be set high enough to mean "never"."""
+    use_settings(**RESEARCHING, **NO_RESEARCH)
+    unused = researcher([])
+    _install(parser([_row(company="Aurora Labs", role="Engineer")]), unused)
+    body = client.post("/api/v1/jobs/import", json={"text": "Aurora"}).json()
+    assert body["created"] == 1
+    assert body["researched"] is False
+    assert "JOBS_RESEARCH_MAX_SEARCHES=0" in body["research_skipped"]
+    assert unused.requests == []
+
+
 def test_research_that_fails_still_imports_the_parsed_rows(client):
     """The contract of the research pass: it is an enrichment over rows that already
     exist, so a provider that is down costs a bit of detail and nothing else."""
-    use_settings(jobs_research_threshold=0, model_provider="bedrock")
+    use_settings(model_provider="bedrock")
     _install(parser([_row(company="Aurora Labs", role="Engineer")]))
     body = client.post("/api/v1/jobs/import", json={"text": "Aurora"}).json()
     assert body["created"] == 1
@@ -210,7 +277,7 @@ def test_research_that_fails_still_imports_the_parsed_rows(client):
 def test_re_pasting_the_same_list_adds_nothing(client):
     """Re-pasting is the normal way this gets used, and the alternative to idempotence is
     a board that quietly doubles every time somebody updates their spreadsheet."""
-    use_settings(jobs_research_threshold=10)
+    use_settings(**NO_RESEARCH)
     rows = [_row(company="Aurora Labs", role="Backend Engineer")]
     _install(parser(rows))
     assert client.post("/api/v1/jobs/import", json={"text": "Aurora"}).json()["created"] == 1
@@ -223,7 +290,7 @@ def test_re_pasting_the_same_list_adds_nothing(client):
 def test_a_low_confidence_tag_is_flagged_but_still_tracked(client):
     """Unlike the practice log's gate, this one holds nothing back — an application writes
     no evidence, so a doubtful tag mis-colours a chart and cannot do worse."""
-    use_settings(jobs_research_threshold=10)
+    use_settings(**NO_RESEARCH)
     _install(parser([_row(company="Aurora Labs", role="Engineer", confidence=0.2)]))
     (row,) = client.post("/api/v1/jobs/import", json={"text": "Aurora"}).json()["applications"]
     assert row["status"] == "pending_classification"
@@ -231,7 +298,7 @@ def test_a_low_confidence_tag_is_flagged_but_still_tracked(client):
 
 
 def test_a_paste_the_parser_finds_nothing_in_is_a_422(client):
-    use_settings(jobs_research_threshold=10)
+    use_settings(**NO_RESEARCH)
     _install(parser([]))
     response = client.post("/api/v1/jobs/import", json={"text": "lunch tomorrow?"})
     assert response.status_code == 422
@@ -349,7 +416,7 @@ def test_confirming_a_tag_derives_the_big_category(client):
 def test_the_funnel_counts_where_applications_reached_not_where_they_are(client):
     """Two applications: one rejected after an onsite, one still at the OA. Counted off
     `current_stage` the onsite would have vanished from every bucket above `applied`."""
-    use_settings(jobs_research_threshold=10)
+    use_settings(**NO_RESEARCH)
     far = _one(client, company="Aurora Labs", role="Engineer")
     near = _one(client, company="Northwind Systems", role="Trader", subcategory="quant_trading")
     for stage in ("oa", "round_1", "final", "rejected"):
@@ -382,6 +449,11 @@ def test_stats_on_an_empty_board_does_not_divide_by_zero(client):
         "median_days_to_rejection": None,
         "recent": [],
     }
+    assert stats["time_in_stage"]["longest_waiting"] == []
+    assert all(
+        row["left"] == 0 and row["waiting"] == 0 and row["median_days"] is None
+        for row in stats["time_in_stage"]["stages"]
+    )
 
 
 def test_rejections_are_tracked_by_the_rung_they_came_after(client):
@@ -389,7 +461,7 @@ def test_rejections_are_tracked_by_the_rung_they_came_after(client):
     `applied`, one still open. The tracker files each rejection under the rung it was
     rejected *after* — `furthest_stage`, as the funnel counts — and lists the newest first,
     with the days between applying and the rejection event."""
-    use_settings(jobs_research_threshold=10)
+    use_settings(**NO_RESEARCH)
     onsite = _one(client, company="Aurora Labs", role="Engineer", applied_at="2026-06-01T00:00:00Z")
     cold = _one(client, company="Northwind Systems", role="Trader", subcategory="quant_trading")
     _one(client, company="Cascade Analytics", role="Analyst")
@@ -444,6 +516,48 @@ def test_a_second_rejection_event_is_the_one_that_counts(client):
     assert rejections["total"] == 1
     assert rejections["recent"][0]["days_after_applying"] == 10
     assert rejections["recent"][0]["furthest_stage"] == "phone_screen"
+
+
+def test_time_in_stage_is_read_off_the_events_the_board_writes(client):
+    """Through the route, against real timestamps. One application moved through the OA
+    and rejected after a phone screen; one still sitting at `applied`. The moves are
+    backdated by `occurred_at`, so the stints are exact; the waiting row is measured
+    against the real clock, so only its rung and its presence are pinned."""
+    far = _one(client, company="Aurora Labs", role="Engineer", applied_at="2026-06-01T00:00:00Z")
+    _one(client, company="Northwind Systems", role="Trader", subcategory="quant_trading")
+    for stage, when in (
+        ("oa", "2026-06-05T00:00:00Z"),
+        ("phone_screen", "2026-06-12T00:00:00Z"),
+        ("rejected", "2026-06-20T00:00:00Z"),
+    ):
+        client.post(f"/api/v1/jobs/{far['id']}/stage", json={"stage": stage, "occurred_at": when})
+
+    report = client.get("/api/v1/jobs/stats").json()["time_in_stage"]
+    stages = {row["stage"]: row for row in report["stages"]}
+    assert (stages["applied"]["left"], stages["applied"]["median_days"]) == (1, 4.0)
+    assert (stages["oa"]["left"], stages["oa"]["median_days"]) == (1, 7.0)
+    assert (stages["phone_screen"]["left"], stages["phone_screen"]["median_days"]) == (1, 8.0)
+    assert stages["applied"]["waiting"] == 1
+    (waiting,) = report["longest_waiting"]
+    assert (waiting["company"], waiting["stage"]) == ("Northwind Systems", "applied")
+
+
+def test_a_row_imported_mid_ladder_is_not_timed_on_the_way_in(client):
+    """An import at `final` writes the `final` event at the moment of the import. Timing
+    the applied -> final gap would report "how long until I pasted the list" as time on a
+    rung, so nothing is recorded as having left `applied`."""
+    use_settings(**NO_RESEARCH)
+    _install(
+        parser(
+            [_row(company="Aurora Labs", role="Engineer", stage="final", applied_on="2026-05-01")]
+        )
+    )
+    client.post("/api/v1/jobs/import", json={"text": "Aurora, onsite done"})
+    report = client.get("/api/v1/jobs/stats").json()["time_in_stage"]
+    stages = {row["stage"]: row for row in report["stages"]}
+    assert stages["applied"]["left"] == 0
+    assert stages["final"]["waiting"] == 1
+    assert report["longest_waiting"][0]["days"] == 0
 
 
 def test_the_catalog_is_served_rather_than_duplicated_in_the_client(client):
@@ -511,7 +625,7 @@ def test_an_import_does_not_query_once_per_row(client):
     """
     from sqlalchemy import event
 
-    use_settings(jobs_research_threshold=100)
+    use_settings(**NO_RESEARCH)
     rows = [_row(company=f"Bench {i:03d}", role="Engineer") for i in range(30)]
     _install(parser(rows))
 
@@ -536,7 +650,7 @@ def test_a_paste_naming_the_same_job_twice_adds_it_once(client):
     A per-row database check could not catch this: neither row is committed while the
     import is running, so both would look new. The in-memory index is what sees it.
     """
-    use_settings(jobs_research_threshold=100)
+    use_settings(**NO_RESEARCH)
     _install(
         parser(
             [
@@ -558,7 +672,7 @@ def test_deduplication_ignores_case_and_surrounding_space(client):
     and one row to every duplicate check, so the second was storable and then permanently
     invisible to the code meant to find it.
     """
-    use_settings(jobs_research_threshold=100)
+    use_settings(**NO_RESEARCH)
     _install(parser([_row(company="Aurora Labs", role="Backend Engineer")]))
     assert client.post("/api/v1/jobs/import", json={"text": "x"}).json()["created"] == 1
 
@@ -572,7 +686,7 @@ def test_an_imported_row_is_written_with_its_projection_already_correct(client):
     """`insert_application` computes the projection in memory instead of re-reading the
     rows it just wrote. This asserts the shortcut lands on the same answer `recompute`
     would: a replay immediately afterwards corrects nothing."""
-    use_settings(jobs_research_threshold=100)
+    use_settings(**NO_RESEARCH)
     _install(
         parser(
             [

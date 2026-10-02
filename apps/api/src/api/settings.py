@@ -44,14 +44,16 @@ class Settings(BaseSettings):
     model_job_parser: str = "claude-sonnet-5"
     model_job_researcher: str = "claude-opus-5"
 
-    # Above this many parsed rows, the research pass runs (docs/JOBS.md). A per-import
-    # threshold rather than a per-row rule: a short list pasted from a spreadsheet usually
-    # already carries the company and title, and a long one is the case where the paste is
-    # terse and the missing detail is worth paying to look up.
-    jobs_research_threshold: int = Field(default=10, ge=0)
+    # The research pass runs for the new rows missing what it fills in — a URL, a
+    # location, a confident tag — whatever the length of the list (docs/JOBS.md). What
+    # used to trigger it, `jobs_research_threshold` (a row count), is gone: it spent the
+    # most where it was least justified per row.
+    #
     # A ceiling on billable searches per import, enforced by the tool definition itself.
     # `max_uses` is what the provider counts against; this is the number it is set to.
-    jobs_research_max_searches: int = Field(default=30, gt=0)
+    # **0 switches the research pass off** — the one way to keep an Anthropic-provider
+    # deployment from paying for it at all.
+    jobs_research_max_searches: int = Field(default=30, ge=0)
 
     anthropic_api_key: str | None = None
 

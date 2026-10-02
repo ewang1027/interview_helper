@@ -78,7 +78,8 @@ def import_jobs(
     parser: Parser,
     researcher: Researcher,
 ) -> dict[str, Any]:
-    """Paste a list of applications. Parses and tags them; researches long lists.
+    """Paste a list of applications. Parses and tags them; researches the new rows that
+    are missing a URL, a location or a confident tag.
 
     The response reports `researched` and `research_skipped` rather than hiding the
     difference, because "the model looked these up" and "the model read what you typed"
@@ -100,6 +101,7 @@ def import_jobs(
         "model": outcome.model,
         "cost_usd": round(outcome.cost_usd, 6),
         "web_searches": outcome.web_searches,
+        "researched_rows": outcome.researched_rows,
         "applications": service.list_applications(db, user_id=principal.user_id)["applications"],
     }
 
@@ -151,8 +153,9 @@ def list_jobs(
 # resolves in declaration order, and `stats` would otherwise arrive as an application id.
 @router.get("/jobs/stats")
 def stats(db: DbSession, principal: CurrentPrincipal) -> dict[str, Any]:
-    """The funnel, the conversion rates and the category breakdown — everything the
-    charts draw, from one pass over the applications."""
+    """The funnel, the conversion rates, the category breakdown, the rejections tracker
+    and time-in-stage — everything the charts draw, from one read of the applications and
+    their events."""
     return service.stats(db, user_id=principal.user_id)
 
 

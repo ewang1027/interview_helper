@@ -24,11 +24,11 @@ detail behind it.
 | **2** Executor + grading | **complete** — the deterministic half it was scoped to | sandbox isolation (6 escape tests), `POST /execute`, `POST /probe`, complexity probe, reference-solution verification, **the coding grader** — score + evidence rows | `cpp`, `peak_rss_kb` — deferred, not owed |
 | **3** Runtime + API | **complete** | the **session layer** (`/api/v1`, plan → submit → grade → report), **auth** (GitHub OAuth, a signed cookie, every route behind it), the **model-call path** (budget enforced, `llm_calls` written, `/costs` live), the **interviewer** (`POST /sessions/{id}/turns`, all five tools, `turns` written), the **SSE stream** (every event, `observation.recorded` included), **rubric grading** and the **quant grader** (a walled sympy answer check plus the derivation rubric) — all four modes grade | — *(closed 2026-08-25: a real session ran end to end on the Anthropic API — conversation, `run_code` against the sandbox, submission, grading, evidence. Bedrock is still gated on a use-case form; the provider switch is one env var)* |
 | **4** Adaptive engine | **built** | Elo, FSRS, the replayable projection, the weakness priority, and a planner that drills a simulated injected weakness within twelve sessions — five until `W_UNLOCKS` woke up, ten until the 2026-09-09 taxonomy expansion added edges into the concepts the corpus measures | weights are placeholders until real sessions calibrate them; the gate's window scales with unmeasured foundational corpus and with the prerequisite graph |
-| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, a concept picker that searches problem-name **aliases** (2026-09-09), and a log that is loaded whole and **searched, filtered, sorted and grouped in the browser** — by topic, difficulty, source, list, label and due state — with labels edited on the row (2026-09-10), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 103 component tests, in `make check` and CI. **A browser gate since 2026-09-22**: `make test-browser` drives all ten routes through Chromium against the containerised stack — **38 tests**, asserting each page's own API calls succeeded, that nothing threw, that its figures match the API's, and since 2026-09-24 **axe-core, keyboard focus order and every route at 390px** — **46 tests** since 2026-09-28, axe **clean in both colour schemes**, with a theme picker in the nav — **62 tests** since 2026-09-29, every route also at **768px and 1024px**, and the gate **runs in CI** against a stack the job builds from the commit | the **full per-mode session** run, which needs a live interviewer; screen readers; widths between 1024px and the 1280px desktop default, and any browser but Chromium *(the gate in CI and the 768/1024px widths are **delivered** — 2026-09-29)* *(the two known a11y violations and the unmeasured dark theme are **fixed** — 2026-09-28)* *(the `/jobs` phone overflow the gate found is **fixed** — 2026-09-24)* |
+| **5** Web app | **partial** — all ten routes | every route docs/WEB.md specifies plus the **practice log**: dashboard, `/session/new` with the plan shown before you commit, the **live session** (SSE, transcript, tool calls, hints with their cost) and its **four workspaces**, the report, `/concepts`, `/concepts/{id}`, `/history`, `/corpus`, `/costs`, `/practice` with LeetCode **and NeetCode** import, a concept picker that searches problem-name **aliases** (2026-09-09), and a log that is loaded whole and **searched, filtered, sorted and grouped in the browser** — by topic, difficulty, source, list, label and due state — with labels edited on the row (2026-09-10), `/login`. Monaco served locally rather than from a CDN. The applications board is searchable, filterable by outcome, and pages twenty rows at a time; a **rejections tracker** sits beside the funnel (2026-09-09). 106 component tests, in `make check` and CI; a **time-in-stage** card on `/jobs` (2026-09-29). **A browser gate since 2026-09-22**: `make test-browser` drives all ten routes through Chromium against the containerised stack — **38 tests**, asserting each page's own API calls succeeded, that nothing threw, that its figures match the API's, and since 2026-09-24 **axe-core, keyboard focus order and every route at 390px** — **46 tests** since 2026-09-28, axe **clean in both colour schemes**, with a theme picker in the nav — **62 tests** since 2026-09-29, every route also at **768px and 1024px**, and the gate **runs in CI** against a stack the job builds from the commit | the **full per-mode session** run, which needs a live interviewer; screen readers; widths between 1024px and the 1280px desktop default, and any browser but Chromium *(the gate in CI and the 768/1024px widths are **delivered** — 2026-09-29)* *(the two known a11y violations and the unmeasured dark theme are **fixed** — 2026-09-28)* *(the `/jobs` phone overflow the gate found is **fixed** — 2026-09-24)* |
 | **6** AWS deploy | **partial** — step 1 of 5 | Dockerfiles for `api`, `executor` and `web`; `make up-stack` runs all of it behind a **Caddy front door** routing by path, the job the ALB does — so compose mirrors the target topology. Only the front door publishes a port. Sandbox isolation re-verified from inside the containerised launcher | steps 2–5: one service on Fargate by hand, Terraform, the rest of the stack, the portability gate — **all blocked on an authenticated AWS session**, not on code |
 | **7–8** Voice, hardening | **not started** | — | — |
 | **9** Practice log | **built** | the tables (migrated with the Phase 3 slice), the **classification call** behind a confidence gate, the **FSRS-inspired re-solve schedule**, and all **six endpoints** — a logged solve writes real evidence and moves the same projection a graded submission does. The import takes **NeetCode links** as well as LeetCode ones (2026-09-07). **Re-tagged 2026-09-09** against the expanded taxonomy: all 23 logged problems, eleven of them wrong before, by a script that corrects the evidence they wrote and rebuilds mastery. **Filed 2026-09-10**: every coding concept carries a topic, rows carry it with the concept's name and the NeetCode lists, and problems take **labels** of your own through `PATCH /practice/problems/{id}` | the hand-labeled gold set for calibrating the classifier, and a real model call — the same Bedrock gate every model path here waits on |
-| **10** Job applications | **built** | two tables, the **stage event log** and the projection over it, ten endpoints, a Sonnet 5 paste parser, an Opus 5 **web-search research pass**, and the `/jobs` page. **Run live 2026-08-26**: a messy five-row paste parsed correctly, six real web searches, an import down to 3 SQL statements from 240. A **rejections tracker** (2026-09-09): each no filed under the rung it came after, with the days it took. An eighth rung, `video_assessment`, for the recorded one-way video (2026-09-11) | the gold set for calibrating the tagging; time-in-stage beyond applying-to-rejection, which the events already record and nothing reports; a research trigger based on what a row is missing rather than how long the list is |
+| **10** Job applications | **built** | two tables, the **stage event log** and the projection over it, ten endpoints, a Sonnet 5 paste parser, an Opus 5 **web-search research pass**, and the `/jobs` page. **Run live 2026-08-26**: a messy five-row paste parsed correctly, six real web searches, an import down to 3 SQL statements from 240. A **rejections tracker** (2026-09-09): each no filed under the rung it came after, with the days it took. An eighth rung, `video_assessment`, for the recorded one-way video (2026-09-11). **Time in stage** (2026-09-29): days on each rung before moving on, and the open rows waiting longest. The research pass **triggered per row by what it is missing** — URL, location, confident tag — not by list length (2026-09-29) | the gold set for calibrating the tagging; a live measurement of what the per-row research trigger costs on a real paste |
 
 ~~One thing worth knowing before reading anything else as further along than it is: **no
 full session has run against a live model.**~~ **Closed 2026-08-25.** A full session ran on
@@ -7637,3 +7637,86 @@ reference slope stayed linear (1.00–1.10 across all 24 trials at five sizes, 0
   carries the same slope assertion the sandbox test does.
 - `test-sandbox` took 111 s; no same-machine baseline at four sizes was taken, so how
   much of that the fifth size added is unmeasured.
+
+---
+
+## Wave — Time in stage, and a research trigger that looks at the row · 2026-09-29
+
+Two items Phase 10's row listed as owed, asked for together: report the time-in-stage the
+event log already records, and trigger the research pass on what a row is missing rather
+than on how long the list is.
+
+### Time in stage
+
+`GET /jobs/stats` grew a `time_in_stage` block, computed by `api.jobs.time_in_stage` — a
+pure function over the applications and their events, plus one query for the events.
+Every pair of consecutive events is a **stint** on the first one's rung. Per rung:
+`left` (stints that ended, by whatever came next), `median_days` and `mean_days` over them,
+`waiting` (open rows there now) and `median_days_waiting`; then `longest_waiting[]`, the
+ten open rows longest on their current rung. Terminal stages are not reported. Days are
+whole, and a backdated event before its predecessor counts as zero, both as the rejections
+tracker already does ([JOBS](JOBS.md#6-time-in-stage-is-a-stint-from-one-event-to-the-next)).
+
+One decision worth recording: **a stage a row arrived at is not timed.** A row imported
+at `final` has its `final` event dated at the import, so timing applied → final would
+report "weeks until I pasted the list" as time at `applied`. Such a stint is left out of
+`left`, identified exactly — a non-first event whose `occurred_at` equals the row's
+`created_at`, which only `insert_application` writes. The row still counts as waiting,
+from when it was recorded there.
+
+`/jobs` has a **Time in stage** card under the rejections tracker, in the same two-column,
+`min-w-0` shape: per-rung lines, and the rows waiting longest.
+
+### The research trigger
+
+`JOBS_RESEARCH_THRESHOLD` (a row count, default 10) is **gone**. `ingest` now sends the
+research pass only the rows that are **new** — not already on the board, first occurrence
+in the paste — and missing something `api.jobs.missing_for_research` checks: no `url`, no
+`location`, or a tag below the 0.6 gate or `unclassified`. Enriched rows are merged back
+in place; rows that were not sent keep what was typed and are stored as `paste`, not
+`paste+research`. The import response grew `researched_rows`, and the page's import result
+prints it.
+
+To do that, the duplicate index is read **before** the research pass rather than after
+it: re-pasting a list must not pay Opus and the search bill for rows that are then
+discarded as duplicates.
+
+Guards kept: `JOBS_RESEARCH_MAX_SEARCHES` as the tool's `max_uses`, the budget checks in
+`api.llm`, `MAX_RESEARCH_ROUNDS`, the length check on what comes back. The threshold was
+also the only way to keep an Anthropic-provider deployment from researching at all, so
+**`JOBS_RESEARCH_MAX_SEARCHES=0` is now the off switch** (`ge=0`, was `gt=0`):
+`research_available` refuses it before any call. The spend profile did change, and
+[COST](COST.md) says how: a short paste of bare names now pays for research, a long paste
+of complete rows no longer does, and a re-paste pays only for the parse.
+
+**The db tests had to change for a reason worth writing down.** They set
+`jobs_research_threshold=10`/`100` to keep research off. `use_settings` builds on the real
+`get_settings()`, and this machine's `.env` names the Anthropic provider with a real key —
+so an import test with the research pass on and no scripted researcher would build a real
+client and **make a real Opus call**. Every import test that is not about research now
+sets `jobs_research_max_searches=0`, and the research tests all pass a scripted client
+and assert on its `requests`.
+
+### Verified
+
+- `make check`: ruff clean, 142 files formatted, mypy clean on 54 source files,
+  **413 passed** (267 deselected), corpus valid, doc links 0 broken across 19 files,
+  eslint + `tsc --noEmit` clean, **106 component tests** (103 before), secret scan clean.
+- `make test-db` against `interview_helper_test`: **226 passed, 1 skipped** — including
+  the jobs file's 28 (24 before: the two threshold tests replaced by four trigger tests,
+  plus two time-in-stage tests through the route, one of them an import at `final`).
+- `test_jobs.py` 22 (14 before): the off switch, `missing_for_research`, and six pure
+  time-in-stage cases — stints, median/mean, waiting order, arrival events not timed,
+  the lower-bound wait, a backdated event.
+- `make doc-check` and `make doc-links` clean.
+
+### Not verified
+
+- **No live model call.** The new trigger was exercised with scripted models only; what
+  it costs on a real paste is unmeasured, and `make test-llm` was not run (it costs money,
+  and does not exercise `ingest`).
+- **Not opened in a browser.** `make test-browser` was not run — the stack belongs to
+  another session — so the new card has no axe, phone-width or live-figure check yet.
+- **Not run against real data.** Whether the arrival rule leaves enough timed stints on
+  a board built mostly from imports is a question only the real board can answer.
+- Whether `location` alone deserves a search is a judgement, not a measurement.

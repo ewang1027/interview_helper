@@ -136,10 +136,17 @@ sense `mastery` is a projection over `concept_evidence`.
 **The parse** — the Sonnet 5 structured call that turns a pasted list into tagged rows
 (`job="job_parse"`). Runs on every import.
 
-**The research pass** — the Opus 5 call with the **web search** tool that completes a long
-list from the real postings (`job="job_research"`). Runs only above
-`JOBS_RESEARCH_THRESHOLD` rows, cannot cost the import when it fails, and does not exist on
-Bedrock.
+**The research pass** — the Opus 5 call with the **web search** tool that completes pasted
+rows from the real postings (`job="job_research"`). Runs for the new rows in an import that
+are missing a URL, a location or a confident tag — whatever the length of the list (until
+2026-09-29 it ran only above `JOBS_RESEARCH_THRESHOLD` rows, which no longer exists). Off
+when `JOBS_RESEARCH_MAX_SEARCHES=0`, cannot cost the import when it fails, and does not
+exist on Bedrock.
+
+**Time in stage** — how long applications spend on each rung of the ladder, read off the
+stage event log: a **stint** runs from one event to the next. Reported as days before
+moving on (stints that ended) and days waiting (open applications on their current rung).
+See [JOBS](JOBS.md), decision 6.
 
 **Category / sub-category** — two levels of tagging: `swe` · `ai` · `quant` · `other`, and a
 sub-category under each. The model picks only the sub-category and the category is derived

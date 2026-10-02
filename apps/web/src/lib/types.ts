@@ -567,6 +567,38 @@ export interface Rejections {
   recent: RecentRejection[];
 }
 
+/** One rung's time-in-stage: how long applications spent there, from the event log. */
+export interface StageTime {
+  stage: LadderStage;
+  label: string;
+  /** Stints on this rung that ended — by any next event, good or bad. */
+  left: number;
+  /** Whole days, over the stints that ended. Null when none has. */
+  median_days: number | null;
+  mean_days: number | null;
+  /** Open applications sitting on this rung now. */
+  waiting: number;
+  median_days_waiting: number | null;
+}
+
+export interface WaitingApplication {
+  id: string;
+  company: string;
+  role: string;
+  category: JobCategory | null;
+  stage: LadderStage;
+  stage_label: string;
+  /** Its last event — for a row imported mid-ladder, when it was recorded there. */
+  since: string;
+  days: number;
+}
+
+export interface TimeInStage {
+  stages: StageTime[];
+  /** Open applications, longest on their current rung first, at most ten. */
+  longest_waiting: WaitingApplication[];
+}
+
 export interface JobStats {
   total: number;
   open: number;
@@ -577,6 +609,7 @@ export interface JobStats {
   needs_review: number;
   funnel: FunnelStep[];
   rejections: Rejections;
+  time_in_stage: TimeInStage;
   by_category: Partial<
     Record<
       JobCategory,
@@ -602,6 +635,9 @@ export interface ImportJobsResult {
   model: string | null;
   cost_usd: number;
   web_searches: number;
+  /** How many rows the research pass was sent: the new ones missing a URL, a
+   *  location or a confident tag. Zero when it did not run. */
+  researched_rows: number;
   applications: JobApplication[];
 }
 

@@ -246,7 +246,8 @@ Without that column a thirty-search research call would have reported at a fract
 it cost, against a $1 session ceiling that thirty searches consume about a third of.
 `JOBS_RESEARCH_MAX_SEARCHES` (default 30) is passed to the tool as `max_uses`, so the
 ceiling sits in the request the provider counts against rather than in a check that runs
-after the money is gone.
+after the money is gone. **`0` switches the research pass off** (2026-09-29) — it is
+refused before any call, so nothing is billed.
 
 **Web search is not available on Bedrock.** Under `MODEL_PROVIDER=bedrock` the research pass
 is skipped with a reason and only `job_parse` is billed — see [JOBS](JOBS.md).
@@ -259,8 +260,27 @@ is skipped with a reason and only `job_parse` is billed — see [JOBS](JOBS.md).
 | `job_research` | Opus 5 | two rows completed, **six web searches** | **$0.2266** |
 
 Six searches for two rows is the number that matters: the research pass is roughly **25x**
-the parse, and its trigger is list length rather than how little each row carries. See
-[JOBS](JOBS.md)'s open questions.
+the parse, and ~~its trigger is list length rather than how little each row carries~~.
+
+**The trigger changed on 2026-09-29, and so did the spend profile.** The pass used to run
+only for imports of more than `JOBS_RESEARCH_THRESHOLD` (10) rows. It now runs for the
+*new* rows in any import that are missing a URL, a location or a confident tag, and is sent
+only those rows ([JOBS](JOBS.md), decision 4). What that means for the bill:
+
+- **A short paste of bare names now costs money.** Two thin rows, which used to be parse
+  only (about a cent), now get the research pass — the measured $0.23 above is exactly
+  that case. This is the intended change: per row, it is where research is most useful.
+- **A long paste of complete rows now costs nothing extra.** Rows that already carry a URL,
+  a location and a confident tag are never sent.
+- **A re-paste costs only the parse.** Rows already on the board are skipped *before* the
+  research pass, so updating a spreadsheet and pasting it again does not re-research it.
+- **The ceilings are unchanged**: `JOBS_RESEARCH_MAX_SEARCHES` per import as `max_uses`,
+  the daily and monthly budgets `api.llm` checks before every call, and
+  `MAX_RESEARCH_ROUNDS`. Setting
+  the search ceiling to `0` is now the off switch the threshold used to be.
+
+Not measured: no import has run live under the new trigger (it would cost real money,
+and this change was verified against scripted models only).
 
 **A cache breakpoint below the minimum prefix does nothing, silently.** `api.llm` marks
 every system prompt cacheable, and the minimum cacheable prefix is about 1024 tokens.

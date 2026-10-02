@@ -16,12 +16,12 @@ because each is a choice rather than a mechanism:
    something went badly, which is the exact opposite of what they are for.
 
 3. **The parse and the research pass are two different calls at two different tiers.** A
-   paste is parsed and tagged by one structured call. Above
-   `jobs_research_threshold` rows, a second pass with **web search** fills in what a terse
-   list left out. The second one can fail without costing the import: its output is an
-   enrichment over rows that already exist, so a provider that is down, a model that
-   refuses, or a Bedrock deployment where web search does not exist all degrade to "the
-   rows you pasted, untouched".
+   paste is parsed and tagged by one structured call. The new rows that are **missing
+   what the research pass fills in** — a URL, a location, a confident tag — go to a second
+   pass with **web search**, whatever the length of the list. The second one can fail
+   without costing the import: its output is an enrichment over rows that already exist,
+   so a provider that is down, a model that refuses, or a Bedrock deployment where web
+   search does not exist all degrade to "the rows you pasted, untouched".
 
 4. **Nothing here writes `concept_evidence`.** An application is not a graded artifact and
    says nothing about what you know. The confidence gate below is a review queue, not a
@@ -40,6 +40,7 @@ import logging
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
+from itertools import pairwise
 from statistics import median
 from typing import Any
 
@@ -217,10 +218,10 @@ class ParsedJob:
 class Ingestion:
     """What one import did, including the parts of it that did not work.
 
-    `research_skipped` carries a *reason* rather than a boolean because there are four of
-    them and they need different responses from the person reading: too few rows is
-    working as configured, Bedrock is a provider limit, and a provider error is worth
-    retrying.
+    `research_skipped` carries a *reason* rather than a boolean because there are several
+    of them and they need different responses from the person reading: rows that were
+    already complete is working as designed, Bedrock is a provider limit, and a provider
+    error is worth retrying.
     """
 
     rows: tuple[ParsedJob, ...]
@@ -231,6 +232,9 @@ class Ingestion:
     model: str | None
     cost_usd: float
     web_searches: int
+    # How many rows the research pass was sent — the new ones missing something it fills
+    # in. Zero when it did not run.
+    researched_rows: int = 0
 
 
 # --- The parse ---------------------------------------------------------------------------
@@ -512,11 +516,37 @@ def research_available(settings: Settings) -> str | None:
     offer the server-side web search tool.** Under `MODEL_PROVIDER=bedrock` this pass can
     never work, and an import that says so is better than one that fails.
     """
+    if settings.jobs_research_max_searches == 0:
+        # The off switch. A ceiling of zero searches is a research pass that can only spend
+        # Opus tokens returning the rows unchanged, so it is not made at all.
+        return "the research pass is switched off (JOBS_RESEARCH_MAX_SEARCHES=0)"
     if settings.model_provider == "bedrock":
         return "web search is not available on Bedrock; set MODEL_PROVIDER=anthropic to enable it"
     if not settings.anthropic_api_key:
         return "the research pass needs ANTHROPIC_API_KEY"
     return None
+
+
+def missing_for_research(row: ParsedJob) -> tuple[str, ...]:
+    """What this row lacks that the research pass exists to fill in. Empty: nothing to do.
+
+    This is the trigger, and it is per row. It used to be the length of the list — more
+    than `JOBS_RESEARCH_THRESHOLD` rows — which spent the most where it was least justified
+    per row and never looked at a short list of bare company names at all (docs/JOBS.md).
+
+    The three are the fields `RESEARCH_SYSTEM` asks the model to complete that can be seen
+    to be absent: no posting `url`, no `location`, and a tag the parse was not confident in
+    (below the review gate, or `unclassified`). The role is filled in too, but a vague
+    title cannot be told from a real one by looking, so it does not trigger anything.
+    """
+    missing: list[str] = []
+    if not row.url:
+        missing.append("url")
+    if not row.location:
+        missing.append("location")
+    if row.subcategory == "unclassified" or not row.auto_accepted:
+        missing.append("subcategory")
+    return tuple(missing)
 
 
 def _research_prompt(rows: Sequence[ParsedJob]) -> str:
@@ -848,12 +878,18 @@ def ingest(
     research_client: Any = None,
     settings: Settings | None = None,
 ) -> Ingestion:
-    """Parse a pasted list, optionally research it, and write what came back.
+    """Parse a pasted list, research the rows that need it, and write what came back.
 
-    The threshold decides the *second* call, never the first: the rows have to exist before
-    anything can count them, so a paste is always parsed cheaply and only then, if it is
-    long enough, sent to be completed. That ordering is also what makes the research pass
+    What a row is missing decides the *second* call, never the first: the rows have to
+    exist before anything can see what they lack, so a paste is always parsed cheaply and
+    only then are the new rows missing a URL, a location or a confident tag sent to be
+    completed (`missing_for_research`). That ordering is also what makes the research pass
     safe to fail — by the time it runs, the import already has rows.
+
+    Rows already on the board are never sent. Re-pasting a list is the normal way this is
+    used, and researching a row only to discard it as a duplicate would pay Opus and the
+    search bill for nothing — which is why the duplicate index is read *before* the
+    research pass rather than after it.
     """
     config = settings or get_settings()
     parsed = parse_jobs(text, client=client, settings=config)
@@ -867,30 +903,49 @@ def ingest(
     searches = 0
     model = parsed.model
 
-    if len(rows) > config.jobs_research_threshold:
-        outcome = research_jobs(rows, client=research_client, settings=config)
-        rows = outcome.rows
-        cost += outcome.cost_usd
-        searches = outcome.web_searches
-        skipped = outcome.skipped
-        researched = outcome.skipped is None
-        if outcome.model:
-            model = outcome.model
-    else:
-        skipped = (
-            f"{len(rows)} rows is at or below the threshold of {config.jobs_research_threshold}"
-        )
-
-    source = "paste+research" if researched else "paste"
-    now = _utcnow()
-    created: list[str] = []
-    duplicates: list[str] = []
-
     # One query for the whole paste, not one per row. The index is also what makes a paste
     # self-deduplicating: a list naming the same job twice adds it once, which a
     # per-row database check could not see because neither row is committed yet.
     seen = existing_index(db, user_id=user_id)
-    for row in rows:
+
+    # The research candidates: new rows, first occurrence only, missing something.
+    candidates: list[int] = []
+    candidate_keys: set[tuple[str, str]] = set()
+    for index, row in enumerate(rows):
+        key = _key(row.company, row.role)
+        if key in seen or key in candidate_keys:
+            continue
+        candidate_keys.add(key)
+        if missing_for_research(row):
+            candidates.append(index)
+
+    researched_indices: set[int] = set()
+    if candidates:
+        outcome = research_jobs(
+            [rows[index] for index in candidates], client=research_client, settings=config
+        )
+        cost += outcome.cost_usd
+        searches = outcome.web_searches
+        skipped = outcome.skipped
+        researched = outcome.skipped is None
+        if researched:
+            merged = list(rows)
+            for index, enriched in zip(candidates, outcome.rows, strict=True):
+                merged[index] = enriched
+            rows = tuple(merged)
+            researched_indices = set(candidates)
+        if outcome.model:
+            model = outcome.model
+    elif candidate_keys:
+        skipped = "every new row already has a URL, a location and a confident tag"
+    else:
+        skipped = "every row is already tracked"
+
+    now = _utcnow()
+    created: list[str] = []
+    duplicates: list[str] = []
+
+    for index, row in enumerate(rows):
         key = _key(row.company, row.role)
         if key in seen:
             duplicates.append(seen[key])
@@ -906,7 +961,9 @@ def ingest(
             stage=row.stage,
             notes=row.notes,
             applied_at=_applied_at(row, now=now),
-            source=source,
+            # Per row: only the rows the research pass was sent were looked up, and a
+            # complete row pasted beside them is still a row somebody typed.
+            source="paste+research" if index in researched_indices else "paste",
             confidence=row.confidence,
             model=model,
         )
@@ -935,6 +992,7 @@ def ingest(
         model=model,
         cost_usd=cost,
         web_searches=searches,
+        researched_rows=len(researched_indices),
     )
 
 
@@ -1259,6 +1317,118 @@ def stats(db: Session, *, user_id: str) -> dict[str, Any]:
             stage: sum(1 for row in rows if row.current_stage == stage) for stage in STAGES
         },
         "rejections": _rejections(db, rejected, total=total),
+        "time_in_stage": time_in_stage(rows, _events_for(db, rows), now=_utcnow()),
+    }
+
+
+def _events_for(db: Session, applications: Sequence[JobApplication]) -> list[JobApplicationEvent]:
+    """Every event of these applications, in one query."""
+    if not applications:
+        return []
+    return list(
+        db.exec(
+            select(JobApplicationEvent).where(
+                col(JobApplicationEvent.application_id).in_([row.id for row in applications])
+            )
+        ).all()
+    )
+
+
+# At most this many rows in `longest_waiting`, like the rejections tracker's `recent`.
+LONGEST_WAITING = 10
+
+
+def _mean(values: Sequence[int]) -> float | None:
+    return round(sum(values) / len(values), 1) if values else None
+
+
+def time_in_stage(
+    applications: Sequence[JobApplication],
+    events: Iterable[JobApplicationEvent],
+    *,
+    now: datetime,
+) -> dict[str, Any]:
+    """How long applications spend on each rung — read off the event log, pure.
+
+    The rejections tracker answered one slice of this, applying to the no. This is the
+    rest: every pair of consecutive events is a **stint** on the first one's rung, lasting
+    until the second. Two readings of it, because they answer different questions:
+
+    - **Left** — stints that ended. The median and mean days on a rung *before something
+      happened*, over every application that moved on from it, whichever way it went.
+    - **Waiting** — the open applications (`outcome == "open"`), each on its current rung
+      since its last event. How long things are sitting *now*.
+
+    **A stage a row arrived at is not a transition anybody timed.** A row imported, or typed
+    in, already at `final` gets an `applied` event and a `final` event written together
+    (`insert_application`), and the second one is dated when the row was made — not when
+    the onsite was. A stint that starts or ends on that event would report the gap between
+    applying and *making the row* as time spent on a rung, so it is left out of **left**.
+    It is recognisable exactly: a non-first event whose `occurred_at` is the row's own
+    `created_at`. The open row still counts as **waiting**, from when it was recorded there,
+    which is a lower bound and is described as one.
+
+    Terminal rungs are not reported: `rejected`, `withdrawn` and `ghosted` are ways a
+    pipeline ends (decision 2), and "time spent rejected" measures nothing. Days are whole,
+    as the rejections tracker's are, and a backdated event that lands before the one it
+    follows counts as zero rather than negative.
+    """
+    by_application: dict[str, list[JobApplicationEvent]] = {row.id: [] for row in applications}
+    for event in events:
+        if event.application_id in by_application:
+            by_application[event.application_id].append(event)
+
+    left: dict[str, list[int]] = {stage: [] for stage in LADDER}
+    waiting: dict[str, list[int]] = {stage: [] for stage in LADDER}
+    open_rows: list[tuple[int, datetime, JobApplication, str]] = []
+
+    for application in applications:
+        ordered = sorted(by_application[application.id], key=lambda event: event.sequence)
+        created = _aware(application.created_at)
+
+        def arrived(event: JobApplicationEvent, created: datetime = created) -> bool:
+            return event.sequence > 0 and _aware(event.occurred_at) == created
+
+        for current, following in pairwise(ordered):
+            if current.stage not in left or arrived(current) or arrived(following):
+                continue
+            days = (_aware(following.occurred_at) - _aware(current.occurred_at)).days
+            left[current.stage].append(max(0, days))
+
+        if application.outcome == "open" and ordered and ordered[-1].stage in waiting:
+            last = ordered[-1]
+            since = _aware(last.occurred_at)
+            days = max(0, (now - since).days)
+            waiting[last.stage].append(days)
+            open_rows.append((days, since, application, last.stage))
+
+    open_rows.sort(key=lambda entry: (entry[0], -entry[1].timestamp()), reverse=True)
+    return {
+        "stages": [
+            {
+                "stage": stage,
+                "label": STAGE_LABELS[stage],
+                "left": len(left[stage]),
+                "median_days": float(median(left[stage])) if left[stage] else None,
+                "mean_days": _mean(left[stage]),
+                "waiting": len(waiting[stage]),
+                "median_days_waiting": (float(median(waiting[stage])) if waiting[stage] else None),
+            }
+            for stage in LADDER
+        ],
+        "longest_waiting": [
+            {
+                "id": application.id,
+                "company": application.company,
+                "role": application.role,
+                "category": application.category,
+                "stage": stage,
+                "stage_label": STAGE_LABELS[stage],
+                "since": since,
+                "days": days,
+            }
+            for days, since, application, stage in open_rows[:LONGEST_WAITING]
+        ],
     }
 
 

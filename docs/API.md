@@ -267,11 +267,11 @@ design.
 
 | Method | Path | Purpose | State |
 |---|---|---|---|
-| `POST` | `/jobs/import` | Paste a list; parses, tags, and researches long ones | ✅ built |
+| `POST` | `/jobs/import` | Paste a list; parses, tags, and researches the new rows missing a URL, a location or a confident tag | ✅ built |
 | `POST` | `/jobs` | Add one application by hand — no model call | ✅ built |
 | `GET` | `/jobs` | List, filterable by `category`, `stage` and `outcome` | ✅ built |
 | `GET` | `/jobs/catalog` | The stage ladder and the category taxonomy | ✅ built |
-| `GET` | `/jobs/stats` | The funnel, conversion rates, category breakdown and the rejections tracker | ✅ built |
+| `GET` | `/jobs/stats` | The funnel, conversion rates, category breakdown, the rejections tracker and time-in-stage | ✅ built |
 | `POST` | `/jobs/recompute` | Replay every application's stage projection from its events | ✅ built |
 | `GET` | `/jobs/{id}` | The application and every stage it has been in | ✅ built |
 | `POST` | `/jobs/{id}/stage` | Move to a stage — appends an event, never overwrites | ✅ built |
@@ -286,9 +286,17 @@ somebody wants to see after pasting a list is the list.
 **The response says whether the research pass ran, and why not when it did not.**
 `researched` and `research_skipped` are reported rather than hidden, because "a model
 looked these up on the web" and "a model read what you typed" produce rows that look
-identical and are not equally trustworthy. The four reasons are: the list was at or below
+identical and are not equally trustworthy. ~~The four reasons are: the list was at or below
 `JOBS_RESEARCH_THRESHOLD`, the provider is Bedrock, the provider failed, or the pass did
-not finish inside its round cap.
+not finish inside its round cap.~~ **Since 2026-09-29 the trigger is per row, not the
+length of the list**: the pass is sent only the *new* rows (not already on the board, first
+occurrence in the paste) that are missing a `url`, a `location`, or a confident tag
+([JOBS](JOBS.md), decision 4). `researched_rows` says how many that was, and each row's
+`source` is `paste+research` only if it was one of them. The reasons it can be skipped:
+every new row was already complete, every row was already tracked, the pass is switched
+off (`JOBS_RESEARCH_MAX_SEARCHES=0`), the provider is Bedrock or has no key, the provider
+failed, or the pass did not finish inside its round cap. `JOBS_RESEARCH_THRESHOLD` no
+longer exists.
 
 **`POST /jobs/{id}/stage` appends.** A stage is an event, and `current_stage` /
 `furthest_stage` / `outcome` are a projection over the event log — the same relationship
@@ -303,6 +311,17 @@ was rejected after and the days from applying. All of it is read off `furthest_s
 the latest `rejected` event ([JOBS](JOBS.md), decision 5). One endpoint still: the tracker
 is another view of the same rows the funnel counts, and a second endpoint would be a second
 chance for the two to disagree.
+
+**`GET /jobs/stats` carries a `time_in_stage` block (2026-09-29).** `stages[]` — one row
+per rung of the ladder, terminal stages excluded — with `left` (stints on that rung that
+ended, by whatever event came next), `median_days` and `mean_days` over them (whole days;
+`null` when none has), `waiting` (open applications on that rung now) and
+`median_days_waiting`. Then `longest_waiting[]`: at most ten open applications, longest on
+their current rung first, each with `stage`, `stage_label`, `since` (its last event) and
+`days`. A stint that starts or ends on the event a row was *created* at — an import or a
+manual add already past `applied` — is not timed, because that event is dated when the row
+was made rather than when the stage was reached ([JOBS](JOBS.md), decision 6). Still one
+endpoint, for the reason above.
 
 **An unknown stage answers `400`, not `422`.** `stage` is a `Literal` in the request model,
 so the body fails schema validation before the route's own check is reached — which is the

@@ -98,7 +98,60 @@ const STATS = {
       },
     ],
   },
+  time_in_stage: {
+    stages: [
+      stint("applied", "Applied", 3, 4, 5, 1, 30),
+      stint("oa", "Online assessment", 2, 6, 7.5, 1, 21),
+      stint("phone_screen", "Phone screen"),
+      stint("round_1", "First round"),
+      stint("round_2", "Second round"),
+      stint("final", "Final / onsite", 0, null, null, 1, 3),
+      stint("offer", "Offer"),
+    ],
+    longest_waiting: [
+      {
+        id: "j3",
+        company: "Northwind Systems",
+        role: "Quantitative Trader",
+        category: "quant",
+        stage: "oa",
+        stage_label: "Online assessment",
+        since: "2026-08-01T00:00:00Z",
+        days: 21,
+      },
+      {
+        id: "j2",
+        company: "Cascade Analytics",
+        role: "Backend Engineer",
+        category: "swe",
+        stage: "final",
+        stage_label: "Final / onsite",
+        since: "2026-08-19T00:00:00Z",
+        days: 3,
+      },
+    ],
+  },
 };
+
+function stint(
+  stage: string,
+  label: string,
+  left = 0,
+  median: number | null = null,
+  mean: number | null = null,
+  waiting = 0,
+  waitingMedian: number | null = null,
+) {
+  return {
+    stage,
+    label,
+    left,
+    median_days: median,
+    mean_days: mean,
+    waiting,
+    median_days_waiting: waitingMedian,
+  };
+}
 
 function application(over: Record<string, unknown> = {}) {
   return {
@@ -202,10 +255,11 @@ describe("applications", () => {
         created: 2,
         duplicates: 0,
         researched: false,
-        research_skipped: "2 rows is at or below the threshold of 10",
+        research_skipped: "every new row already has a URL, a location and a confident tag",
         model: "claude-sonnet-5",
         cost_usd: 0.004,
         web_searches: 0,
+        researched_rows: 0,
         applications: [],
       },
     });
@@ -219,8 +273,73 @@ describe("applications", () => {
 
     expect(await screen.findByText("2 added")).toBeInTheDocument();
     expect(
-      await screen.findByText(/No web research: 2 rows is at or below the threshold of 10/),
+      await screen.findByText(
+        /No web research: every new row already has a URL, a location and a confident tag/,
+      ),
     ).toBeInTheDocument();
+  });
+
+  it("says how many rows an import researched", async () => {
+    // The trigger is per row now, so "researched" alone no longer says which of the
+    // pasted rows were looked up — the count does.
+    stubFetch({
+      ...BASE,
+      "/api/v1/jobs/import": {
+        created: 3,
+        duplicates: 0,
+        researched: true,
+        research_skipped: null,
+        model: "claude-opus-5",
+        cost_usd: 0.2,
+        web_searches: 6,
+        researched_rows: 2,
+        applications: [],
+      },
+    });
+    renderPage(<Jobs />);
+
+    await userEvent.type(await screen.findByLabelText("Applications to import"), "three rows");
+    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+
+    expect(await screen.findByText(/researched 2 rows · 6 searches/)).toBeInTheDocument();
+  });
+
+  it("reports time in stage for rows that moved on, and what is waiting longest", async () => {
+    stubFetch(BASE);
+    renderPage(<Jobs />);
+
+    const spent = await screen.findByLabelText("Time spent at each stage");
+    // Only rungs with something to say: applied, oa and final.
+    expect(within(spent).getAllByRole("listitem")).toHaveLength(3);
+    const oa = within(spent).getByText("Online assessment").closest("li")!;
+    expect(oa).toHaveTextContent("median 6d · mean 7.5d · 2 moved on · 1 waiting");
+
+    const waiting = screen.getByLabelText("Open applications waiting longest");
+    const rows = within(waiting).getAllByRole("listitem");
+    expect(rows[0]).toHaveTextContent("Northwind Systems");
+    expect(rows[0]).toHaveTextContent("online assessment · 21d since");
+  });
+
+  it("says nothing is timed yet on a board with no moves", async () => {
+    stubFetch({
+      ...BASE,
+      "/api/v1/jobs/stats": {
+        ...STATS,
+        time_in_stage: {
+          stages: STATS.time_in_stage.stages.map((row) => ({
+            ...row,
+            left: 0,
+            median_days: null,
+            mean_days: null,
+            waiting: 0,
+            median_days_waiting: null,
+          })),
+          longest_waiting: [],
+        },
+      },
+    });
+    renderPage(<Jobs />);
+    expect(await screen.findByText("Nothing timed yet")).toBeInTheDocument();
   });
 
   it("marks a row whose tag was proposed and nothing was proposed for", async () => {

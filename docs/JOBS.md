@@ -6,6 +6,12 @@
 > deliberately messy five-application paste parsed into five correct rows, and the research
 > pass completed six real web searches. 40 tests, 22 against live Postgres, 3 against a
 > live model.
+> **Changed 2026-09-29:** the research pass is triggered **per row, by what a row is
+> missing** — a URL, a location, a confident tag — instead of by the length of the list;
+> `JOBS_RESEARCH_THRESHOLD` is gone and `JOBS_RESEARCH_MAX_SEARCHES=0` is the off switch
+> (decision 4). And **time-in-stage** is reported: `GET /jobs/stats` grew a
+> `time_in_stage` block and the page a card (decision 6). Both verified against scripted
+> models and a test Postgres; **neither has run against a live model or real data**.
 > **Extended 2026-09-11:** an eighth ladder rung, `video_assessment` — the recorded
 > one-way video (HireVue and the like), which was previously only loggable as a phone
 > screen it is not.
@@ -36,9 +42,10 @@ You get applications into it two ways, and they meet in the same place:
 ```
   paste a list ──▶ parse + tag  (Sonnet 5, structured output)
                         │
-                        ├── ≤ threshold ─────────────────────┐
+                        ├── already tracked, or complete ────┐
                         │                                    │
-                        └── > threshold ──▶ research         │
+                        └── new, missing a URL, a location   │
+                            or a confident tag ──▶ research  │
                                        (Opus 5 + web search) │
                                             │                │
   type one in ──────────────────────────────┴────────────────┴──▶ job_applications
@@ -145,10 +152,42 @@ into rows and tags each one. It runs on every import. If it fails, the import fa
 is nothing to fall back to, and a `503` naming the provider is more useful than an import
 that silently added nothing.
 
-**The research pass** (`job_research` → Opus 5, web search, effort `high`) runs only when
-the parse returned **more than `JOBS_RESEARCH_THRESHOLD` rows** (default 10). It looks up
-the actual postings and fills in what a terse list left out: the real title, the location,
-the URL, and a better sub-category now that it knows what the role involves.
+**The research pass** (`job_research` → Opus 5, web search, effort `high`) ~~runs only when
+the parse returned **more than `JOBS_RESEARCH_THRESHOLD` rows** (default 10)~~ runs for
+**the rows that are missing what it fills in**, whatever the length of the list
+(2026-09-29). It looks up the actual postings and fills in what a terse list left out: the
+real title, the location, the URL, and a better sub-category now that it knows what the
+role involves.
+
+#### What triggers it: what a row is missing
+
+A row is sent to the research pass when it is **new** and `api.jobs.missing_for_research`
+finds anything:
+
+| Missing | Meaning |
+|---|---|
+| `url` | no posting link |
+| `location` | no location |
+| `subcategory` | a tag below the review gate (0.6), or `unclassified` |
+
+The role is one of the things the pass fills in, but a vague title cannot be told from a
+real one by looking, so it triggers nothing. Only the rows that qualify are sent — a
+complete row pasted beside them keeps exactly what was typed and is stored as `paste`,
+not `paste+research`, and the response's `researched_rows` says how many were sent.
+
+**New** means two things. A row already on the board is never sent: re-pasting a list is
+the normal way this is used, and researching a row only to discard it as a duplicate would
+pay for Opus and the searches and keep nothing — so the duplicate index is now read
+*before* the research pass, where it used to be read after. And a row named twice in one
+paste is sent once.
+
+It replaced a row count, and the row count was the wrong shape: it spent the most on the
+imports where it was least justified per row and never looked at a short list of bare
+company names at all — see the open question it closes, kept below. The ceilings did not
+change: `JOBS_RESEARCH_MAX_SEARCHES` as the tool's `max_uses`, the budgets `api.llm` checks
+before every call, and the round cap. With the threshold gone,
+**`JOBS_RESEARCH_MAX_SEARCHES=0` is the off switch** — `research_available` refuses before
+any call, so nothing is billed.
 
 The research pass **can never cost the import.** Every failure path returns the rows it was
 given — a provider that is down, a model that never calls the tool, a loop that runs out of
@@ -214,8 +253,41 @@ ladder (decision 2), and drawing it as a rung would put a way a pipeline *ends* 
 places in it. And it is **not a reason field** — nothing asks why. Most rejections arrive
 with no reason, and a field that is usually empty invites the person to invent one.
 
-The days-to-rejection number is the first piece of time-in-stage this tracker reports; the
-rest is still the open question below.
+The days-to-rejection number was the first piece of time-in-stage this tracker reported;
+~~the rest is still the open question below~~ the rest is decision 6 (2026-09-29).
+
+### 6. Time in stage is a stint from one event to the next
+
+The events have always carried `occurred_at`, so *how long between the OA and hearing back*
+was answerable; nothing answered it but the rejections tracker's one slice. `GET
+/jobs/stats` now carries a `time_in_stage` block, computed by `api.jobs.time_in_stage` — a
+pure function over the applications and their events, one extra query.
+
+Every pair of consecutive events (by `sequence`) is a **stint** on the first event's rung,
+lasting until the second. Two readings, because they answer different questions:
+
+| Field | What it says |
+|---|---|
+| `stages[].left`, `median_days`, `mean_days` | Stints on that rung that **ended** — by *any* next event, a move up, a rejection, a withdrawal. How long a company usually takes at that step before something happens |
+| `stages[].waiting`, `median_days_waiting` | **Open** applications (`outcome == "open"`) sitting on that rung now, since their last event |
+| `longest_waiting[]` | The ten open applications longest on their current rung: company, role, rung, `since`, `days` |
+
+Only ladder rungs are reported. Time spent `rejected` or `ghosted` measures nothing — they
+are ends, not places (decision 2). Days are whole, as the rejections tracker's are, and a
+backdated event that lands before the one it follows counts as zero rather than negative.
+
+**A stage a row arrived at is not a transition anybody timed.** A row imported, or typed
+in, already at `final` gets its `applied` event and its `final` event written together
+(decision 2), and the `final` one is dated *when the row was made* — not when the onsite
+was. Timed naively, that row reports the weeks between applying and pasting the list as
+time spent at `applied`, and a median over a season of imports would be mostly that. So a
+stint that starts or ends on such an event is left out of `left`. It is recognisable
+exactly, with no flag: a non-first event whose `occurred_at` is the row's own `created_at`,
+which only `insert_application` writes. The row still counts as **waiting**, from when it
+was recorded there — a lower bound, which is why the page says "since" rather than "for".
+
+The rejections tracker's `median_days_to_rejection` is deliberately left as it was: it
+measures applying-to-the-no across the whole pipeline, which is not any single stint.
 
 ## What the first live call found
 
@@ -277,7 +349,9 @@ The second number sharpens the open question below. **Six searches for two rows*
 three per row, and the research pass is only triggered by lists of *more* than ten — so the
 rule as written spends the most on the imports where it is least justified per row.
 `JOBS_RESEARCH_MAX_SEARCHES` is what actually bounds it, and at the default of 30 a large
-import is capped around $0.30 of search plus Opus tokens.
+import is capped around $0.30 of search plus Opus tokens. **Acted on 2026-09-29**: the
+trigger is now what each row is missing (decision 4), so this two-row case is exactly the
+one that gets researched, and a long list of complete rows is not.
 
 The prompts held up. The bare company name in the paste came back at **confidence 0.20** and
 landed in review rather than being guessed at, and the research pass wrote "Could not
@@ -345,17 +419,23 @@ the one way this feature could leak something that matters.
 
 ## Open questions
 
-- **The threshold is a row count, and cost runs the other way — now measured.** Two thin
+- ~~**The threshold is a row count, and cost runs the other way — now measured.** Two thin
   rows cost **$0.2266 and six searches**, about three searches per row. Above ten rows the
   import gets *more* expensive in total, and the trigger is length rather than need. The
   ceiling bounds it — 30 searches is about $0.30 plus Opus tokens — but the rule that would
   actually fit is "research the rows missing a title or a URL", whatever the length of the
   list. That is a per-row decision the current design does not make. It is the first thing
-  to change here.
+  to change here.~~ **Closed 2026-09-29** — decision 4. The rule built is "the new rows
+  missing a URL, a location or a confident tag"; *a title* dropped out because every row
+  has one, and a vague one cannot be detected. Still open inside it: whether `location`
+  alone is worth a search, and what the new trigger costs on a real paste — nothing has
+  measured it live.
 - **No gold set.** The same gap the practice log has: nothing hand-labelled to calibrate
   either the sub-category tagging or the confidence numbers against, so 0.6 is a placeholder
   like every other constant here.
-- **Time-in-stage is recorded but mostly not reported.** The events carry `occurred_at`,
+- ~~**Time-in-stage is recorded but mostly not reported.** The events carry `occurred_at`,
   so "how long between the OA and hearing back" is answerable. The rejections tracker
   answers one slice of it — applying to the no (2026-09-09) — and nothing answers the rest
-  yet. It is probably the most useful thing this data can say that the funnel does not.
+  yet. It is probably the most useful thing this data can say that the funnel does not.~~
+  **Closed 2026-09-29** — decision 6. What it cannot see: when a stage was reached before
+  the row existed, so a season imported mid-pipeline reports little until rows move.

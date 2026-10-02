@@ -8,6 +8,7 @@ import { Funnel } from "@/components/jobs/funnel";
 import { ImportForm, ManualForm } from "@/components/jobs/import-form";
 import { Pipeline } from "@/components/jobs/pipeline";
 import { Rejections } from "@/components/jobs/rejections";
+import { TimeInStage } from "@/components/jobs/time-in-stage";
 import {
   Card,
   CardBody,
@@ -46,6 +47,9 @@ const OUTCOME_FILTERS: { value: JobOutcome | undefined; label: string }[] = [
  * ended in a no, which rung was it after, and how long did it take. It gets its
  * own card rather than a bar on the funnel because `rejected` is off the ladder
  * (docs/JOBS.md) — it is a way a pipeline ends, not a place in it.
+ *
+ * Time in stage generalises the tracker's one duration: how long each rung took
+ * before the next event, and which open applications have sat longest where they are.
  */
 export default function Jobs() {
   const queryClient = useQueryClient();
@@ -173,6 +177,20 @@ export default function Jobs() {
             <Skeleton className="h-40" />
           ) : (
             <Rejections rejections={summary.rejections} />
+          )}
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Time in stage"
+          hint="How long each stage took before the next thing happened, and what has been waiting longest — read off the stage history."
+        />
+        <CardBody>
+          {stats.isLoading || !summary ? (
+            <Skeleton className="h-40" />
+          ) : (
+            <TimeInStage report={summary.time_in_stage} />
           )}
         </CardBody>
       </Card>
