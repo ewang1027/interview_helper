@@ -7756,6 +7756,17 @@ Two docs this session's agents found stale and left alone, now corrected:
 - `make check` clean; `make doc-links` and `make doc-check` clean after the heading
   rename.
 
+- **CI green on `5116ed3`** (run 36953028585), all three jobs. That run was also the first on
+  `main` for the three branches merged before it:
+  - the audit step reported no known vulnerabilities;
+  - DB tests: 226 passed, 1 skipped, which includes the jobs branch's new tests;
+  - sandbox tests: 31 passed, which includes the slope assertion on the quadratic impostor
+    at five sizes, the case the probe wave could only infer for CI's runners;
+  - end-to-end session: passed;
+  - **the browser job's first run on `main`**: 60 passed, 2 skipped. The 2 are the specs
+    that need a logged practice problem, which takes a model call.
+
 ### Not verified
 
-- CI's verdict is read after the push, not before. It is recorded below when it lands.
+- The time-in-stage card has only been through the browser gate in CI, against a fresh
+  database with no application rows. It has not been seen rendering real data.
