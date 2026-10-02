@@ -127,6 +127,16 @@ structural rather than editorial: duplicate item id, duplicate concept id, an ar
 setting `archetype_id`, an instance with no grading contract, and `answer` grading with
 neither `exact` nor `numeric`.
 
+The complexity probe has its own error-level checks: a `complexity_target` with no
+`complexity_probe`, a target string the probe has no band for, a generator that does not
+define `make_input`, sizes that do not ascend or are not distinct, and — since 2026-09-29 —
+**fewer than five sizes** (`MIN_CORPUS_PROBE_SIZES`). The schema's `minItems` stays 3,
+because three is what the slope fit needs and what `POST /probe` accepts; five is the
+corpus's own floor, kept so the next item cannot quietly give back the noise-floor margin
+the fifth size bought. It is a count, not a measurement: whether an item's largest run
+actually clears the floor is read off `make verify-solutions`, which prints each
+reference's largest sample.
+
 Two checks are **warnings** rather than errors, because each is occasionally the right
 editorial choice and neither corrupts anything on its own:
 
@@ -205,7 +215,12 @@ For each instance:
       still land **three sizes** inside the probe's ~20s budget on a machine several
       times slower than yours — CI's runners measured ~2–3M simple loop iterations/s, and
       oversized sweeps come back `inconclusive` there (measured: [4000…32000] escaped the
-      quadratic impostor on CI that [1000…8000] catches)
+      quadratic impostor on CI that [1000…8000] catches). **Every coding item ships the
+      same five sizes, `[1000, 2000, 4000, 8000, 16000]`, and the validator refuses fewer
+      than five** (2026-09-29): at four, the thinnest reference's largest sample was
+      0.342 ms, 1.7× the floor; the fifth size puts it at 0.665 ms, 3.3×. The quadratic
+      impostor stays caught because the driver refuses to start a size it cannot afford
+      and a sweep cut short is judged slower than its target
 - [ ] Coding: **the `complexity_target` string decides how much protection the probe gives
       you.** `O(n log n)` lands in the linearithmic band, whose ceiling plus margin is 2.10
       — wide on purpose, so a genuine n-log-n solution is never failed, and wide enough

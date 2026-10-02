@@ -7550,3 +7550,90 @@ workflow, not in a spec, and runs against a throwaway database.
 - The first local `make test-browser` attempt after the rebuild hung until a 10-minute
   timeout with no output captured; the immediate re-run took 11s and passed. The cause
   was not found.
+
+---
+
+## Wave — The probe's fifth size, taken for every coding item at once · 2026-09-29
+
+Asked for directly: the Phase 1 wave of 2026-08-22 closed on "the coding probe's
+noise-floor margin is thin corpus-wide; the fifth probe size that would fix it is a
+decision to take across every coding item at once, not per item." Take it.
+
+### The margin, re-measured before touching anything
+
+The probe reports `inconclusive` when its largest sample is under 0.2 ms, because below
+that interpreter noise is judging instead of the algorithm. So the margin is the largest
+sample of each **reference** solution over that floor. Measured the way the 2026-08-22
+entry did — the real `run_probe`, real containers, each item's own generator — three
+trials per item, taking the minimum:
+
+| item | largest, `[1000…8000]` | × floor | largest, `[1000…16000]` | × floor |
+|---|---|---|---|---|
+| `i.code.0001` | 0.495 ms | 2.48 | 0.999 ms | 4.99 |
+| `i.code.0002` | 0.405 ms | 2.03 | 0.831 ms | 4.15 |
+| `i.code.0003` | 3.757 ms | 18.8 | 7.400 ms | 37.0 |
+| `i.code.0004` | **0.342 ms** | **1.71** | **0.665 ms** | **3.33** |
+| `i.code.0005` | 0.483 ms | 2.41 | 1.014 ms | 5.07 |
+| `i.code.0006` | 2.348 ms | 11.7 | 5.114 ms | 25.6 |
+| `i.code.0007` | 0.350 ms | 1.75 | 0.732 ms | 3.66 |
+| `i.code.0008` | 0.446 ms | 2.23 | 0.988 ms | 4.94 |
+
+Worst case before: **1.71×** — a machine ~1.7× faster than this sandbox would have
+stopped judging `i.code.0004`'s correct submissions at all. After: **3.33×**. Every
+reference slope stayed linear (1.00–1.10 across all 24 trials at five sizes, 0.93–1.08 at four).
+
+### What changed
+
+- **Every coding item's `complexity_probe.sizes` is `[1000, 2000, 4000, 8000, 16000]`**
+  — all eight at once, in one edit that asserted each still held the old list first.
+  Sizes stay per item in the corpus JSON rather than becoming a global constant: an item
+  whose per-element cost is high may one day need a different range, and the executor's
+  `/probe` takes sizes from its caller either way.
+- **The validator refuses a corpus probe with fewer than five sizes**
+  (`MIN_CORPUS_PROBE_SIZES`). The schema's `minItems` stays 3 — that is what the slope
+  fit needs and what `POST /probe` accepts; five is the corpus's own floor. It is a count,
+  not a measurement, and says so ([CORPUS](CORPUS.md#validator-checks)). A new
+  parametrised case (`four sizes`) proves it catches; the descending and identical cases
+  were widened to five entries so each still fails for its own reason and not the count.
+- **A truncated sweep now reports the slope it measured.** This was not cosmetic. The
+  driver refuses to start a size it projects past the ~20 s budget, and on a slow runner
+  a quadratic impostor affords 1000…8000 and is refused 16000. `judge` returned
+  `slower_than_target` for a truncated sweep with `slope=None` — right verdict, but
+  `test_the_probe_costs_the_quadratic_submission_a_quarter_of_its_score` and the e2e
+  gate both assert the slope is above 1.65. The 2026-08-21 entry put the impostor's
+  n=16000 at ~45–60 s on CI, so on CI the fifth size would have turned both red. With
+  three or more points the fit is now kept; the verdict is unchanged.
+- **`make verify-solutions` prints each reference's largest sample**, so the margin is
+  read off every run instead of re-measured by hand.
+- The schema's `sizes` description, [GRADING](GRADING.md#coding),
+  [CORPUS](CORPUS.md) and the `/probe` row of [SECURITY](SECURITY.md) ("four sizes")
+  say five.
+
+### Verified
+
+- **The impostor is still caught, both ways the sweep can end.** `i.code.0002`'s
+  quadratic impostor through the real probe: four sizes, slope 2.07, 10.5 s wall; five
+  sizes, **slope 2.06, 16.7 s wall**, `slower_than_target`. And with the driver's budget
+  cut to 3 s to stand in for a slow runner, the sweep truncated after 8000 and came back
+  `slower_than_target` **with slope 2.07** — before this change that path reported none.
+- `make verify-solutions`: **8/8** references pass their tests, the stub check, and
+  measure `matches` at slopes 1.02–1.10; largest samples 0.660–7.549 ms.
+- `make test-sandbox`: **31 passed** (111 s).
+- `make corpus-validate`: 0 errors, 0 warnings. Executor and corpus unit tests: 56 passed,
+  including the new truncated-slope test and the four-size refusal.
+- `make check`: lint, typecheck, **407 passed**, corpus valid, doc links 0 broken across
+  19 files, doc consistency 0 problems across 17 docs, secret scan clean. Its web checks
+  were **skipped** (no `apps/web/node_modules` in this worktree); nothing under `apps/web`
+  changed.
+
+### Not verified
+
+- **CI's own speed.** That the impostor truncates at 16000 on GitHub's runners is
+  inferred from the 2026-08-21 timings, not observed; the slope fix makes the tests hold
+  either way, and the CI run on this branch is the check.
+- **The two 2026-08-22 impostors for `i.code.0007` and `i.code.0008`** were not re-run at
+  five sizes; they are not in the repository. Only `i.code.0002`'s was.
+- `make test-e2e` was not run here (it needs the test database, owned elsewhere); it
+  carries the same slope assertion the sandbox test does.
+- `test-sandbox` took 111 s; no same-machine baseline at four sizes was taken, so how
+  much of that the fifth size added is unmeasured.
