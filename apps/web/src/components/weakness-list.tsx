@@ -109,7 +109,11 @@ function Row({
       <div className="flex items-baseline gap-2">
         <span className="tabular text-ink-muted w-5 shrink-0 text-xs">{rank}</span>
         <span className="min-w-0 flex-1">
-          <Link href={`/concepts/${concept.concept_id}`} className="text-ink text-sm hover:underline">
+          <Link
+            href={`/concepts/${concept.concept_id}`}
+            prefetch={false}
+            className="text-ink text-sm hover:underline"
+          >
             {concept.name}
           </Link>
           <span className="text-ink-muted ml-2 text-xs">

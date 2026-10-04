@@ -254,8 +254,8 @@ button showing its own cost, and an end-session control.
 which would mean a self-hosted deployment with no egress has a workspace that never
 finishes loading, and a version chosen by the loader package rather than by this
 lockfile. `scripts/vendor-monaco.mjs` copies it out of `node_modules` into
-`public/monaco/vs` at build time instead; the tree is gitignored, because it is a build
-artifact of a pinned dependency.
+`public/monaco/<version>/vs` at build time instead; the tree is gitignored, because it is a
+build artifact of a pinned dependency.
 
 **It copies 12.93 MB of the 23.29 MB `min/vs` weighs** (2026-09-21). `min/vs` is Monaco's
 everything-build, and this editor only ever holds Python or C++, so the TypeScript, CSS,
@@ -270,6 +270,21 @@ revisiting.
 This is image size, not page load: nothing removed was ever fetched by a browser running
 this app. The editor's critical path is 9 files and 3.14 MB, served and verified over
 HTTP against a production build.
+
+**It is cached for a year, and the version in the path is what makes that safe**
+(2026-10-03). Next serves `public/` with `max-age=0`, so every coding session sent 18
+conditional requests for Monaco and got 18 `304`s back. `next.config.ts` now sends
+`public, max-age=31536000, immutable` for `/monaco/*`. Most of Monaco's files are
+content-hashed, but `loader.js` and `editor.js` are not, so a year-long cache on a fixed
+path would serve a stale loader after an upgrade. The vendor script therefore writes to
+`public/monaco/<version>/vs`, `next.config.ts` reads the same version and inlines it as
+`MONACO_VERSION`, and `coding.tsx` points the loader there. An upgrade gets a new URL.
+
+**Per-concept links do not prefetch** (2026-10-03). The mastery heatmap and the weakness
+list render one `<Link>` per concept, and Next prefetches every link in the viewport.
+`/concepts/[id]` is dynamic, so each prefetch was a server render: `/` fired 137 of them
+per load and `/concepts` fired 163, queued ahead of the page's own API calls. Those links
+carry `prefetch={false}` and the route is fetched on click.
 
 **Design mode uses a structured canvas, not freehand drawing.** A freehand diagram is far
 harder to grade reliably, and a grader that cannot read the artifact produces vibes.

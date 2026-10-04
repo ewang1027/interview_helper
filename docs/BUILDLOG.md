@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-10-01
+## Where things stand — 2026-10-03
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -7770,3 +7770,52 @@ Two docs this session's agents found stale and left alone, now corrected:
 
 - The time-in-stage card has only been through the browser gate in CI, against a fresh
   database with no application rows. It has not been seen rendering real data.
+
+## Wave — Monaco cached for a year, and no prefetch storm on the concept links · 2026-10-03
+
+Two items from a read-only performance review of the running stack, taken because they
+were the largest measured costs. Server time was not one of them: every page and API call
+answered in 1–25 ms on a warm cache.
+
+**Monaco is served `immutable` from a versioned path** ([WEB](WEB.md#monaco-is-vendored-and-only-the-part-this-editor-uses)).
+Before this, `public/` went out with `max-age=0`, so every visit to a session page
+revalidated all 18 Monaco files. `loader.js` and `editor.js` have no content hash, so the
+cache header could not go on alone. `scripts/vendor-monaco.mjs` now writes to
+`public/monaco/<version>/vs`, `next.config.ts` reads the same version and inlines it as
+`MONACO_VERSION` for `coding.tsx`, and `headers()` sets
+`public, max-age=31536000, immutable` on `/monaco/*`. The vendor stamp now includes the
+layout, so a tree vendored under the old `public/monaco/vs` is replaced rather than left
+in place.
+
+**`prefetch={false}` on the per-concept links** in `mastery-heatmap.tsx` (cell and table)
+and `weakness-list.tsx`. Each was prefetching a dynamic `/concepts/[id]` render.
+
+### Verified
+
+- eslint and `tsc --noEmit` clean, **106 component tests** pass, and `pnpm build`
+  succeeds. The built chunk contains `"/monaco/".concat("0.56.0","/vs")`.
+- Against `make up-stack` rebuilt from this tree:
+  - `/monaco/0.56.0/vs/loader.js` and `editor/editor.main.css` return
+    `Cache-Control: public, max-age=31536000, immutable`, and the old `/monaco/vs/` path
+    returns 404.
+  - Headless Chrome, measured the same way as the review:
+    - **`/`: 164 requests → 34** per cold load; `/concepts`: 185 → 29.
+    - On a warm load of a session page, all 18 Monaco files come from the browser cache:
+      **0 conditional requests, previously 18 × `304`**.
+    - The 7–25 prefetches still left per page are the nav and other low-count links.
+      They were left alone.
+
+- `make check` clean, `make doc-links` and `make doc-check` clean, and
+  **`make test-browser`: 62 passed** against the rebuilt stack. That includes the live
+  session view, which loads the editor from the new path.
+
+### Not verified
+
+- An actual Monaco version bump. The path moving with the version follows from the code,
+  but no upgrade has been run through it.
+- Found in passing and left alone, because it was not part of this change: `min/vs` in
+  monaco 0.56 also carries the language workers under `vs/language/*/` (`ts.worker.js`
+  6.7 MB, 8.4 MB in all), and `SKIP` matches only the `assets/*` copies. The vendored tree
+  is 16 MB, not the 12.93 MB [WEB](WEB.md#monaco-is-vendored-and-only-the-part-this-editor-uses)
+  records. Image size only; no browser requests them.
+

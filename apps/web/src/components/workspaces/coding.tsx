@@ -16,12 +16,14 @@ import type { WorkspaceProps } from "./types";
  * loading, every candidate's session depends on a third party staying up, and
  * the version is whatever the loader package pins rather than what this
  * lockfile does. `scripts/vendor-monaco.mjs` copies the bundle into
- * `public/monaco/vs` at build time and this points at it.
+ * `public/monaco/<version>/vs` at build time and this points at it — the version comes
+ * from `next.config.ts`, which inlines it, and the path carries it so the files can be
+ * cached `immutable` (a Monaco upgrade is a new URL, not a stale cache).
  *
  * Configured at module scope rather than in an effect: `loader.config` must run
  * before the first `<Editor>` mounts, and an effect runs after.
  */
-loader.config({ paths: { vs: "/monaco/vs" } });
+loader.config({ paths: { vs: `/monaco/${process.env.MONACO_VERSION}/vs` } });
 
 /**
  * Hoisted, and that matters more than it looks.

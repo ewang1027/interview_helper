@@ -1,5 +1,5 @@
 /**
- * Copy Monaco out of node_modules into `public/monaco/vs`.
+ * Copy Monaco out of node_modules into `public/monaco/<version>/vs`.
  *
  * `@monaco-editor/react` loads the editor at runtime from
  * `https://cdn.jsdelivr.net/npm/monaco-editor@…/min/vs` unless told otherwise — so a
@@ -13,10 +13,15 @@
  * **Not all of it** — see `SKIP`. `min/vs` is Monaco's everything-build and this editor
  * only ever holds Python and C++.
  *
+ * **Under a versioned path** — `public/monaco/<version>/vs`, which `next.config.ts` serves
+ * `immutable` for a year. Two of the files Monaco requests (`loader.js`, `editor.js`) carry
+ * no content hash, so caching them that long is only safe because a Monaco upgrade moves
+ * them to a new URL. The same file reads the version to tell `coding.tsx` where to look.
+ *
  * Idempotent — a stamp file records what was copied, so `predev` on an unchanged tree
- * costs one `readFile` rather than the whole tree of I/O. The stamp carries `SKIP` as well
- * as the version, so editing the list below re-vendors rather than silently leaving a
- * tree that no longer matches it.
+ * costs one `readFile` rather than the whole tree of I/O. The stamp carries `SKIP` and the
+ * directory layout as well as the version, so editing either re-vendors rather than
+ * silently leaving a tree that no longer matches it.
  */
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
@@ -60,17 +65,17 @@ const root = join(here, "..");
 const pkgDir = join(root, "node_modules", "monaco-editor");
 const version = JSON.parse(await readFile(join(pkgDir, "package.json"), "utf8")).version;
 const source = join(pkgDir, "min", "vs");
-const target = join(root, "public", "monaco", "vs");
+const target = join(root, "public", "monaco", version, "vs");
 const stamp = join(root, "public", "monaco", ".version");
 
-const want = `${version} skip:${SKIP.join(",")}`;
+const want = `${version} layout:versioned skip:${SKIP.join(",")}`;
 const current = await readFile(stamp, "utf8").catch(() => null);
 if (current === want) {
   console.log(`monaco ${version} already vendored`);
   process.exit(0);
 }
 
-console.log(`vendoring monaco ${version} -> public/monaco/vs`);
+console.log(`vendoring monaco ${version} -> public/monaco/${version}/vs`);
 await rm(join(root, "public", "monaco"), { recursive: true, force: true });
 await mkdir(dirname(target), { recursive: true });
 await cp(source, target, {

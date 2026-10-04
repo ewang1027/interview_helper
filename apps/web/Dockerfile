@@ -19,7 +19,7 @@ RUN --mount=type=cache,target=/pnpm-store \
 
 COPY apps/web/ ./
 
-# `prebuild` vendors Monaco into `public/monaco` — the editor is served from this app
+# `prebuild` vendors Monaco into `public/monaco/<version>` — the editor is served from this app
 # rather than a CDN, so the image has to contain it (docs/WEB.md). Runs as part of
 # `pnpm build`; named here because it is the whole of `public/`, ~13MB. It was ~23MB
 # until 2026-09-21, when `scripts/vendor-monaco.mjs` stopped copying the language

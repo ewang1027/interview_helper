@@ -106,6 +106,12 @@ function isOverdue(due: string | null): boolean {
   return due !== null && new Date(due).getTime() <= Date.now();
 }
 
+/**
+ * Every concept link here and in the table below opts out of prefetch. There is one per
+ * concept, `/concepts/[id]` is dynamic, and Next prefetches every link in the viewport —
+ * so `/` and `/concepts` fired 137–163 server renders per load, queued ahead of the
+ * page's own API calls. Fetched on click instead.
+ */
 function Cell({ concept }: { concept: HeatmapConcept }) {
   const overdue = isOverdue(concept.due_at);
   const unmeasured = concept.normalized === null;
@@ -114,6 +120,7 @@ function Cell({ concept }: { concept: HeatmapConcept }) {
   return (
     <Link
       href={`/concepts/${concept.concept_id}`}
+      prefetch={false}
       title={[
         concept.name,
         unmeasured ? "never measured" : `ability ${elo(concept.ability)}`,
@@ -273,7 +280,11 @@ function Table({ concepts }: { concepts: HeatmapConcept[] }) {
           {rows.map((concept) => (
             <tr key={concept.concept_id} className="border-hairline border-t">
               <td className="px-2 py-1.5">
-                <Link href={`/concepts/${concept.concept_id}`} className="hover:underline">
+                <Link
+                  href={`/concepts/${concept.concept_id}`}
+                  prefetch={false}
+                  className="hover:underline"
+                >
                   {concept.name}
                 </Link>
               </td>

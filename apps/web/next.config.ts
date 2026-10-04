@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { NextConfig } from "next";
 
 /**
@@ -18,11 +20,38 @@ import type { NextConfig } from "next";
  */
 const API_ORIGIN = process.env.API_ORIGIN ?? "http://localhost:8000";
 
+/**
+ * The Monaco version `scripts/vendor-monaco.mjs` vendors under, read the same way it
+ * reads it — by path, because monaco-editor's `exports` map does not expose its
+ * package.json. Inlined into the client as `MONACO_VERSION` so `coding.tsx` can point
+ * the loader at `/monaco/<version>/vs`.
+ */
+const MONACO_VERSION: string = JSON.parse(
+  readFileSync(join(process.cwd(), "node_modules", "monaco-editor", "package.json"), "utf8"),
+).version;
+
 const nextConfig: NextConfig = {
   // Emits `.next/standalone` — a self-contained server with only the dependencies it
   // actually imports, so the runtime image carries neither `node_modules` nor the
   // toolchain. docs/INFRA.md step 1.
   output: "standalone",
+
+  env: { MONACO_VERSION },
+
+  /**
+   * Monaco cached for a year, not revalidated on every visit. Next serves `public/` with
+   * `max-age=0`, which cost every coding session 18 conditional requests for files that
+   * cannot change. `immutable` is safe only because the path carries the version:
+   * `loader.js` and `editor.js` have no content hash, so an upgrade has to be a new URL.
+   */
+  async headers() {
+    return [
+      {
+        source: "/monaco/:path*",
+        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+      },
+    ];
+  },
 
   async rewrites() {
     return [
