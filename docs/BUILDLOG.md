@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-10-03
+## Where things stand — 2026-10-04
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -7818,4 +7818,47 @@ and `weakness-list.tsx`. Each was prefetching a dynamic `/concepts/[id]` render.
   6.7 MB, 8.4 MB in all), and `SKIP` matches only the `assets/*` copies. The vendored tree
   is 16 MB, not the 12.93 MB [WEB](WEB.md#monaco-is-vendored-and-only-the-part-this-editor-uses)
   records. Image size only; no browser requests them.
+
+## Wave — The API compresses its own responses, and the stream is carved out by path · 2026-10-04
+
+Finding 12 of the same performance review. In production the ALB routes `/api` straight
+to FastAPI and does not compress, and FastAPI mounted no middleware, so every JSON response
+in the deployed topology went out raw. Caddy had been covering for that locally since
+2026-09-21.
+
+**`GZipMiddleware(minimum_size=1024)`, wrapped so the event stream skips it**
+([INFRA](INFRA.md#the-same-carve-out-in-the-api-2026-10-04), [API](API.md#conventions)).
+Reading Starlette 1.6's source before adding it settled the design. The middleware
+excludes `text/event-stream` from compression, but holds the response's header block until
+the first body chunk either way. That is the 15-second "connecting" failure the Caddyfile
+already records. So `/api/v1/sessions/{id}/events` is matched out by path, before anything
+wraps it, the same fix Caddy uses.
+
+### Verified
+
+- `make check` clean: ruff, mypy strict, **415 passed**, the corpus, and 106 component
+  tests.
+- Against `make up-stack` rebuilt from this tree:
+  - `GET /api/v1/concepts` is gzipped by the API itself, measured from inside the
+    container: 81,263 B → **19,451 B**.
+    - `GET /api/v1/jobs`: 97,183 B → **12,216 B** through the front door.
+  - Both carry `Vary: Accept-Encoding`.
+  - The event stream with `Accept-Encoding: gzip` gets **headers at 0.009s**, no
+    `Content-Encoding`, and **0 bytes in 4s**. So nothing came before the headers, and
+    they were not held for a first chunk.
+
+### Not verified
+
+- **CI is red on main, and this wave does not fix it.** `pnpm audit --audit-level high`
+  fails on GHSA-vfj7-8cjw-p6xm:
+  - `braces` ≤3.0.3, stack exhaustion on deeply nested patterns, published 2026-09-18.
+  - Dev only: reached through `eslint-config-next` → `@next/eslint-plugin-next` →
+    `fast-glob` → `micromatch`.
+  - **There is no patched release**: 3.0.3 is the latest `braces`, and every parent up to
+    `eslint-config-next` 16.3.8 still pins `fast-glob` 3.3.x. Neither a lockfile refresh
+    nor an override can reach a fix, unlike the 2026-09-30 streak.
+  - Ignoring the advisory in `pnpm-workspace.yaml` would clear the gate, but it is a
+    policy call about the audit gate, and it is left to the owner.
+  - [SECURITY](SECURITY.md) already names this case ("possibly with no fix available") as
+    the reason the gate stops at `high`.
 

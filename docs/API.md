@@ -682,5 +682,11 @@ corrupts mastery.
   promise). The header is optional; without one, behaviour is exactly what it was.
 - **Pagination** is cursor-based (`?cursor=&limit=`). Offsets drift when rows are inserted
   under you.
+- **Compression** (**built 2026-10-04**): responses of 1 KB or more are gzipped when the
+  request offers `Accept-Encoding: gzip`, so the ALB in production needs no compression of
+  its own. The event stream is the exception. It is excluded by path, not by content type,
+  because Starlette's `GZipMiddleware` holds a response's headers until its first body
+  chunk even for types it leaves uncompressed
+  ([INFRA](INFRA.md#the-same-carve-out-in-the-api-2026-10-04)).
 - **Versioning:** the path carries `v1`. Additive changes ship in place; breaking ones get
   `v2`.

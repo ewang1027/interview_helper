@@ -189,6 +189,19 @@ on the headers, so a live session would show "connecting" for fifteen seconds. T
 in Phase 6 owes the same carve-out**, and an ALB's own compression has no response-header
 matcher at all — so the exclusion there has to be the target group's, or the API's.
 
+#### The same carve-out, in the API (2026-10-04)
+
+**It is the API's.** "Mounts no middleware" above stopped being true on 2026-10-04: FastAPI
+now gzips its own responses of 1 KB or more, so the ALB needs no compression and owes no
+carve-out. The event stream is skipped **by path** in `api/main.py`, for the reason Caddy's
+is. Starlette's `GZipMiddleware` excludes `text/event-stream` from compression, but it
+still holds back `http.response.start` until the first body chunk, to decide how to rewrite
+the headers. That is the same header hold, one layer down. Measured on the rebuilt stack,
+a stream that sent no bytes in 4s delivered its headers at **0.009s**, through Caddy and
+directly against the container, with no `Content-Encoding`. `GET /concepts` comes back
+gzipped from the API itself, 81,263 B → 19,451 B. Caddy passes through a response that
+arrives already encoded, so locally the front door now compresses only what Next does not.
+
 ### One daemon per machine
 
 The fifth problem arrived four days after the other four, and it is the project-name

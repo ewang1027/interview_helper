@@ -53,6 +53,10 @@
 	#     /api/v1/jobs                         98,321 B -> 14,176 B   (-86%)
 	#     /api/v1/practice/problems?limit=100  25,394 B ->  3,986 B   (-84%)
 	#
+	# (**2026-10-04:** FastAPI now gzips its own responses, with the event stream matched out
+	# by path for the reason below — docs/INFRA.md. Caddy passes through what arrives
+	# already encoded, so this block now only reaches responses the API leaves alone.)
+	#
 	# That is ~200 KB of JSON on a dashboard-plus-jobs visit, and it is the deployed
 	# topology this mirrors — an ALB and a browser that is not on this machine — where it
 	# is felt, not `localhost`.
