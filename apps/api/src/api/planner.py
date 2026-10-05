@@ -103,6 +103,7 @@ def _prerequisite_substitution(
     entry: ConceptPriority,
     by_id: dict[str, ConceptPriority],
     serveable: set[str],
+    prereqs_by_concept: dict[str, list[str]] | None = None,
 ) -> tuple[str, str | None]:
     """Serve a weak prerequisite instead of the concept it gates.
 
@@ -111,11 +112,20 @@ def _prerequisite_substitution(
     gate only as far as the corpus allows: substituting toward a concept with no items
     would produce an empty session, so an unserveable prerequisite is reported and the
     original concept is kept.
+
+    `prereqs_by_concept` is the whole DAG loaded once by the caller. `build_plan` calls this
+    for every ranked concept, and querying the edges per call was 79 round trips for a
+    coding plan. Without it, this queries the one concept's edges itself.
     """
-    prereqs = [
-        edge.prereq_id
-        for edge in db.exec(select(ConceptEdge).where(ConceptEdge.concept_id == entry.concept_id))
-    ]
+    if prereqs_by_concept is not None:
+        prereqs = prereqs_by_concept.get(entry.concept_id, [])
+    else:
+        prereqs = [
+            edge.prereq_id
+            for edge in db.exec(
+                select(ConceptEdge).where(ConceptEdge.concept_id == entry.concept_id)
+            )
+        ]
     weaker = [
         by_id[prereq]
         for prereq in prereqs
@@ -186,6 +196,9 @@ def build_plan(
         wanted = set(focus_concepts)
         ranked = [entry for entry in ranked if entry.concept_id in wanted] or ranked
     by_id = {entry.concept_id: entry for entry in ranked}
+    prereqs_by_concept: dict[str, list[str]] = {}
+    for edge in db.exec(select(ConceptEdge)).all():
+        prereqs_by_concept.setdefault(edge.concept_id, []).append(edge.prereq_id)
 
     low, high = BAND_LOW - difficulty_bias * BIAS_SHIFT, BAND_HIGH - difficulty_bias * BIAS_SHIFT
     total_observations = sum(entry.observations for entry in ranked)
@@ -201,7 +214,9 @@ def build_plan(
     shortlist: list[tuple[float, float, str, CorpusItem, dict[str, Any]]] = []
     seen_concepts: set[str] = set()
     for entry in ranked:
-        concept_id, note = _prerequisite_substitution(db, entry, by_id, set(by_primary))
+        concept_id, note = _prerequisite_substitution(
+            db, entry, by_id, set(by_primary), prereqs_by_concept
+        )
         if concept_id in seen_concepts:
             continue
         pool = by_primary.get(concept_id, [])

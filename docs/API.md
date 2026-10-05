@@ -497,6 +497,20 @@ Two properties of the implementation that a client should know about:
   connection, and the default pool is 5 + 10. Fifteen abandoned tabs stalled every request
   the API had.
 
+  **Corrected 2026-10-05.** "Each hung stream pinned a pooled connection" undersold it:
+  *every* stream did, hung or not. The ownership check ran on the request's session, a
+  `yield` dependency, so its connection stayed checked out and idle in a transaction until
+  the response finished, up to 30 minutes. That dependency is now `scope="function"`, so
+  it closes when the handler returns, before the first byte streams. Measured with a stream
+  open: no connection in Postgres idle in a transaction.
+
+  The status is also no longer re-read on each 50 ms poll. That was 20 synchronous queries
+  a second per stream, on the event loop. A stream ends on the terminal `session.state`
+  event, which both terminal transitions publish after they commit. The database is
+  re-read every 2s in a thread, as a backstop for what the bus cannot show: a channel
+  evicted or forgotten, or a write from another process. Measured over 7s with one stream
+  open: about 7 transactions above an idle baseline, down from about 140.
+
   There is also a hard ceiling of 30 minutes on one connection, after which the server
   sends `stream.timeout` and closes. SSE clients reconnect on their own and
   `Last-Event-ID` makes that lossless, so a bounded stream costs a client nothing.

@@ -9,7 +9,7 @@ design; this records what exists on disk and what the next phase picks up.
 Rules for this file: record what was *verified*, not what was written. If something is
 unverified, say so. If a gate was skipped, say that too.
 
-## Where things stand — 2026-10-04
+## Where things stand — 2026-10-05
 
 Entries below are **chronological, not in phase order**. Work has deliberately jumped
 between phases, taking each only as far as needed to unblock the next — Phase 3's
@@ -7861,4 +7861,54 @@ wraps it, the same fix Caddy uses.
     policy call about the audit gate, and it is left to the owner.
   - [SECURITY](SECURITY.md) already names this case ("possibly with no fix available") as
     the reason the gate stops at `high`.
+
+## Wave — The stream lets go of its connection, and a plan takes 10 queries, not 88 · 2026-10-05
+
+Two backend items from the performance review. Both would get worse with use rather than
+being slow today.
+
+**The SSE stream no longer holds a pooled connection** ([API](API.md#sse-event-stream)).
+The ownership check's session was a `yield` dependency. FastAPI tears those down after a
+streamed response completes, so every open stream held a connection, idle in a
+transaction, for up to 30 minutes, against a pool of 5 + 10. It is now
+`Depends(get_session, scope="function")`. The stream also stopped re-reading the session's
+status every 50 ms on the event loop. It ends on the terminal `session.state` event, with
+a 2s database check run in a thread as a backstop.
+
+**Planning no longer queries per concept, or reads the whole evidence history**
+([ADAPTIVE](ADAPTIVE.md#weakness-priority)):
+- `build_plan` loads the concept DAG once and passes it to `_prerequisite_substitution`.
+  That function used to query one concept's edges per call, for every ranked concept.
+  Called without the map, as the tests call it, it still queries for itself.
+- `rank_concepts` picks the five newest evidence rows per concept with `row_number()` in
+  SQL, selecting `concept_id` and `score` only.
+
+### Verified
+
+- `make check` clean: ruff, mypy strict, 415 passed, the corpus, and 106 component tests.
+  **`make test-db`: 226 passed, 1 skipped.** That includes the stream tests that end a
+  session under an open stream, and the stream on a session whose channel was forgotten,
+  which can only end through the database backstop.
+- Against the live database, old code measured in the running container before the
+  rebuild and new code after it:
+  - **coding plan: 88 queries → 10**, 20.9 ms → 12.5 ms; **quant: 60 → 10**, 12.5 → 6.5 ms.
+  - The quant plan is byte-identical. The coding plan and the full ranking differ only in
+    the `overdue` term, which is a function of the current time, and the runs were minutes
+    apart.
+  - Run in one process against the old full scan, the windowed query gave the same
+    `recent_errors` for all 186 concepts (29 with evidence, 83 rows).
+- Stream, measured on the rebuilt stack against a `briefing` session:
+  - With the stream open, Postgres showed one API connection, `idle`, and none idle in a
+    transaction.
+  - About 7 transactions over 7s above an idle baseline of 9. At one check per 50 ms the
+    old loop would have run about 140; that figure is computed, not measured before the
+    change.
+
+### Not verified
+
+- The ~140 is arithmetic, not a measurement: the old code's transaction rate was not
+  captured before the rebuild.
+- 15 concurrent streams against the pool, the scenario this fixes, was not run.
+- CI's `pnpm audit` is still red on GHSA-vfj7-8cjw-p6xm, unchanged from the previous wave
+  and still waiting on the owner.
 

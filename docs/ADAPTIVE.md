@@ -171,6 +171,15 @@ is worth more than an isolated leaf. `recent_exposure` prevents the planner from
 serving the same sore spot five sessions running, which is demoralizing and produces
 overfitting to a handful of items.
 
+`recent_error_rate` is one minus the mean score of the concept's five newest evidence rows,
+newest by `ts`. Since 2026-10-05 ties in `ts` are broken by row id rather than left to
+whatever order Postgres returned. Those five rows are picked in SQL with a window function,
+not by loading every evidence row ever written and keeping five in Python. That full load
+grew with history and ran on every plan and every weaknesses read. Measured against the
+full scan on the live data, every concept's term matched. The planner also loads the
+concept DAG once per plan rather than once per ranked concept: a coding plan went from 88
+queries to 10, and its output was unchanged.
+
 ## Session planning
 
 A session is a **budget** (minutes) and a **mode**. The planner:

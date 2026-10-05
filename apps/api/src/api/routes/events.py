@@ -31,7 +31,11 @@ from api.models import InterviewSession
 
 router = APIRouter(tags=["sessions"])
 
-DbSession = Annotated[Session, Depends(get_session)]
+# `scope="function"`: closed when the handler returns, not when the response finishes. The
+# default `yield` teardown runs after a streamed response completes, so the connection the
+# ownership check used stayed checked out, idle in a transaction, for the whole stream — up
+# to `MAX_STREAM_SECONDS`, against a pool of 5 + 10 overflow.
+DbSession = Annotated[Session, Depends(get_session, scope="function")]
 Bus = Annotated[EventBus, Depends(bus)]
 
 # Long enough that a slow turn does not look like a hang, short enough that a forgotten tab
@@ -42,6 +46,12 @@ PING_SECONDS = 15
 # makes that lossless, so a bounded stream costs a client nothing — while an unbounded one
 # costs a pooled database connection per abandoned tab.
 MAX_STREAM_SECONDS = 30 * 60
+
+# How often the stream re-reads the session's status as a backstop. The terminal
+# `session.state` event is what ends a stream; this catches the transition the bus cannot
+# show — a channel evicted or forgotten, or a write from outside this process. It was every
+# `POLL_SECONDS`, 20 queries a second per open stream, each blocking the event loop.
+FINISHED_CHECK_SECONDS = 2.0
 
 
 def _resume_from(last_event_id: str | None, after: int | None) -> int:
@@ -71,7 +81,8 @@ async def session_events(
     Ownership is checked before the stream opens, with the same 404 every other session
     route gives for somebody else's id — a stream is a read, and it leaks the same thing.
     """
-    service.get_session(db, session_id, user_id=principal.user_id)
+    row = service.get_session(db, session_id, user_id=principal.user_id)
+    finished_at_open = row.status in service.REPORTABLE_STATES
     resume = _resume_from(last_event_id, after)
 
     def _is_finished(sid: str) -> bool:
@@ -94,11 +105,16 @@ async def session_events(
             )
             cursor = oldest - 1
 
-        started = time.monotonic()
+        started = last_check = time.monotonic()
+        finished = finished_at_open
         while True:
             for event in channel.since(session_id, cursor):
                 cursor = event.seq
                 yield event.as_sse()
+                if event.type == "session.state" and event.data.get("state") in (
+                    service.REPORTABLE_STATES
+                ):
+                    finished = True
             # Re-read the status rather than testing the row loaded before the stream
             # opened. That row is a *snapshot*: a stream opened while the session was
             # briefing tested `briefing` forever, so ending the session while a client was
@@ -112,7 +128,16 @@ async def session_events(
             # A short-lived session of its own, not `db`: that one belongs to the request
             # and holding a transaction open across the whole stream is the same bug in a
             # different coat.
-            if _is_finished(session_id) and not channel.since(session_id, cursor):
+            #
+            # **2026-10-05:** the re-read is now the backstop, not the signal. Both terminal
+            # transitions publish `session.state` after they commit, and the loop above
+            # catches that. The database is asked every `FINISHED_CHECK_SECONDS`, in a
+            # thread, so a sync query no longer stalls the event loop 20 times a second.
+            now = time.monotonic()
+            if not finished and now - last_check >= FINISHED_CHECK_SECONDS:
+                last_check = now
+                finished = await asyncio.to_thread(_is_finished, session_id)
+            if finished and not channel.since(session_id, cursor):
                 # Nothing more will happen on a finished session, so the stream ends rather
                 # than holding a connection open for events that cannot arrive.
                 break

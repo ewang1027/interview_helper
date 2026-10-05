@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import func
 from sqlmodel import Session, col, select
 
 from api.mastery import DEFAULT_ABILITY, is_calibrating, normalized_ability
@@ -115,12 +116,30 @@ def rank_concepts(
     most_unlocks = max(unlocks.values(), default=1)
 
     # Single user, so every evidence row is theirs — the same simplification
-    # `mastery.recompute` already makes. Newest first, so the slice below is "lately".
+    # `mastery.recompute` already makes. The newest `RECENT_RESULTS` per concept is "lately".
+    #
+    # Windowed in SQL (2026-10-05). This used to load every evidence row ever written, as
+    # full ORM objects sorted by `ts`, and keep five per concept in Python — a cost that grew
+    # with history, paid on every plan and every weaknesses read. `id` breaks ties in `ts`,
+    # which the old sort left to whatever order Postgres returned.
+    newest_first = (
+        func.row_number()
+        .over(
+            partition_by=ConceptEvidence.concept_id,
+            order_by=(col(ConceptEvidence.ts).desc(), col(ConceptEvidence.id).desc()),
+        )
+        .label("newest_first")
+    )
+    window = (
+        select(ConceptEvidence.concept_id, ConceptEvidence.score, newest_first)
+        .where(col(ConceptEvidence.concept_id).in_([concept.id for concept in concepts]))
+        .subquery()
+    )
     recent: dict[str, list[float]] = {}
-    for evidence in db.exec(select(ConceptEvidence).order_by(col(ConceptEvidence.ts).desc())).all():
-        scores = recent.setdefault(evidence.concept_id, [])
-        if len(scores) < RECENT_RESULTS:
-            scores.append(evidence.score)
+    for concept_id, score in db.exec(
+        select(window.c.concept_id, window.c.score).where(window.c.newest_first <= RECENT_RESULTS)
+    ).all():
+        recent.setdefault(concept_id, []).append(score)
 
     recent_session_ids = {
         session_row.id
