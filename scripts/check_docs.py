@@ -32,7 +32,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
 
 STATUS_LINE = re.compile(r"^> \*\*Status:\*\* *(.+)$", re.MULTILINE)
-DOC_ROW = re.compile(r"^\| *\[([^\]]+)\]\((docs/[^)#]+)\) *\|([^|]*)\|([^|]*)\|([^|]*)\|", re.M)
+# | [label](docs/X.md) | what it covers | status |
+DOC_ROW = re.compile(r"^\| *\[([^\]]+)\]\((docs/[^)#]+)\) *\|([^|]*)\|([^|]*)\|", re.M)
 # "not built" is the common way a spec says it is a spec, so the negative form must not
 # read as a claim of the positive one.
 CLAIMS_BUILT = re.compile(r"(?<!not )built", re.I)
@@ -77,7 +78,7 @@ def main() -> int:
 
     # 2. README's documentation table indexes every doc, and only docs that exist. A doc
     #    nobody indexed is a doc nobody reads; a row pointing nowhere is a broken promise.
-    rows = {m.group(2): (m.group(1), m.group(5).strip()) for m in DOC_ROW.finditer(readme)}
+    rows = {m.group(2): (m.group(1), m.group(4).strip()) for m in DOC_ROW.finditer(readme)}
     indexed = {pathlib.PurePosixPath(target).name for target in rows}
     counts["indexed"] = len(indexed)
     on_disk = {path.name for path in doc_paths}
