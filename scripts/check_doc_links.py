@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import pathlib
 import re
+import subprocess
 import sys
 
 LINK = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
@@ -37,7 +38,15 @@ def anchors_in(text: str) -> set[str]:
 
 def main() -> int:
     root = pathlib.Path(__file__).resolve().parents[1]
-    paths = [*sorted(root.glob("docs/*.md")), root / "README.md", root / "CLAUDE.md"]
+    # Tracked docs only: local, untracked notes can sit in docs/ and CI never sees them.
+    tracked = subprocess.run(
+        ["git", "ls-files", "docs/*.md"],  # noqa: S607
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    paths = [*sorted(root / name for name in tracked), root / "README.md"]
     text_of = {p: p.read_text(encoding="utf-8") for p in paths}
     anchor_of = {p: anchors_in(t) for p, t in text_of.items()}
 

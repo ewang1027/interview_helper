@@ -8,7 +8,7 @@
 > table below is still empty
 > because no full session has been run against a live provider: this account's Bedrock
 > access is gated behind a use-case form (below). AWS alarms in **Phase 6**.
-> Related: [ARCHITECTURE](ARCHITECTURE.md#model-routing) · [OPERATIONS](OPERATIONS.md#monitoring) · [RESEARCH](RESEARCH.md#where-it-runs-and-why-that-matters) (why research is free) · [PRACTICE_LOG](PRACTICE_LOG.md) (uses the existing classification job)
+> Related: [ARCHITECTURE](ARCHITECTURE.md#model-routing) · [OPERATIONS](OPERATIONS.md#monitoring) · [PRACTICE_LOG](PRACTICE_LOG.md) (uses the existing classification job)
 
 This is a designed-in subsystem, not a dashboard bolted on later. A previous project
 (`learning_files`) exhausted a monthly usage cap mid-run and lost sixteen concurrent

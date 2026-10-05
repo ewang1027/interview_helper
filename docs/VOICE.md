@@ -112,7 +112,7 @@ Our 700 ms is the only part we control, and it constrains design:
 A spoken mock interview end to end, in at least quant and behavioral modes, where the
 transcript is graded by the same graders as the text path and writes the same evidence
 shape. Plus a measured p50 and p95 for our 700 ms segment, recorded in
-[BUILDLOG.md](BUILDLOG.md) — a latency claim without numbers is not a gate.
+this doc — a latency claim without numbers is not a gate.
 
 ## Open questions for Phase 7
 

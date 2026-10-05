@@ -214,8 +214,7 @@ one any command can see. The next `make up-stack` followed it to the new daemon,
 initialised an empty `compose_postgres_data` there, and `/jobs` answered 500 over a
 missing table while 47 applications sat intact in the other daemon's volume. The third
 incident that presented as data loss, and the first with nothing actually lost —
-[BUILDLOG](BUILDLOG.md) has the account, [OPERATIONS](OPERATIONS.md#backups) the
-recovery.
+[OPERATIONS](OPERATIONS.md#backups) has the recovery.
 
 The choice of daemon is now explicit, in two halves:
 

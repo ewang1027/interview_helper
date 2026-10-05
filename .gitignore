@@ -61,3 +61,11 @@ htmlcov/
 # Which Docker daemon this machine's data lives on (docs/INFRA.md#one-daemon-per-machine).
 # Machine-local by nature — the other machine's answer is different.
 /.docker-context
+
+# Agent instructions, work logs and process notes: kept on disk, deliberately untracked.
+/CLAUDE.md
+/docs/BUILDLOG.md
+/docs/RESEARCH.md
+
+# Personal practice data (a re-tag mapping of problems I logged)
+/scripts/retags/2026-09-09-taxonomy-expansion.json

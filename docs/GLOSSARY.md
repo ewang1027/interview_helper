@@ -29,7 +29,7 @@ at an archetype.
 
 **Evidence density** — the ranking signal for archetypes: how many independent sources
 attest one, weighted by recency. A count, not an opinion, which is the whole point.
-→ [RESEARCH](RESEARCH.md#4-rank-by-evidence-density)
+→ [CORPUS](CORPUS.md#ranking-evidence-density-not-model-opinion)
 
 **Independent sources** — sources on distinct registrable domains. Five pages on one site
 are one source.

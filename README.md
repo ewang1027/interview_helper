@@ -84,20 +84,14 @@ breakdown, because adaptation you cannot inspect is adaptation you cannot trust.
 
 ## Documentation
 
-New here? Read [GLOSSARY](docs/GLOSSARY.md) → [ARCHITECTURE](docs/ARCHITECTURE.md) →
-[BUILDLOG](docs/BUILDLOG.md). Changing anything? Read [CLAUDE.md](CLAUDE.md) first — it is
-the working agreement between the code and these documents, and parts of it are gates. The glossary defines the vocabulary the others assume, and
-the buildlog is the only document that always describes reality — **if any doc and the
-buildlog disagree about what exists, the buildlog is right.**
+New here? Read [GLOSSARY](docs/GLOSSARY.md), then [ARCHITECTURE](docs/ARCHITECTURE.md).
 
 | Doc | Covers | Phase | Status |
 |---|---|---|---|
-| [BUILDLOG](docs/BUILDLOG.md) | What is actually built, and what each wave cost to learn | all | Current |
 | [GLOSSARY](docs/GLOSSARY.md) | Project vocabulary in one place | all | Current |
 | [ARCHITECTURE](docs/ARCHITECTURE.md) | Services, trust boundaries, data model, model routing | all | Design, partly built |
 | [CONCEPTS](docs/CONCEPTS.md) | The 186-concept taxonomy and its rules | 0 | ✅ Built |
 | [CORPUS](docs/CORPUS.md) | What a corpus item is, and what the validator does and does not catch | 0 → 1 | ✅ Contract built |
-| [RESEARCH](docs/RESEARCH.md) | How items get researched and authored | 1 | Spec |
 | [SECURITY](docs/SECURITY.md) | Threat model, sandbox isolation, the six escape tests, the answer parser | 2 | ✅ Isolation built |
 | [GRADING](docs/GRADING.md) | The four graders and what they produce | 2 → 3 | ✅ All four graders built |
 | [API](docs/API.md) | Endpoints, session state machine, SSE events, agent tools | 3 | ✅ Sessions, agent, SSE, auth and all five tools built |
@@ -177,9 +171,7 @@ cookie set on the API's port is cross-site to the browser and will not come back
 
 **Phases 0, 2 and 3 complete for what they were scoped to; 4, 9 and 10 built; 1
 partially landed, 6 begun**, deliberately out of order — each was taken far enough to unblock the
-next. See
-[`docs/BUILDLOG.md`](docs/BUILDLOG.md) for what actually exists and what each phase still
-owes.
+next.
 
 - [x] **0 — Foundations:** repo, schema, taxonomy, corpus contract, CI
 - [ ] **1 — Corpus v1:** researched, evidence-ranked, original statements — *thin slice

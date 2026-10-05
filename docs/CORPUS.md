@@ -9,7 +9,7 @@
 > and a careful reading are the whole of it, and each has been graded once against a
 > scripted model only to prove that it grades at all. Bulk authoring toward the ~400/~150
 > target has not started.
-> Related: [RESEARCH](RESEARCH.md) (how items get made) · [CONCEPTS](CONCEPTS.md) (what they tag against) · [GRADING](GRADING.md) (what the grading contracts mean) · [GLOSSARY](GLOSSARY.md) · [PRACTICE_LOG](PRACTICE_LOG.md) (why its ingestion is manual-entry-only, not URL-fetch)
+> Related: [CONCEPTS](CONCEPTS.md) (what they tag against) · [GRADING](GRADING.md) (what the grading contracts mean) · [GLOSSARY](GLOSSARY.md) · [PRACTICE_LOG](PRACTICE_LOG.md) (why its ingestion is manual-entry-only, not URL-fetch)
 
 The corpus is the question bank. It is **researched and authored at build time** by
 Claude Code running on your machine, and committed as versioned JSON under

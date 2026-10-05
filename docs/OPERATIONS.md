@@ -96,8 +96,8 @@ brand-new empty volume, and for the third time everything looked deleted. The re
 was this page's own advice run for real: a raw tar of the orphaned volume before anything
 else touched it, a `pg_dump` from a throwaway Postgres started on that volume, then the
 stack repointed at the daemon holding the data. 47 applications, 54 stage events and 15
-sessions came back intact — nothing had ever been deleted. The full account, and the
-guard that ends the failure mode, are in [BUILDLOG](BUILDLOG.md).
+sessions came back intact — nothing had ever been deleted. The guard that ends the
+failure mode is in [INFRA](INFRA.md#one-daemon-per-machine).
 
 ### Deployed, later
 
@@ -113,7 +113,7 @@ not a backup:
 1. Restore the latest snapshot into a scratch database.
 2. Point a local API at it.
 3. `POST /mastery/recompute` and diff the projection against production's.
-4. Record the wall-clock restore time in [BUILDLOG.md](BUILDLOG.md).
+4. Record the wall-clock restore time.
 
 Step 3 is the real test. It proves the restored evidence is not merely present but
 *sufficient* — that mastery genuinely rebuilds from it.
@@ -160,8 +160,7 @@ models change.
 - Bump `grader_version` on any change so old evidence stays interpretable.
 - Drift beyond a threshold blocks the change.
 
-Corpus refresh runs quarterly as a scheduled Claude Code job
-([RESEARCH.md](RESEARCH.md#refresh)) — append-only, reviewed as a diff before merge.
+Corpus refresh runs quarterly as a scheduled Claude Code job — append-only, reviewed as a diff before merge.
 
 ## Runbook
 

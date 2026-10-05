@@ -14,7 +14,7 @@
 > 36-item corpus, **rubric grading** and the **quant grader** (a symbolic answer check plus
 > the derivation rubric) — so all four modes grade, and **all five interviewer tools**.
 > `docs/BUILDLOG.md` is authoritative.
-> Related: [GLOSSARY](GLOSSARY.md) · [API](API.md) · [SECURITY](SECURITY.md) · [INFRA](INFRA.md) · [BUILDLOG](BUILDLOG.md) (what is actually built) · [PRACTICE_LOG](PRACTICE_LOG.md)
+> Related: [GLOSSARY](GLOSSARY.md) · [API](API.md) · [SECURITY](SECURITY.md) · [INFRA](INFRA.md) · [PRACTICE_LOG](PRACTICE_LOG.md)
 
 ```
                         ┌──────────────────────────────────┐
