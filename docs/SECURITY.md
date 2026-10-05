@@ -443,6 +443,16 @@ permanent entry. `dompurify` was the other case: its override's floor resolved t
 inside the new advisory's range, so the floor went up to `>=3.4.16` — the `sharp` lesson,
 a second time.
 
+### One advisory ignored, not fixed
+
+From 2026-10-04 the web job failed on GHSA-vfj7-8cjw-p6xm: `braces` (high, stack
+exhaustion on deeply nested patterns). Every version up to 3.0.3, the latest, is affected
+and there is no patched release, so neither an override nor a lockfile refresh can clear
+it. The only path to it is `eslint-config-next` → `@next/eslint-plugin-next` → `fast-glob`
+→ `micromatch` → `braces`, which is dev-only and runs at lint time over this repo's own
+globs. That one ID is listed under `auditConfig.ignoreGhsas` in `pnpm-workspace.yaml`;
+every other `high` still fails the build. Drop the entry when a fixed `braces` ships.
+
 One dependency is a known gap rather than a vulnerability: **`@monaco-editor/react` loads
 Monaco from a CDN by default**, so the editor is a runtime network dependency on a service
 this project does not control, and a deployment with no egress has no editor. Vendoring it
