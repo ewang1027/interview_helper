@@ -5,8 +5,9 @@
 > Since 2026-08-29 every Docker target follows a per-machine daemon pin —
 > [One daemon per machine](#one-daemon-per-machine) — after a second daemon made the
 > data volume vanish from view.
-> Steps 2–5 are specification: **no AWS resource exists yet**, and the next one needs an
-> authenticated AWS session rather than more code. Nothing before Phase 6 depends on AWS.
+> Step 2 is in progress: the API image is in ECR and a cluster and task definition exist,
+> but **no Fargate service has been created, so nothing is deployed or serving**. Steps 3
+> to 5 are specification. Nothing before Phase 6 depends on AWS.
 > Related: [SECURITY](SECURITY.md) (what these controls enforce) · [OPERATIONS](OPERATIONS.md) (running it once deployed) · [COST](COST.md) · [GLOSSARY](GLOSSARY.md#infrastructure)
 
 This file is written to **teach**, not just to specify. Phase 6 is as much a cloud-infra
