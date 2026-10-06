@@ -3,8 +3,8 @@
 `test_grading_coding.py` fixes the arithmetic with a stub. This proves the whole path:
 a corpus item's own tests, over HTTP, into the sandbox, back through the probe, out as a
 score and a set of `concept_evidence` rows. It is deliberately built on `i.code.0002`,
-whose reference solution and naive impostor are the pair docs/BUILDLOG.md measured when
-the probe was calibrated.
+whose reference solution and naive impostor are the pair measured when the probe was
+calibrated.
 
 The executor runs in-process here via `TestClient`, but the containers are real: this
 exercises the same endpoint, the same driver and the same isolation a deployed executor

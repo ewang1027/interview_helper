@@ -61,7 +61,7 @@ ALLOW_RE='@(localhost|127\.0\.0\.1|postgres|db):|(tests?-only|example|placeholde
 
 # Paths excluded by exact name, never by wildcard. `:!*.example` matched any depth, which
 # exempted .env.example — the one tracked file that enumerates every secret this service
-# has by name, and the file CLAUDE.md requires you to edit for each new Settings field.
+# has by name, and the file you edit for each new Settings field.
 # Filled in with real values it scanned clean.
 EXCLUDES=(':!scripts/secret_scan.sh' ':!uv.lock' ':!pnpm-lock.yaml')
 
@@ -83,8 +83,8 @@ scan() {
 }
 
 # No `2>/dev/null || true` around git anywhere below. It turned every git failure —
-# running outside a repo, a broken git — into "clean", and `secret_scan: clean` is quoted
-# in this repo's build log as evidence. That line has to mean the scan ran.
+# running outside a repo, a broken git — into "clean", and `secret_scan: clean` gets
+# quoted as evidence. That line has to mean the scan ran.
 tree=$(git grep -In '' -- "${EXCLUDES[@]}")
 scan "$tree" "in the working tree:"
 

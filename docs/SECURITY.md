@@ -339,8 +339,7 @@ returns in under a second.
   gate running *before* publication was the weaker one. Rewriting it, an adversarial test
   found `\b` failing the same way and disarming six of the ten shapes above. Neither
   failure was visible in the output. And `2>/dev/null || true` around the `git grep` turned
-  any git failure into `secret_scan: clean`, a line this repo's build log quotes as
-  evidence.
+  any git failure into `secret_scan: clean`, a line that gets quoted as evidence.
 
 ## The repo is public
 

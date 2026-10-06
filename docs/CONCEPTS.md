@@ -145,8 +145,8 @@ that reason. So the correction is a script, `scripts/retag_practice_problems.py`
 against a fresh backup with a dry run first: it re-points the evidence rows that carried
 the old primary to the new one, leaves their score, confidence and timestamp alone — the
 solve happened; only the concept credited was wrong — resolves anything still pending
-through the ordinary path, and rebuilds `mastery`. The mapping it was run with is checked
-in beside it. [PRACTICE_LOG](PRACTICE_LOG.md#correcting-a-tag-after-its-evidence-is-written)
+through the ordinary path, and rebuilds `mastery`. The mapping it was run with sits beside
+it, kept out of git. [PRACTICE_LOG](PRACTICE_LOG.md#correcting-a-tag-after-its-evidence-is-written)
 has the rules for using it again.
 
 ## Cross-domain notes

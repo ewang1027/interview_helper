@@ -13,7 +13,6 @@
 > /sessions/{id}/events`, with the interviewer's text streamed as it is generated), and a
 > 36-item corpus, **rubric grading** and the **quant grader** (a symbolic answer check plus
 > the derivation rubric) — so all four modes grade, and **all five interviewer tools**.
-> `docs/BUILDLOG.md` is authoritative.
 > Related: [GLOSSARY](GLOSSARY.md) · [API](API.md) · [SECURITY](SECURITY.md) · [INFRA](INFRA.md) · [PRACTICE_LOG](PRACTICE_LOG.md)
 
 ```

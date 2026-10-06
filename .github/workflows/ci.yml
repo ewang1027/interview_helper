@@ -126,7 +126,7 @@ jobs:
 
       # Links prove a cross-reference resolves; this proves the claims on both ends of
       # it still agree — a doc indexed as a spec after its schema landed, or a phase the
-      # README calls done and the buildlog calls half built. See CLAUDE.md.
+      # README calls done and another doc calls half built.
       - name: Doc consistency
         run: uv run python scripts/check_docs.py
 
@@ -145,7 +145,7 @@ jobs:
         env:
           GITHUB_EVENT_BEFORE: ${{ github.event.before }}
 
-      # CLAUDE.md's rule 1 — docs travel with the code — was enforced only by the pre-push
+      # The rule that docs travel with the code was enforced only by the pre-push
       # hook, which exists only after `make setup` runs `git config core.hooksPath hooks`.
       # A fresh clone, or a commit made anywhere else, had nothing checking it. The secret
       # scan was double-covered and the rule this repo says its value depends on was not.

@@ -3,8 +3,7 @@
 Phase 3: the `/api/v1` router is mounted here, carrying sessions and the corpus routes,
 and everything under that prefix requires a session cookie. `/health` and `/auth/*` stay
 at the root — see `api.routes.__init__` for why the boundary is the prefix itself. The
-interviewer agent and the SSE stream are not here yet; docs/BUILDLOG.md is authoritative
-about what that means.
+interviewer agent and the SSE stream are not here yet.
 """
 
 from __future__ import annotations

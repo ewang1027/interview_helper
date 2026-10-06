@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Documentation travels with the code that changed it, or the push is refused.
 #
-# CLAUDE.md's standing rule is that a unit of work is not done until its documentation
+# The standing rule is that a unit of work is not done until its documentation
 # is, and that the doc change belongs in the *same commit* as the code rather than in a
 # follow-up that may never come. Discipline held for 22 of the first 25 commits; the three
 # that slipped are why this exists. It is a backstop for the rule, not the rule.
@@ -11,7 +11,7 @@
 #
 # With no range, checks whatever is not yet on the upstream branch. `--warn` reports and
 # exits 0, which is how `make hygiene` uses it. Exempt, deliberately:
-#   - `wip:` commits — a checkpoint is not a unit of work (CLAUDE.md, cadence)
+#   - `wip:` commits — a checkpoint is not a unit of work
 #   - merge commits — they introduce no content of their own
 #   - a bot's dependency bump touching nothing but manifests — see BOT_* below
 #   - ALLOW_UNDOCUMENTED=1 — the deliberate exception, typed out where it is visible
@@ -103,9 +103,8 @@ fi
   echo "docs_with_code: ${#undocumented[@]} commit(s) change code and no documentation:"
   printf '  %s\n' "${undocumented[@]}"
   echo
-  echo "Docs land in the same commit as the code (CLAUDE.md). Either amend the commit"
-  echo "with the doc change — docs/BUILDLOG.md is owed one for any behaviour change —"
-  echo "or, if this genuinely needs none:"
+  echo "Docs land in the same commit as the code. Either amend the commit with the"
+  echo "doc change or, if this genuinely needs none:"
   echo
   echo "    ALLOW_UNDOCUMENTED=1 git push"
 } >&2

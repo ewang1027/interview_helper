@@ -204,7 +204,7 @@ def _check_complexity(grading: dict[str, Any], where: str) -> list[Finding]:
             # largest reference sample sat 1.7x above the 0.2ms noise floor, so a machine
             # ~1.8x faster than the calibration one read `inconclusive` on a correct
             # submission. The fifth size doubles that margin; this keeps the next item
-            # from quietly authoring it away. See docs/BUILDLOG.md, 2026-09-29.
+            # from quietly authoring it away.
             findings.append(
                 Finding(
                     "error",

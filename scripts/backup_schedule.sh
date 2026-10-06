@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Install, remove, or inspect the launchd job that dumps the database nightly.
 #
-# The buildlog's 2026-08-26 entry closed with "the development database still has no
-# scheduled backup" — and by 2026-08-29 that had mattered twice more (a wrong-daemon
+# As of 2026-08-26 the development database still had no scheduled backup, and by 2026-08-29 that had mattered twice more (a wrong-daemon
 # incident, and the discovery that the freshest dump was three days behind the volume).
 # This is the smallest thing that ends the pattern: launchd runs
 # `scripts/backup_db.sh dump` at 21:00 every night. macOS coalesces a missed

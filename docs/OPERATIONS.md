@@ -55,8 +55,8 @@ restore nobody can perform in the situation they need it.
 missed run to the next wake, so a laptop closed at 21:00 dumps when the lid opens rather
 than skipping the night. Output lands in `backups/backup.log`, dumps prune to the newest
 60 (`BACKUP_KEEP`), and `make restore` now dumps the database it is about to replace
-before replacing it. The 2026-08-26 buildlog entry ended by calling the missing schedule
-the open item, and 2026-08-29 re-proved it: when the volume was recovered that day, its
+before replacing it. On 2026-08-26 the missing schedule was the open item, and
+2026-08-29 re-proved it: when the volume was recovered that day, its
 last write was six hours newer than the newest dump anyone had thought to take.
 
 The dump follows the machine's **daemon pin** (`.docker-context` —

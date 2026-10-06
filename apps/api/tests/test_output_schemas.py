@@ -20,7 +20,7 @@ request. Each one was found only when a real call was finally made:
   classification would have failed.
 - `api.grading.rubric.response_schema` — same defect, present since Phase 3. **Every real
   design or behavioral grading would have failed**, which is the expensive one: the
-  buildlog said all four modes grade, and two of them could not have.
+  docs said all four modes grade, and two of them could not have.
 
 So this is a static check rather than a live one. It costs nothing, runs in the default
 suite, and it fails the moment somebody adds a bound to a schema that cannot carry one.

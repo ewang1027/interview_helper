@@ -19,8 +19,7 @@ pytestmark = pytest.mark.sandbox
 client = TestClient(app)
 
 # Ascending input: the worst case for a naive backward scan, free for a monotonic stack.
-# A random generator would let the impostor below walk straight through — see
-# docs/BUILDLOG.md, "a random generator disarms the probe entirely".
+# A random generator would let the impostor below walk straight through.
 ASCENDING = "def make_input(n):\n    return [list(range(n))]\n"
 SIZES = [2000, 4000, 8000, 16000]
 

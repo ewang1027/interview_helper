@@ -152,9 +152,8 @@ editorial choice and neither corrupts anything on its own:
   **The corpus validates clean.** `i.design.0003` was the one instance — its four criteria
   named every concept the item lists *except* `rate-limiting`, the one it is chiefly a
   measurement of — and it was fixed by authoring rather than by retagging, because the
-  criterion nearest to `rate-limiting` was already tagged correctly. See the buildlog wave;
-  the short version is that the gap in the rubric and the gap in the tagging turned out to
-  be the same gap.
+  criterion nearest to `rate-limiting` was already tagged correctly. The gap in the rubric
+  and the gap in the tagging turned out to be the same gap.
 
 Checks 2–8 each have a test in `packages/corpus/tests/test_validate.py` proving the check
 *catches* its failure, not merely that it passes. **Check 1 is the exception: JSON Schema

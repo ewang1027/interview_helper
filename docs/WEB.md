@@ -218,7 +218,7 @@ date, the empty state, and the filter reaching `GET /jobs?outcome=rejected`.
 
 ### Time in stage
 
-Added 2026-09-29, from the buildlog's list of what Phase 10 still owed. A card under the
+Added 2026-09-29, from the list of what Phase 10 still owed. A card under the
 rejections tracker, from `GET /jobs/stats`'s `time_in_stage` block ([JOBS](JOBS.md),
 decision 6), in the same two-column shape. **Before moving on**: one line per rung that has
 something to say — median and mean days over the applications that left it, how many did,

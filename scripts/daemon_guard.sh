@@ -7,8 +7,8 @@
 # initialised a brand-new empty volume there, and the jobs page answered 500 with
 # `relation "job_applications" does not exist` — while 47 applications sat intact in the
 # colima volume, looking deleted. Third incident that presented as data loss; first one
-# where nothing was actually lost. The other two were test teardowns (see
-# docs/BUILDLOG.md), and each fix guards a different door.
+# where nothing was actually lost. The other two were test teardowns, and each fix
+# guards a different door.
 #
 # The rule this script enforces:
 #

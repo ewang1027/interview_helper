@@ -51,7 +51,7 @@ def main() -> int:
         action="store_true",
         help=(
             "Also assert a do-nothing stub FAILS each item. A test suite a stub can pass "
-            "measures nothing — see docs/BUILDLOG.md on weak tests."
+            "measures nothing."
         ),
     )
     parser.add_argument(

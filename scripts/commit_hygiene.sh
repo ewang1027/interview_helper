@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # What is finished but not committed, and what is committed but not pushed.
 #
-# This is the half of CLAUDE.md's cadence rule that no hook can enforce: a commit that was
+# This is the half of the commit cadence rule that no hook can enforce: a commit that was
 # never made fires no trigger, and a branch that is never pushed fails nothing. So it
 # reports instead, at the moment the report is worth reading — the end of `make check`,
 # which is what gets run when a unit of work has just been declared good.
@@ -34,7 +34,7 @@ fi
 
 oldest=$(git log --format=%cr "$upstream..HEAD" 2>/dev/null | tail -1)
 echo "hygiene: $dirty uncommitted file(s) · $unpushed commit(s) not on $upstream${oldest:+ (oldest $oldest)}"
-echo "         CLAUDE.md: commit at every checkpoint, push after every commit."
+echo "         Commit at every checkpoint, push after every commit."
 if [[ $unpushed -gt 0 ]]; then
   bash scripts/docs_with_code.sh --warn "$upstream..HEAD" || true
 fi

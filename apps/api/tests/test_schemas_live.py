@@ -12,7 +12,7 @@ Marked `llm`: it spends money and needs credentials.
 `api.grading.rubric.response_schema` both carried range keywords that structured outputs
 reject, from Phase 9 and Phase 3 respectively, and neither was ever caught — because every
 test of both used a scripted client, which answers whatever it is handed and never
-validates the request. The rubric one is the expensive case: the buildlog claimed all four
+validates the request. The rubric one is the expensive case: the docs claimed all four
 interview modes grade, and design and behavioral could not have, because their grader would
 have returned a 400 on the first real call.
 
@@ -87,7 +87,7 @@ def test_the_rubric_grader_schema_is_accepted_by_a_real_provider() -> None:
     """Phase 3's rubric grader — the half of the grading surface that has never run live.
 
     Design and behavioral both go through this. A 400 here is the difference between "all
-    four modes grade" and "two of them do", which is what the buildlog said until this ran.
+    four modes grade" and "two of them do", which is what the docs said until this ran.
     """
     settings = get_settings()
     items = {item.id: item for item in load_items()}

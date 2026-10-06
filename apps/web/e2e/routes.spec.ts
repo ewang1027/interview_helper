@@ -4,7 +4,7 @@ import { expect, expectClean, expectStillAuthenticated, test } from "./fixtures"
  * Every route in the app, opened in a real browser for the first time.
  *
  * This is the narrow half of the Phase 5 gate: not "a full session per mode", which
- * needs a live interviewer, but the claim every wave in docs/BUILDLOG.md since Phase 5
+ * needs a live interviewer, but the claim every wave of work since Phase 5
  * landed has had to end by disclaiming — that the pages render at all, against the
  * real API, through the real front door.
  *

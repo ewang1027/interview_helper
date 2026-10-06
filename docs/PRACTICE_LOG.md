@@ -16,7 +16,7 @@
 > was. The four-secondary cap moved into `classify`, and the classifier is now verified
 > live: "Longest Substring Without Repeating Characters" → `sliding-window`, confidence
 > 0.95. Found via [JOBS](JOBS.md), which hit the same rule on its first live call.
-> Two deviations from what follows are recorded in the buildlog wave: the confidence for a
+> Two deviations from what follows: the confidence for a
 > *successful* solve (0.7) was unspecified here, and a classification failure lands a
 > problem pending rather than failing the request.
 > **Extended 2026-09-07:** the import accepts **NeetCode links**, resolving them to the
@@ -342,8 +342,8 @@ it touches. Per problem:
 Then `mastery` is rebuilt from the corrected log, which is what a projection is for. This
 is the one place in the project that updates a `concept_evidence` row, and the rule it
 lives under is the one [CONCEPTS](CONCEPTS.md#stability-rules) already states: what
-happens to existing evidence is decided explicitly, in the same commit, with the mapping
-checked in beside the script (`scripts/retags/`).
+happens to existing evidence is decided explicitly, in the same commit. The mapping sits
+beside the script in `scripts/retags/` and is kept out of git, since it is personal data.
 
 ## What this deliberately does not do
 

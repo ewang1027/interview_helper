@@ -324,7 +324,7 @@ provider, because a hand-written rule about what the API accepts can itself be w
 **This was not confined to the job tracker.** The same defect was found in
 [PRACTICE_LOG](PRACTICE_LOG.md)'s classifier (since Phase 9) and, more seriously, in
 [GRADING](GRADING.md)'s rubric grader (since Phase 3) — where it meant **design and
-behavioral grading would have failed on their first real call**, while the buildlog said
+behavioral grading would have failed on their first real call**, while the docs said
 all four modes graded. Both are fixed and both are now verified live.
 
 ### The cache breakpoint on the parse prompt does nothing

@@ -7,8 +7,8 @@
 # and every web target fails before it starts.
 #
 # That is not hypothetical: on this machine `pnpm` is a shim that runs `corepack
-# pnpm@latest`, so `make check` had been dying at `check-web` for weeks. The buildlog
-# records it as a known local quirk, the web tools were run by hand instead, and the cost
+# pnpm@latest`, so `make check` had been dying at `check-web` for weeks. It was
+# treated as a known local quirk, the web tools were run by hand instead, and the cost
 # only became visible on 2026-09-11 — `make check` never reaches `make hygiene`, so it
 # never reached the CI-status line either, and the web job was the one that had been red
 # for three days.

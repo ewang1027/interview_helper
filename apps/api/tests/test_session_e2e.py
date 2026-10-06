@@ -32,7 +32,7 @@ from corpus.loader import load_items
 
 pytestmark = pytest.mark.e2e
 
-# The naive backward scan from docs/BUILDLOG.md: correct, and quadratic on ascending
+# The naive backward scan: correct, and quadratic on ascending
 # input. It passes every test i.code.0002 ships, so only the probe can mark it down. The
 # item is named here because this source is written against its entrypoint.
 IMPOSTOR_ITEM = "i.code.0002"

@@ -3,7 +3,7 @@
 #
 # Two gates, both cheap, both guarding rules that are otherwise upheld by memory alone:
 # nothing secret leaves the machine (docs/SECURITY.md — the repo is public), and nothing
-# undocumented lands on the remote (CLAUDE.md — docs travel with the code).
+# undocumented lands on the remote (docs travel with the code).
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
