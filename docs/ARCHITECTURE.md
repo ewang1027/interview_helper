@@ -122,6 +122,20 @@ timezone) and `a7c19e4d5b02` (the job tables, and `llm_calls.web_search_requests
 by a real session; `turns` and `llm_calls` by the interviewer. `research_runs` and the
 practice-log tables are still empty — nothing produces their rows yet.
 
+**Indexes on the append-only tables follow their queries** (migration `4bc50fe4ca5c`,
+2026-10-10). Until then `concept_evidence` had only `(concept_id)`, and `llm_calls` only
+`(status, created_at)`. Each of these queries was a full scan, and both tables grow with
+every session:
+
+| Index | Serves |
+|---|---|
+| `concept_evidence (session_id, item_id, concept_id, ts, id)` | the "first grading of this attempt" lookup run for every primary-concept grading, plus the session report and the planner's exposure term |
+| `concept_evidence (practice_problem_id)` | the practice problem detail every practice write returns |
+| `concept_evidence (concept_id, ts DESC, id DESC)` | replaces `(concept_id)`. Serves the planner's five-newest window and the concept detail page |
+| `llm_calls (created_at)`, `llm_calls (session_id)` | the budget totals ([COST](COST.md#the-ledger)) |
+
+The models declare every one, so `alembic check` reports no drift.
+
 Every timestamp column is `TIMESTAMP WITH TIME ZONE`. The naive default silently returns a
 value with no offset, which raises on the first comparison against an aware `now()` and,
 worse, would *not* raise inside Phase 4's date arithmetic.

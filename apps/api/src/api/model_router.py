@@ -21,6 +21,7 @@ and the note stays because the next person to see a 404 here will otherwise re-d
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Literal
 
 from anthropic import Anthropic, AnthropicBedrock
@@ -114,10 +115,29 @@ class ModelRouter:
     def client(self) -> Anthropic | AnthropicBedrock:
         """One client per provider config, not per call site. Bedrock is the
         credit-funded default; Anthropic direct is the escape hatch and requires
-        `ANTHROPIC_API_KEY` (docs/COST.md's "where the money goes")."""
+        `ANTHROPIC_API_KEY` (docs/COST.md's "where the money goes").
+
+        **Corrected 2026-10-10:** the line above described the intent, not the code. This
+        built a new client on every call, so every model round opened a fresh httpx pool,
+        with a new TCP and TLS handshake to the provider, and never closed the old one. An
+        interviewer turn makes up to five calls. It now returns one cached client per
+        provider configuration."""
         s = self._settings
         if s.model_provider == "bedrock":
-            return AnthropicBedrock(aws_region=s.aws_region)
+            return _bedrock_client(s.aws_region)
         if not s.anthropic_api_key:
             raise RuntimeError("MODEL_PROVIDER=anthropic requires ANTHROPIC_API_KEY to be set")
-        return Anthropic(api_key=s.anthropic_api_key)
+        return _anthropic_client(s.anthropic_api_key)
+
+
+# Keyed on exactly what configures the client, so a settings change gets a new one. The
+# SDK clients are thread-safe and hold a connection pool, which is the point of sharing
+# them: the executor's `httpx.Client` is a process singleton for the same reason.
+@lru_cache
+def _bedrock_client(aws_region: str) -> AnthropicBedrock:
+    return AnthropicBedrock(aws_region=aws_region)
+
+
+@lru_cache
+def _anthropic_client(api_key: str) -> Anthropic:
+    return Anthropic(api_key=api_key)

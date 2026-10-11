@@ -42,6 +42,12 @@ Set in `.env`, resolved by `ModelRouter`; call sites never name a model.
 `output_config.effort` outright and an unusable model is a worse failure than a default
 effort.
 
+**One client per provider configuration** (2026-10-10). `ModelRouter.client()` said so in
+its docstring and built a new SDK client on every call, so every model round opened a new
+connection pool, with a new TCP and TLS handshake to the provider, and leaked the old one.
+An interviewer turn makes up to five rounds. The client is now cached, keyed on the region
+for Bedrock or the API key for Anthropic direct, so a settings change still gets a new one.
+
 ### What actually runs today
 
 The routing table above is the *design*. Measured against this project's AWS account on
@@ -195,6 +201,12 @@ Every model call appends to `llm_calls`:
 | `cost_usd` | Computed at call time from the rate table |
 | `latency_ms` | Cost/latency tradeoffs need both numbers |
 | `session_id`, `job` | Per-session and per-job attribution |
+
+The budget totals read it by `created_at >= since` (day, month) and by `session_id`. Until
+2026-10-10 neither column had an index of its own. The only index was
+`(status, created_at)`, which those totals cannot use, so each of the five totals a call
+computes was a full scan. Migration `4bc50fe4ca5c` adds `(created_at)` and `(session_id)`.
+The composite stays for the reservation sweep.
 
 `make cost-report` reads it, and `GET /api/v1/costs` returns the same rollup split by job
 and by model — by job says what is expensive to do, by model says what the routing table is

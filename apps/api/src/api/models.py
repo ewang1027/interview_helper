@@ -237,10 +237,15 @@ class ConceptEvidence(SQLModel, table=True):
             "(item_id IS NOT NULL) != (practice_problem_id IS NOT NULL)",
             name="concept_evidence_exactly_one_source",
         ),
+        # Declared here, not only in the migration, so autogenerate has nothing to propose.
+        # What each one serves is in the migration that added them.
+        Index("ix_concept_evidence_attempt", "session_id", "item_id", "concept_id", "ts", "id"),
+        Index("ix_concept_evidence_practice_problem", "practice_problem_id"),
+        Index("ix_concept_evidence_concept_newest", "concept_id", text("ts DESC"), text("id DESC")),
     )
 
     id: str = Field(default_factory=new_id, primary_key=True)
-    concept_id: str = Field(foreign_key="concepts.id", index=True)
+    concept_id: str = Field(foreign_key="concepts.id")
     source: str  # "session_grading" | "interviewer_observation" | "practice_log"
     item_id: str | None = Field(default=None, foreign_key="items.id")
     session_id: str | None = Field(default=None, foreign_key="sessions.id")
@@ -324,13 +329,22 @@ class LlmCall(SQLModel, table=True):
     only ever written on success; the caller had already been handed billed tokens."""
 
     __tablename__ = "llm_calls"
-    # The index enforcement actually uses is the composite `(status, created_at)` added in
-    # c4a71f2e83b0, because that is what it filters on. It was declared in the migration
-    # only, while the field below said `index=True` — so every `--autogenerate` proposed
-    # dropping the composite and creating a single-column index in its place, which is a
-    # regression one careless review away from landing. Declared here instead, so the
+    # The composite `(status, created_at)` was added in c4a71f2e83b0. It was declared in the
+    # migration only, while the field below said `index=True` — so every `--autogenerate`
+    # proposed dropping the composite and creating a single-column index in its place, which
+    # is a regression one careless review away from landing. Declared here instead, so the
     # model and the database agree and autogenerate has nothing to say about it.
-    __table_args__ = (Index("ix_llm_calls_status_created", "status", "created_at"),)
+    #
+    # **Corrected 2026-10-10.** This comment called the composite "the index enforcement
+    # actually uses, because that is what it filters on". Enforcement does not filter on
+    # `status`. The budget totals filter on `created_at >= since` or `session_id = ?`, with
+    # `status` inside a CASE, so they scanned the table. The composite serves the
+    # reservation sweep. `(created_at)` and `(session_id)` serve the totals.
+    __table_args__ = (
+        Index("ix_llm_calls_status_created", "status", "created_at"),
+        Index("ix_llm_calls_created_at", "created_at"),
+        Index("ix_llm_calls_session_id", "session_id"),
+    )
 
     id: str = Field(default_factory=new_id, primary_key=True)
     # "reserved" while the call is in flight, then "settled" (usage is real) or "failed"
