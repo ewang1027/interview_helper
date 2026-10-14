@@ -287,16 +287,28 @@ def run_turn(
     calls: list[dict[str, Any]] = []
     truncated = False
 
+    # Captured, not read off the row: every commit below expires `session_row`, and reading
+    # an attribute of an expired row reloads it, which opens a transaction.
+    session_id = session_row.id
+
     for round_number in range(MAX_TOOL_ROUNDS):
+        messages = as_messages(transcript(db, session_id))
+        # End the read transaction before the model call, so the request's connection goes
+        # back to the pool for the call's duration rather than sitting idle in a
+        # transaction for tens of seconds. Nothing is pending — every row above was
+        # committed as it was written — so this commits nothing. The ledger's reserve,
+        # settle and warning each take a connection of their own, so a turn held two to
+        # three at once.
+        db.commit()
         completion = llm.stream(
             job="interviewing",
             system=system,
-            messages=as_messages(transcript(db, session_row.id)),
+            messages=messages,
             tools=tools.TOOL_SCHEMAS,
-            session_id=session_row.id,
+            session_id=session_id,
             settings=settings,
             client=client,
-            on_delta=delta_publisher(channel, session_row.id),
+            on_delta=delta_publisher(channel, session_id),
         )
         uses = [block for block in completion.content if getattr(block, "type", None) == "tool_use"]
         _write(

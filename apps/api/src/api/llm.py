@@ -32,7 +32,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 import anthropic
-from sqlalchemy import case
+from sqlalchemy import case, false, or_
 from sqlmodel import Session, col, func, select
 
 from api import events as event_bus
@@ -154,21 +154,25 @@ def _spend_expression() -> Any:
     An in-flight row contributes its *reservation*: that is the whole point of writing it
     before the call. A settled or failed row contributes what the provider actually
     reported, which for a failed row may be partial and may be zero."""
+    return func.sum(_token_contribution())
+
+
+def _token_contribution() -> Any:
+    """One row's tokens, before summing — `_spend_expression` without the `sum`, so
+    `budget_status` can aggregate it under several filters in one query."""
     actual = (
         LlmCall.input_tokens
         + LlmCall.output_tokens
         + LlmCall.cache_read_tokens
         + LlmCall.cache_write_tokens
     )
-    return func.sum(
-        case(
-            (
-                (col(LlmCall.status) == "reserved")
-                & (col(LlmCall.created_at) >= datetime.now(UTC) - RESERVATION_TTL),
-                LlmCall.reserved_tokens,
-            ),
-            else_=actual,
-        )
+    return case(
+        (
+            (col(LlmCall.status) == "reserved")
+            & (col(LlmCall.created_at) >= datetime.now(UTC) - RESERVATION_TTL),
+            LlmCall.reserved_tokens,
+        ),
+        else_=actual,
     )
 
 
@@ -191,15 +195,18 @@ def _usd_expression() -> Any:
     converted to dollars after the fact — output costs five times input and the row keeps
     only their sum.
     """
-    return func.sum(
-        case(
-            (
-                (col(LlmCall.status) == "reserved")
-                & (col(LlmCall.created_at) >= datetime.now(UTC) - RESERVATION_TTL),
-                LlmCall.reserved_usd,
-            ),
-            else_=LlmCall.cost_usd,
-        )
+    return func.sum(_usd_contribution())
+
+
+def _usd_contribution() -> Any:
+    """One row's dollars, before summing. See `_token_contribution`."""
+    return case(
+        (
+            (col(LlmCall.status) == "reserved")
+            & (col(LlmCall.created_at) >= datetime.now(UTC) - RESERVATION_TTL),
+            LlmCall.reserved_usd,
+        ),
+        else_=LlmCall.cost_usd,
     )
 
 
@@ -254,12 +261,38 @@ def start_of_day(now: datetime | None = None) -> datetime:
 
 
 def budget_status(db: Session, *, session_id: str | None, settings: Settings) -> dict[str, Any]:
-    """What `GET /costs/budget` reports, and what the check below refuses on."""
-    day_spent = tokens_spent(db, since=start_of_day())
-    session_spent = tokens_spent(db, session_id=session_id) if session_id else 0
-    usd_day = usd_spent(db, since=start_of_day())
-    usd_month = usd_spent(db, since=start_of_month())
-    usd_session = usd_spent(db, session_id=session_id) if session_id else 0.0
+    """What `GET /costs/budget` reports, and what the check below refuses on.
+
+    Two queries, one per unit, each summing under a `FILTER` per scope. This was five
+    separate aggregates (`tokens_spent` and `usd_spent` for each scope), run twice per model
+    call: once inside `reserve`'s advisory lock, which serialises every call, and once for
+    the warning afterwards. Not one query because sqlmodel's typed `select` stops at four
+    columns. The `WHERE` keeps both to the rows that can count: this month's, or this
+    session's at any age, which is the session total's own definition.
+    """
+    since = min(start_of_day(), start_of_month())
+    in_day = col(LlmCall.created_at) >= start_of_day()
+    in_month = col(LlmCall.created_at) >= start_of_month()
+    in_session = col(LlmCall.session_id) == session_id if session_id else false()
+    relevant = or_(col(LlmCall.created_at) >= since, in_session)
+
+    tokens = _token_contribution()
+    day_spent, session_spent = db.exec(
+        select(
+            func.coalesce(func.sum(tokens).filter(in_day), 0),
+            func.coalesce(func.sum(tokens).filter(in_session), 0),
+        ).where(relevant)
+    ).one()
+    usd = _usd_contribution()
+    usd_day, usd_month, usd_session = db.exec(
+        select(
+            func.coalesce(func.sum(usd).filter(in_day), 0.0),
+            func.coalesce(func.sum(usd).filter(in_month), 0.0),
+            func.coalesce(func.sum(usd).filter(in_session), 0.0),
+        ).where(relevant)
+    ).one()
+    day_spent, session_spent = int(day_spent), int(session_spent)
+    usd_day, usd_month, usd_session = float(usd_day), float(usd_month), float(usd_session)
     return {
         "session": {
             "id": session_id,

@@ -208,6 +208,24 @@ The budget totals read it by `created_at >= since` (day, month) and by `session_
 computes was a full scan. Migration `4bc50fe4ca5c` adds `(created_at)` and `(session_id)`.
 The composite stays for the reservation sweep.
 
+**Two queries, not five** (2026-10-14). `budget_status` ran each total as its own aggregate:
+`tokens_spent` for day and session, `usd_spent` for day, month and session. It runs twice per
+call, once inside `reserve`'s advisory lock, which serialises every call, and once for the
+warning afterwards, so a call cost ten scans, five of them under the lock. Each unit is now
+one query that sums under a `FILTER` per scope, over the rows that can count: this month's,
+or this session's at any age. It is two queries rather than one because sqlmodel's typed
+`select` stops at four columns. On the live ledger (54 rows) the result equalled the old
+functions'. The session and day paths are covered by `test_llm_db`.
+
+**No request holds a connection across a model call** (2026-10-14). The interviewer loop
+read the transcript on the request's session and then streamed the reply, which can take
+tens of seconds, with that read's transaction still open. Meanwhile `reserve`, `settle` and
+the warning each take a connection of their own, so a turn held two to three. The jobs
+import did the same across its research pass, which runs web searches for minutes. Both now
+end the read transaction before the call. Nothing is pending at that point, because every
+row is committed as it is written. Checked with `Session.in_transaction()` from inside a
+scripted model: `True` during each call before the change, `False` after.
+
 `make cost-report` reads it, and `GET /api/v1/costs` returns the same rollup split by job
 and by model — by job says what is expensive to do, by model says what the routing table is
 costing. `GET /api/v1/costs/budget` answers the other question: will the next call be

@@ -907,6 +907,10 @@ def ingest(
     # self-deduplicating: a list naming the same job twice adds it once, which a
     # per-row database check could not see because neither row is committed yet.
     seen = existing_index(db, user_id=user_id)
+    # End that read's transaction before the research pass, which can run for minutes of
+    # web search, so the request's connection is back in the pool meanwhile. Nothing is
+    # pending, so this commits nothing; the rows are written after research, below.
+    db.commit()
 
     # The research candidates: new rows, first occurrence only, missing something.
     candidates: list[int] = []
