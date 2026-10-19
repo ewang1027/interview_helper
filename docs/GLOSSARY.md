@@ -254,8 +254,8 @@ and private (not). The main security boundary in the design.
 
 **Security group** — a per-resource firewall. The executor's **will have** no outbound
 rules, which is how "the sandbox has no network" becomes infrastructure-enforced in
-Phase 6. No AWS resource exists yet; today it is enforced by `docker run --network none`
-and verified by an escape test.
+Phase 6. The executor is not deployed to AWS yet, so today it is enforced by
+`docker run --network none` and verified by an escape test.
 
 **IaC / Terraform** — infrastructure as reviewable, diffable, rebuildable files.
 
