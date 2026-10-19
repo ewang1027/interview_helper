@@ -377,7 +377,7 @@ they are forced in `pnpm-workspace.yaml`:
 | Package | Forced | Reached through | Real exposure here |
 |---|---|---|---|
 | `postcss` | `>=8.5.23` | `next` | Build-time CSS only, and the CSS is authored in this repo |
-| `sharp` | `>=0.35.4` | `next` | `next/image` optimisation, which this app does not use |
+| `sharp` | `>=0.35.5` (was `>=0.35.4` until 2026-10-18) | `next` | `next/image` optimisation, which this app does not use |
 | `dompurify` | `>=3.4.16` (was `>=3.4.13` until 2026-10-01) | `@monaco-editor/react` → `monaco-editor` | Monaco's hover renderer, over the candidate's own code |
 
 `pnpm audit` is clean as of that change, and **CI fails the build on `high`** while
@@ -456,6 +456,15 @@ One dependency is a known gap rather than a vulnerability: **`@monaco-editor/rea
 Monaco from a CDN by default**, so the editor is a runtime network dependency on a service
 this project does not control, and a deployment with no egress has no editor. Vendoring it
 means bundling Monaco's web workers, which belongs with the Phase 6 packaging work.
+
+### 2026-10-14 to 2026-10-18
+
+The web job went red again on three new highs: `next` below 15.5.27 (two SSG/ISR cache
+poisoning advisories), `sharp` below 0.35.5 (librsvg), and `source-map-js` below 1.2.2.
+Fixed by moving `next` and `eslint-config-next` to 15.5.27 and raising the `sharp` floor.
+`source-map-js` needed no override: its parents already allow `^1.2.1`, so a lockfile
+refresh reached 1.2.2.
+The same commit took the open Python bumps from Dependabot (`urllib3` 2.8.0, `mako` 1.4.3).
 
 ## Explicitly out of scope
 
