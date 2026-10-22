@@ -379,6 +379,7 @@ they are forced in `pnpm-workspace.yaml`:
 | `postcss` | `>=8.5.23` | `next` | Build-time CSS only, and the CSS is authored in this repo |
 | `sharp` | `>=0.35.5` (was `>=0.35.4` until 2026-10-18) | `next` | `next/image` optimisation, which this app does not use |
 | `dompurify` | `>=3.4.16` (was `>=3.4.13` until 2026-10-01) | `@monaco-editor/react` → `monaco-editor` | Monaco's hover renderer, over the candidate's own code |
+| `vite` | `^7.3.7` (since 2026-10-22) | `vitest`, `@vitejs/plugin-react` (auto-installed peer) | The dev server's open-in-editor path. Only the component tests run vite, and it ships in no image |
 
 `pnpm audit` is clean as of that change, and **CI fails the build on `high`** while
 reporting everything below it. Not on `moderate`: a gate that breaks every build the
@@ -465,6 +466,17 @@ Fixed by moving `next` and `eslint-config-next` to 15.5.27 and raising the `shar
 `source-map-js` needed no override: its parents already allow `^1.2.1`, so a lockfile
 refresh reached 1.2.2.
 The same commit took the open Python bumps from Dependabot (`urllib3` 2.8.0, `mako` 1.4.3).
+
+### 2026-10-22
+
+Red again on one high: `vite` 7.0.0–7.3.6, GHSA-587h-7wmj-h5pm (`launch-editor`'s existence
+check, bypassable on Windows). 7.3.7 was out and both parents allow `^7`, but `pnpm update
+vite` reported "Already up to date". vite is an auto-installed peer, not a dependency, and an
+update does not move peers. It is forced to `^7.3.7`. That is a caret rather than the `>=` the
+other floors use, because `>=` resolves to vite 8 and `@vitejs/plugin-react` 4.7 declares
+`^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0`. The same bump clears vite's four moderates and its
+one low. Two moderates against `@vitest/mocker` below 4.1.12 (GHSA-qxg6-89mg-rqv8,
+GHSA-xp26-3454-mjgp) are left open: they are not what failed the gate.
 
 ## Explicitly out of scope
 
