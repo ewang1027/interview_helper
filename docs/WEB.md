@@ -167,12 +167,17 @@ Added 2026-09-03, when the board had grown past fifty rows and the job it exists
 decisions behind them are worth stating because each has an obvious wrong version:
 
 - **Search is client-side, and that is a scale decision rather than a shortcut.**
-  `GET /jobs` already returns the whole list in one response (`limit` defaults to 200), so
-  every row is in the browser before anything is typed. Filtering there costs no request
-  and cannot go stale against the list it filters; a server-side `q=` would be a second
-  way to ask a question the page has already asked. It stops being right when the list
-  outgrows that limit, at which point the search belongs in SQL and the component keeps
-  its shape.
+  `GET /jobs` already returns the whole list in one response (no `limit` means every
+  row), so every row is in the browser before anything is typed. Filtering there costs no
+  request and cannot go stale against the list it filters; a server-side `q=` would be a
+  second way to ask a question the page has already asked. It stops being right when one
+  response is too big to send whole, at which point the search belongs in SQL and the
+  component keeps its shape.
+  - *Correction, 2026-10-22:* this said "`limit` defaults to 200" and called that the
+    whole list. It was the whole list only until the 201st application. At 290, the
+    board and its search held the newest 200, and the oldest 90 (38 of them still live)
+    could not be reached from `/jobs` at all. The counts read "of 200" and looked
+    complete. An omitted `limit` now returns every row.
 - **It covers company, role and location**, matching every whitespace-separated term in
   any order — so "aurora backend" finds what "backend aurora" finds. Word order is not
   something a person should have to guess at, and the placeholder names the three fields

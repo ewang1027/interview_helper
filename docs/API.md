@@ -269,7 +269,7 @@ design.
 |---|---|---|---|
 | `POST` | `/jobs/import` | Paste a list; parses, tags, and researches the new rows missing a URL, a location or a confident tag | ✅ built |
 | `POST` | `/jobs` | Add one application by hand — no model call | ✅ built |
-| `GET` | `/jobs` | List, filterable by `category`, `stage` and `outcome` | ✅ built |
+| `GET` | `/jobs` | List, newest first, filterable by `category`, `stage` and `outcome`; every row unless `limit` (≤ 500) is passed | ✅ built |
 | `GET` | `/jobs/catalog` | The stage ladder and the category taxonomy | ✅ built |
 | `GET` | `/jobs/stats` | The funnel, conversion rates, category breakdown, the rejections tracker and time-in-stage | ✅ built |
 | `POST` | `/jobs/recompute` | Replay every application's stage projection from its events | ✅ built |

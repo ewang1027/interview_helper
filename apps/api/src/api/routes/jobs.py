@@ -137,8 +137,11 @@ def list_jobs(
     category: Annotated[str | None, Query()] = None,
     stage: Annotated[str | None, Query()] = None,
     outcome: Annotated[str | None, Query()] = None,
-    limit: Annotated[int, Query(gt=0, le=500)] = 200,
+    limit: Annotated[int | None, Query(gt=0, le=500)] = None,
 ) -> dict[str, Any]:
+    """Every application in the filter, newest first. No `limit` means all of them: the
+    board searches the list in the browser, so a default cap hides the oldest rows from
+    the board and from its search alike."""
     return service.list_applications(
         db,
         user_id=principal.user_id,

@@ -1207,7 +1207,7 @@ def list_applications(
     category: str | None = None,
     stage: str | None = None,
     outcome: str | None = None,
-    limit: int = 200,
+    limit: int | None = None,
 ) -> dict[str, Any]:
     query = select(JobApplication).where(JobApplication.user_id == user_id)
     if category:

@@ -24,11 +24,13 @@ import type { JobApplication, JobCatalog, Stage } from "@/lib/types";
  *
  * **Search and paging are client-side, and that is a scale decision rather than
  * a shortcut.** `GET /jobs` already returns the whole list in one response
- * (`limit` defaults to 200), so the rows are in the browser before anything is
+ * (no `limit` means every row), so the rows are in the browser before anything is
  * typed: filtering them there is instant and costs no request, and a server-side
  * `q=` would be a second way to ask the same question. It stops being the right
- * call when the list outgrows that limit — at which point the search belongs in
- * SQL and this component keeps the same shape.
+ * call when one response is too big to send whole — at which point the search
+ * belongs in SQL and this component keeps the same shape. Until 2026-10-22 the
+ * endpoint defaulted to 200 rows, and at 290 applications the oldest 90 were
+ * missing from the board and from its search with nothing saying so.
  */
 
 const TONE_FOR_OUTCOME = {
