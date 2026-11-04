@@ -26,7 +26,7 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "tailwind-merge": "^3.6.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
